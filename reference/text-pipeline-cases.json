@@ -1,0 +1,199 @@
+{
+  "schema_version": 1,
+  "pocket_tts_version": "3.3.0",
+  "tokenizers_version": "0.23.2",
+  "tokenizer_sha256": "f498428e1eafee50492f7be13dc9bfafcfc12e508cd0eb1b01c92ecd5d8c6687",
+  "max_tokens": 50,
+  "cases": [
+    {
+      "name": "simple",
+      "text": "the guard needs your help",
+      "prepared_text": "The guard needs your help.",
+      "raw_token_ids": [265, 3026, 1634, 312, 525],
+      "decoded_raw_text": "the guard needs your help",
+      "full_token_ids": [364, 3026, 1634, 312, 525, 263],
+      "segments": [
+        {
+          "text": "The guard needs your help.",
+          "token_ids": [364, 3026, 1634, 312, 525, 263],
+          "frames_after_eos": 3
+        }
+      ]
+    },
+    {
+      "name": "question",
+      "text": "Where is the missing scout?",
+      "prepared_text": "Where is the missing scout?",
+      "raw_token_ids": [1641, 277, 265, 1039, 273, 1050, 629, 292],
+      "decoded_raw_text": "Where is the missing scout?",
+      "full_token_ids": [1641, 277, 265, 1039, 273, 1050, 629, 292],
+      "segments": [
+        {
+          "text": "Where is the missing scout?",
+          "token_ids": [1641, 277, 265, 1039, 273, 1050, 629, 292],
+          "frames_after_eos": 3
+        }
+      ]
+    },
+    {
+      "name": "exclamation",
+      "text": "For the Alliance!",
+      "prepared_text": "For the Alliance!",
+      "raw_token_ids": [798, 265, 649, 405, 806, 682],
+      "decoded_raw_text": "For the Alliance!",
+      "full_token_ids": [798, 265, 649, 405, 806, 682],
+      "segments": [
+        {
+          "text": "For the Alliance!",
+          "token_ids": [798, 265, 649, 405, 806, 682],
+          "frames_after_eos": 5
+        }
+      ]
+    },
+    {
+      "name": "grouped_sentences",
+      "text": "Wait... What?! Follow me. Stay close!",
+      "prepared_text": "Wait... What?! Follow me. Stay close!",
+      "raw_token_ids": [3314, 799, 477, 292, 682, 496, 574, 1851, 308, 263, 1010, 1874, 930, 682],
+      "decoded_raw_text": "Wait... What?! Follow me. Stay close!",
+      "full_token_ids": [3314, 799, 477, 292, 682, 496, 574, 1851, 308, 263, 1010, 1874, 930, 682],
+      "segments": [
+        {
+          "text": "Wait... What?! Follow me. Stay close!",
+          "token_ids": [3314, 799, 477, 292, 682, 496, 574, 1851, 308, 263, 1010, 1874, 930, 682],
+          "frames_after_eos": 3
+        }
+      ]
+    },
+    {
+      "name": "whitespace",
+      "text": "   meet\r\n   the\t scout    at dawn   ",
+      "prepared_text": "Meet   the\t scout  at dawn.",
+      "raw_token_ids": [260, 198, 164, 260, 1134, 17, 14, 260, 260, 265, 13, 1050, 629, 260, 260, 260, 309, 1093, 1421, 260, 260, 230, 132, 135],
+      "decoded_raw_text": "   meet\r\n   the\t scout    at dawn   ",
+      "full_token_ids": [1164, 597, 260, 260, 265, 13, 1050, 629, 260, 309, 1093, 1421, 263],
+      "segments": [
+        {
+          "text": "Meet  the\t scout at dawn.",
+          "token_ids": [1164, 597, 260, 265, 13, 1050, 629, 309, 1093, 1421, 263],
+          "frames_after_eos": 3
+        }
+      ]
+    },
+    {
+      "name": "weak_punctuation",
+      "text": "Bring herbs, ore; and cloth:—”",
+      "prepared_text": "Bring herbs, ore; and cloth.”",
+      "raw_token_ids": [1648, 273, 429, 512, 261, 262, 311, 336, 1230, 269, 2689, 3244, 3133, 230, 132, 161],
+      "decoded_raw_text": "Bring herbs, ore; and cloth:—”",
+      "full_token_ids": [1648, 273, 429, 512, 261, 262, 311, 336, 1230, 269, 2689, 263, 230, 132, 161],
+      "segments": [
+        {
+          "text": "Bring herbs, ore; and cloth. ”",
+          "token_ids": [1648, 273, 429, 512, 261, 262, 311, 336, 1230, 269, 2689, 263, 260, 230, 132, 161],
+          "frames_after_eos": 3
+        }
+      ]
+    },
+    {
+      "name": "apostrophes",
+      "text": "Don't forget the captain's orders. The scout’s waiting.",
+      "prepared_text": "Don't forget the captain's orders. The scout’s waiting.",
+      "raw_token_ids": [1201, 264, 274, 260, 1858, 265, 331, 3492, 264, 261, 1107, 261, 263, 364, 1050, 629, 230, 132, 157, 261, 934, 273, 263],
+      "decoded_raw_text": "Don't forget the captain's orders. The scout’s waiting.",
+      "full_token_ids": [1201, 264, 274, 260, 1858, 265, 331, 3492, 264, 261, 1107, 261, 263, 364, 1050, 629, 230, 132, 157, 261, 934, 273, 263],
+      "segments": [
+        {
+          "text": "Don't forget the captain's orders. The scout’s waiting.",
+          "token_ids": [1201, 264, 274, 260, 1858, 265, 331, 3492, 264, 261, 1107, 261, 263, 364, 1050, 629, 230, 132, 157, 261, 934, 273, 263],
+          "frames_after_eos": 3
+        }
+      ]
+    },
+    {
+      "name": "decimal",
+      "text": "Deliver 3.5 pounds of ore for 12 gold. Bring 2.75 more if you can.",
+      "prepared_text": "Deliver 3.5 pounds of ore for 12 gold. Bring 2.75 more if you can.",
+      "raw_token_ids": [687, 566, 692, 260, 450, 263, 437, 260, 2192, 261, 272, 311, 336, 284, 260, 341, 365, 2786, 263, 1648, 273, 260, 365, 263, 579, 437, 366, 328, 270, 303, 263],
+      "decoded_raw_text": "Deliver 3.5 pounds of ore for 12 gold. Bring 2.75 more if you can.",
+      "full_token_ids": [687, 566, 692, 260, 450, 263, 437, 260, 2192, 261, 272, 311, 336, 284, 260, 341, 365, 2786, 263, 1648, 273, 260, 365, 263, 579, 437, 366, 328, 270, 303, 263],
+      "segments": [
+        {
+          "text": "Deliver 3.5 pounds of ore for 12 gold. Bring 2.75 more if you can.",
+          "token_ids": [687, 566, 692, 260, 450, 263, 437, 260, 2192, 261, 272, 311, 336, 284, 260, 341, 365, 2786, 263, 1648, 273, 260, 365, 263, 579, 437, 366, 328, 270, 303, 263],
+          "frames_after_eos": 3
+        }
+      ]
+    },
+    {
+      "name": "long_quest",
+      "text": "Before the next caravan reaches the abandoned watchtower you must follow the river past the broken bridge and speak with the wounded scout who waits beside the old gate, recover his report from the ruined camp and carry it safely through the forest; then return to the watch captain in the village and tell him everything you have learned: the road must be secured before nightfall and every traveler depends on your courage.",
+      "prepared_text": "Before the next caravan reaches the abandoned watchtower you must follow the river past the broken bridge and speak with the wounded scout who waits beside the old gate, recover his report from the ruined camp and carry it safely through the forest; then return to the watch captain in the village and tell him everything you have learned: the road must be secured before nightfall and every traveler depends on your courage.",
+      "raw_token_ids": [260, 3345, 265, 598, 722, 362, 1834, 1335, 371, 265, 267, 2065, 307, 449, 278, 626, 274, 1080, 295, 270, 1127, 260, 880, 265, 3250, 1092, 265, 260, 2745, 260, 3285, 269, 931, 291, 265, 3855, 278, 1050, 629, 373, 934, 261, 279, 677, 265, 731, 3487, 262, 338, 2615, 376, 260, 1596, 340, 265, 3866, 278, 2601, 269, 2217, 275, 1740, 323, 427, 460, 265, 284, 552, 1230, 351, 260, 1774, 266, 265, 626, 331, 3492, 276, 265, 3034, 590, 269, 527, 411, 380, 344, 270, 290, 652, 278, 3244, 265, 1625, 1127, 279, 2514, 278, 260, 531, 787, 1824, 335, 269, 380, 260, 1567, 295, 260, 1351, 261, 288, 312, 331, 3598, 263],
+      "decoded_raw_text": "Before the next caravan reaches the abandoned watchtower you must follow the river past the broken bridge and speak with the wounded scout who waits beside the old gate, recover his report from the ruined camp and carry it safely through the forest; then return to the watch captain in the village and tell him everything you have learned: the road must be secured before nightfall and every traveler depends on your courage.",
+      "full_token_ids": [260, 3345, 265, 598, 722, 362, 1834, 1335, 371, 265, 267, 2065, 307, 449, 278, 626, 274, 1080, 295, 270, 1127, 260, 880, 265, 3250, 1092, 265, 260, 2745, 260, 3285, 269, 931, 291, 265, 3855, 278, 1050, 629, 373, 934, 261, 279, 677, 265, 731, 3487, 262, 338, 2615, 376, 260, 1596, 340, 265, 3866, 278, 2601, 269, 2217, 275, 1740, 323, 427, 460, 265, 284, 552, 1230, 351, 260, 1774, 266, 265, 626, 331, 3492, 276, 265, 3034, 590, 269, 527, 411, 380, 344, 270, 290, 652, 278, 3244, 265, 1625, 1127, 279, 2514, 278, 260, 531, 787, 1824, 335, 269, 380, 260, 1567, 295, 260, 1351, 261, 288, 312, 331, 3598, 263],
+      "segments": [
+        {
+          "text": "Before the next caravan reaches the abandoned watchtower you must follow the river past the broken bridge and speak with the wounded scout who waits beside the old gate.",
+          "token_ids": [260, 3345, 265, 598, 722, 362, 1834, 1335, 371, 265, 267, 2065, 307, 449, 278, 626, 274, 1080, 295, 270, 1127, 260, 880, 265, 3250, 1092, 265, 260, 2745, 260, 3285, 269, 931, 291, 265, 3855, 278, 1050, 629, 373, 934, 261, 279, 677, 265, 731, 3487, 263],
+          "frames_after_eos": 3
+        },
+        {
+          "text": "Recover his report from the ruined camp and carry it safely through the forest; then return to the watch captain in the village and tell him everything you have learned.",
+          "token_ids": [696, 2615, 376, 260, 1596, 340, 265, 3866, 278, 2601, 269, 2217, 275, 1740, 323, 427, 460, 265, 284, 552, 1230, 351, 260, 1774, 266, 265, 626, 331, 3492, 276, 265, 3034, 590, 269, 527, 411, 380, 344, 270, 290, 652, 278, 263],
+          "frames_after_eos": 3
+        },
+        {
+          "text": "The road must be secured before nightfall and every traveler depends on your courage.",
+          "token_ids": [364, 1625, 1127, 279, 2514, 278, 260, 531, 787, 1824, 335, 269, 380, 260, 1567, 295, 260, 1351, 261, 288, 312, 331, 3598, 263],
+          "frames_after_eos": 3
+        }
+      ]
+    },
+    {
+      "name": "utf8",
+      "text": "élan guides the mage—seek the runestone… 🧙🏽 東京",
+      "prepared_text": "Élan guides the mage—seek the runestone… 🧙🏽 東京.",
+      "raw_token_ids": [260, 745, 1494, 2737, 261, 265, 260, 283, 590, 3133, 563, 1866, 265, 791, 552, 455, 230, 132, 170, 260, 244, 163, 171, 157, 244, 163, 147, 193, 260, 234, 161, 181, 232, 190, 176],
+      "decoded_raw_text": "élan guides the mage—seek the runestone… 🧙🏽 東京",
+      "full_token_ids": [260, 199, 141, 1494, 2737, 261, 265, 260, 283, 590, 3133, 563, 1866, 265, 791, 552, 455, 230, 132, 170, 260, 244, 163, 171, 157, 244, 163, 147, 193, 260, 234, 161, 181, 232, 190, 176, 263],
+      "segments": [
+        {
+          "text": "Élan guides the mage—seek the runestone… 🧙🏽 東京.",
+          "token_ids": [260, 199, 141, 1494, 2737, 261, 265, 260, 283, 590, 3133, 563, 1866, 265, 791, 552, 455, 230, 132, 170, 260, 244, 163, 171, 157, 244, 163, 147, 193, 260, 234, 161, 181, 232, 190, 176, 263],
+          "frames_after_eos": 3
+        }
+      ]
+    },
+    {
+      "name": "special_tokens",
+      "text": "Speak <s>now</s>, then <unk> return <pad> home.",
+      "prepared_text": "Speak <s>now</s>, then <unk> return <pad> home.",
+      "raw_token_ids": [1476, 336, 949, 260, 1, 372, 2, 260, 262, 351, 260, 0, 260, 260, 1774, 260, 3, 260, 648, 263],
+      "decoded_raw_text": "Speak  now , then   return   home.",
+      "full_token_ids": [1476, 336, 949, 260, 1, 372, 2, 260, 262, 351, 260, 0, 260, 260, 1774, 260, 3, 260, 648, 263],
+      "segments": [
+        {
+          "text": "Speak now , then  return  home.",
+          "token_ids": [1476, 336, 949, 372, 260, 262, 351, 260, 260, 1774, 260, 648, 263],
+          "frames_after_eos": 3
+        }
+      ]
+    },
+    {
+      "name": "unicode_upper",
+      "text": "ßharp runes mark the entrance. élan guards the doorway.)",
+      "prepared_text": "SSharp runes mark the entrance. élan guards the doorway.)",
+      "raw_token_ids": [260, 199, 163, 739, 334, 401, 791, 371, 2242, 265, 260, 530, 334, 806, 263, 402, 208, 133, 1494, 3026, 261, 265, 1296, 1163, 263, 45],
+      "decoded_raw_text": "ßharp runes mark the entrance. élan guards the doorway.)",
+      "full_token_ids": [446, 640, 739, 334, 401, 791, 371, 2242, 265, 260, 530, 334, 806, 263, 402, 208, 133, 1494, 3026, 261, 265, 1296, 1163, 263, 45],
+      "segments": [
+        {
+          "text": "SSharp runes mark the entrance. élan guards the doorway. )",
+          "token_ids": [446, 640, 739, 334, 401, 791, 371, 2242, 265, 260, 530, 334, 806, 263, 402, 208, 133, 1494, 3026, 261, 265, 1296, 1163, 263, 260, 45],
+          "frames_after_eos": 3
+        }
+      ]
+    }
+  ]
+}
