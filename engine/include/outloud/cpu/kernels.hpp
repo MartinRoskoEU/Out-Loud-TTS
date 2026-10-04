@@ -37,6 +37,14 @@ private:
 void layer_norm(MatrixView input, std::span<const std::uint16_t> scale,
                 std::span<const std::uint16_t> bias, MutableMatrixView output);
 void gelu_tanh(std::span<float> values);
+void silu(std::span<float> values);
+// Pocket flow-MLP norms, distinct from transformer LayerNorm. Fixed width 512.
+void sampler_layer_norm(std::span<const float> input, std::span<const std::uint16_t> scale,
+                        std::span<const std::uint16_t> bias, std::span<float> output);
+// Upstream "RMSNorm": no centering, sample variance (correction=1), epsilon 1e-5.
+void sample_variance_norm(std::span<const float> input, std::span<const std::uint16_t> alpha,
+                          std::span<float> output);
+void time_features(float time, std::span<const std::uint16_t> stored_frequencies, std::span<float> output);
 void residual_add(std::span<float> destination, std::span<const float> update);
 // Interleaved adjacent complex coordinates, new [tokens,16,64] Q/K only.
 void rope(std::span<float> queries, std::span<float> keys, std::size_t tokens, std::uint32_t offset);
