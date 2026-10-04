@@ -1,0 +1,55 @@
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Environment / secrets
+.env
+.env.*
+*.token
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+
+# CMake / native build
+build/
+build-*/
+out/
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+CTestTestfile.cmake
+
+# Generated benchmark / test output
+generated/
+*.log
+
+# Generated audio
+tts_output.wav
+*_test.wav
+*_test_long.wav
+*_offline_test.wav
+
+# Local reference samples
+samples/
+
+# Generated voice conditioning
+voices/
+*.safetensors
+*.olv
+
+# Local model weights
+models/
+*.pth
+*.pt
+
+# OS
+Thumbs.db
+.DS_Store
