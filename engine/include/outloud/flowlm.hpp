@@ -15,6 +15,7 @@ struct FlowLMLayerSuffix {
 class FlowLMPrefillState {
 public:
     void reset();
+    void invalidate() noexcept { valid_ = false; }
     [[nodiscard]] FlowLMLayerSuffix layer(std::uint32_t index) const;
     [[nodiscard]] std::uint32_t offset() const;
     [[nodiscard]] std::size_t suffix_storage_bytes() const;
@@ -24,6 +25,7 @@ private:
     FlowLMPrefillState(OutLoudVoice voice, std::uint32_t capacity);
     struct Layer { std::vector<float> keys, values; std::uint32_t offset; };
     OutLoudVoice voice_; // shares the original immutable mapping, no 5.5 MB prefix copy
+    std::string voice_sha_, compatibility_;
     std::uint32_t capacity_;
     std::array<Layer, 6> layers_;
     bool valid_ = true;
@@ -48,11 +50,17 @@ public:
     // Also permits one supplied deterministic position for a standalone backbone timing probe.
     [[nodiscard]] FlowLMResult backbone(std::span<const float> embeddings, FlowLMPrefillState& state,
                                         const FlowLMObserver& observer = {});
+    // Reuses output allocation and this single-threaded context's activation workspace.
+    void backbone_into(std::span<const float> embeddings, FlowLMPrefillState& state, FlowLMResult& result,
+                       const FlowLMObserver& observer = {});
+    [[nodiscard]] std::size_t workspace_storage_bytes() const;
     [[nodiscard]] cpu::KernelPath selected_path() const { return kernels_.selected_path(); }
 private:
     [[nodiscard]] ModelTensorView layer_weight(std::uint32_t layer, std::uint32_t field) const;
     PocketModelAsset model_;
     OutLoudVoice voice_;
+    std::string voice_sha_;
     cpu::Kernels kernels_;
+    struct Workspace { std::vector<float> hidden, norm, packed, queries, attention, update, ffn, scores; } work_;
 };
 } // namespace outloud

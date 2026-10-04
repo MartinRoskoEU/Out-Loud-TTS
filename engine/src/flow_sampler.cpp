@@ -40,7 +40,7 @@ FlowSample FlowSampler::sample(std::span<const float> hidden, std::span<const fl
         const std::uint32_t base = 60 + 6 * index;
         const auto p = index == 0 ? "time.s." : "time.t.";
         auto emit = [&](std::string_view name, std::span<const float> values) {
-            observe(observer, std::string(p) + std::string(name), values);
+            if (observer) { observe(observer, std::string(p) + std::string(name), values); }
         };
         emit("scalar", {&value, 1});
         cpu::time_features(value, tensor(base).bf16_values, work.features);
@@ -60,7 +60,9 @@ FlowSample FlowSampler::sample(std::span<const float> hidden, std::span<const fl
     for (std::uint32_t block = 0; block < 6; ++block) {
         const auto base = 12 + block * 8;
         const auto p = "block" + std::to_string(block) + ".";
-        auto emit = [&](std::string_view name, std::span<const float> values) { observe(observer, p + std::string(name), values); };
+        auto emit = [&](std::string_view name, std::span<const float> values) {
+            if (observer) { observe(observer, p + std::string(name), values); }
+        };
         emit("input", work.x);
         work.condition_silu = work.y; cpu::silu(work.condition_silu); emit("condition_silu", work.condition_silu);
         linear(work.condition_silu, base + 1, base, work.parameters);
@@ -96,13 +98,34 @@ FlowSample FlowSampler::sample(std::span<const float> hidden, std::span<const fl
 }
 DeterministicCandidate FlowSampler::bos_candidate(FlowLMBackbone& backbone, FlowLMPrefillState& state,
         std::span<const float> supplied_noise, const SamplerObserver& observer) {
+    DeterministicCandidate result;
+    candidate_into(backbone, state, {}, supplied_noise, result, observer);
+    return result;
+}
+DeterministicCandidate FlowSampler::frame_candidate(FlowLMBackbone& backbone, FlowLMPrefillState& state,
+        std::span<const float> previous, std::span<const float> noise, const SamplerObserver& observer) {
+    finite_input(previous, 32);
+    DeterministicCandidate result;
+    candidate_into(backbone, state, previous, noise, result, observer);
+    return result;
+}
+void FlowSampler::bos_candidate_into(FlowLMBackbone& backbone, FlowLMPrefillState& state,
+                                    std::span<const float> noise, DeterministicCandidate& result) {
+    candidate_into(backbone, state, {}, noise, result, {});
+}
+void FlowSampler::frame_candidate_into(FlowLMBackbone& backbone, FlowLMPrefillState& state,
+        std::span<const float> previous, std::span<const float> noise, DeterministicCandidate& result) {
+    finite_input(previous, 32);
+    candidate_into(backbone, state, previous, noise, result, {});
+}
+void FlowSampler::candidate_into(FlowLMBackbone& backbone, FlowLMPrefillState& state, std::span<const float> input,
+        std::span<const float> supplied_noise, DeterministicCandidate& result, const SamplerObserver& observer) {
     finite_input(supplied_noise, 32); // reject before mutating backbone state
     std::array<float, 32> bos;
     std::array<float, 1024> projected;
-    widen_bf16(model_.tensor(PocketTensorId::flow_lm_bos_emb).bf16_values, bos);
-    kernels_.linear({bos, 1, 32}, model_.tensor(PocketTensorId::flow_lm_input_linear_weight), {projected, 1, 1024});
-    auto hidden = backbone.backbone(projected, state);
-    auto sampled = sample(hidden.last_hidden(), supplied_noise, observer);
-    return {std::move(hidden), sampled};
+    if (input.empty()) { widen_bf16(model_.tensor(PocketTensorId::flow_lm_bos_emb).bf16_values, bos); input = bos; }
+    kernels_.linear({input, 1, 32}, model_.tensor(PocketTensorId::flow_lm_input_linear_weight), {projected, 1, 1024});
+    backbone.backbone_into(projected, state, result.backbone);
+    result.sample = sample(result.backbone.last_hidden(), supplied_noise, observer);
 }
 } // namespace outloud

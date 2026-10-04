@@ -127,3 +127,28 @@ if(BUILD_TESTING)
     add_test(NAME flow-sampler-regressions COMMAND outloud-flow-sampler-tests "${OUTLOUD_ASSET_DIRECTORY}"
              "${OUTLOUD_NEURAL_DIRECTORY}")
 endif()
+
+add_library(outloud_generation STATIC engine/src/generation.cpp)
+target_include_directories(outloud_generation PUBLIC engine/include)
+target_link_libraries(outloud_generation PUBLIC outloud_flow_sampler)
+target_compile_options(outloud_generation PRIVATE /W4 /WX /utf-8 /permissive- /fp:precise)
+if(NOT EXISTS "${OUTLOUD_NEURAL_DIRECTORY}/generation_segment_fixtures.hpp")
+    message(FATAL_ERROR "Export supplied-noise generation fixtures first; see docs/NATIVE_GENERATION.md.")
+endif()
+add_executable(outloud-generation-check tools/generation-check/main.cpp)
+target_link_libraries(outloud-generation-check PRIVATE outloud_generation outloud_text outloud_asset_io)
+target_include_directories(outloud-generation-check PRIVATE tests engine/src "${OUTLOUD_NEURAL_DIRECTORY}")
+target_compile_options(outloud-generation-check PRIVATE /W4 /WX /utf-8 /permissive- /fp:precise)
+target_compile_definitions(outloud-generation-check PRIVATE
+    OUTLOUD_NEURAL_DIRECTORY=L"${OUTLOUD_NEURAL_DIRECTORY}"
+    OUTLOUD_ASSET_DIRECTORY=L"${OUTLOUD_ASSET_DIRECTORY}"
+    OUTLOUD_TOKENIZER_ASSET=L"${OUTLOUD_TOKENIZER_ASSET}")
+add_executable(outloud-generation-tests tests/generation_test.cpp)
+target_link_libraries(outloud-generation-tests PRIVATE outloud_generation outloud_text outloud_asset_io)
+target_include_directories(outloud-generation-tests PRIVATE tests engine/src "${OUTLOUD_NEURAL_DIRECTORY}")
+target_compile_options(outloud-generation-tests PRIVATE /W4 /WX /utf-8 /permissive- /fp:precise)
+if(BUILD_TESTING)
+    add_test(NAME canonical-generation-segment COMMAND outloud-generation-check)
+    add_test(NAME generation-regressions COMMAND outloud-generation-tests "${OUTLOUD_ASSET_DIRECTORY}"
+             "${OUTLOUD_NEURAL_DIRECTORY}")
+endif()

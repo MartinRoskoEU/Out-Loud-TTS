@@ -16,7 +16,7 @@ void observe(const FlowLMObserver& observer, std::string_view name, std::span<co
 } // namespace
 
 FlowLMPrefillState::FlowLMPrefillState(OutLoudVoice voice, std::uint32_t capacity)
-    : voice_(std::move(voice)), capacity_(capacity) {
+    : voice_(std::move(voice)), voice_sha_(voice_.source_sha256()), compatibility_(voice_.compatibility_id()), capacity_(capacity) {
     require(capacity > 0 && capacity <= 4096, "Invalid prefill suffix capacity");
     for (auto& layer : layers_) {
         layer.keys.resize(std::size_t(capacity) * 1024);
@@ -45,7 +45,12 @@ std::span<const float> FlowLMResult::last_hidden() const {
     return std::span(normalized).last(1024);
 }
 FlowLMBackbone::FlowLMBackbone(PocketModelAsset model, OutLoudVoice voice, cpu::KernelPath path)
-    : model_(std::move(model)), voice_(std::move(voice)), kernels_(path) { voice_.validate_against(model_); }
+    : model_(std::move(model)), voice_(std::move(voice)), voice_sha_(voice_.source_sha256()), kernels_(path) { voice_.validate_against(model_); }
+std::size_t FlowLMBackbone::workspace_storage_bytes() const {
+    return (work_.hidden.capacity() + work_.norm.capacity() + work_.packed.capacity() + work_.queries.capacity()
+          + work_.attention.capacity() + work_.update.capacity() + work_.ffn.capacity() + work_.scores.capacity())
+          * sizeof(float) + cpu::Kernels::widening_scratch_bytes();
+}
 FlowLMPrefillState FlowLMBackbone::make_state(std::uint32_t suffix_capacity) const {
     return FlowLMPrefillState(voice_, suffix_capacity);
 }
@@ -76,27 +81,34 @@ FlowLMResult FlowLMBackbone::prefill(std::span<const std::uint32_t> tokens, Flow
 }
 FlowLMResult FlowLMBackbone::backbone(std::span<const float> embeddings, FlowLMPrefillState& state,
                                      const FlowLMObserver& observer) {
+    FlowLMResult result;
+    backbone_into(embeddings, state, result, observer);
+    return result;
+}
+void FlowLMBackbone::backbone_into(std::span<const float> embeddings, FlowLMPrefillState& state,
+                                 FlowLMResult& result, const FlowLMObserver& observer) {
     require(!embeddings.empty() && embeddings.size() % 1024 == 0, "Invalid backbone embedding dimensions");
     const auto tokens = embeddings.size() / 1024;
     const auto offset = state.offset();
-    require(state.voice_.compatibility_id() == model_.compatibility_id() &&
-            state.voice_.source_sha256() == voice_.source_sha256(), "Prefill voice/model state mismatch");
+    require(state.compatibility_ == model_.compatibility_id() && state.voice_sha_ == voice_sha_, "Prefill voice/model state mismatch");
     const auto previous = offset - voice_.prefix_length();
     require(tokens <= state.capacity_ && previous <= state.capacity_ - tokens, "Prefill suffix capacity exceeded");
     require(std::all_of(embeddings.begin(), embeddings.end(), [](float x) { return std::isfinite(x); }),
             "Nonfinite backbone input");
     const auto rows = static_cast<std::uint32_t>(tokens);
     const auto size = embeddings.size();
-    std::vector<float> hidden(embeddings.begin(), embeddings.end()), norm(size), packed(size * 3),
-                       queries(size), attention(size), update(size), ffn(size * 4), scores(offset + tokens);
-    FlowLMResult result{std::vector<float>(size), 0.0f,
-                        (size * 12 + scores.size()) * sizeof(float) + cpu::Kernels::widening_scratch_bytes()};
+    auto& [hidden, norm, packed, queries, attention, update, ffn, scores] = work_;
+    hidden.assign(embeddings.begin(), embeddings.end()); norm.resize(size); packed.resize(size * 3);
+    queries.resize(size); attention.resize(size); update.resize(size); ffn.resize(size * 4);
+    scores.reserve(std::size_t(voice_.prefix_length()) + state.capacity()); scores.resize(offset + tokens);
+    result.normalized.resize(size); result.eos_logit = 0;
+    result.scratch_bytes = (size * 12 + scores.size()) * sizeof(float) + cpu::Kernels::widening_scratch_bytes();
     // A failed computation/observer cannot leave a reusable partial six-layer append.
     state.valid_ = false;
     for (std::uint32_t layer = 0; layer < 6; ++layer) {
         const auto p = "layer" + std::to_string(layer) + ".";
         auto emit = [&](std::string_view name, std::span<const float> values, std::initializer_list<std::uint32_t> shape) {
-            observe(observer, p + std::string(name), values, shape);
+            if (observer) { observe(observer, p + std::string(name), values, shape); }
         };
         emit("input", hidden, {rows, 1024});
         cpu::layer_norm({hidden, tokens, 1024}, layer_weight(layer, 3).bf16_values,
@@ -145,6 +157,5 @@ FlowLMResult FlowLMBackbone::backbone(std::span<const float> embeddings, FlowLMP
     observe(observer, "final.eos", {&result.eos_logit, 1}, {1});
     for (auto& layer : state.layers_) { layer.offset = offset + rows; }
     state.valid_ = true;
-    return result;
 }
 } // namespace outloud
