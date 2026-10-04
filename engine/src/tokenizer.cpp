@@ -1,10 +1,6 @@
 #include "outloud/tokenizer.hpp"
 #include "utf8.hpp"
-
-#define WIN32_LEAN_AND_MEAN
-#define NOMINMAX
-#include <windows.h>
-#include <bcrypt.h>
+#include "asset_io.hpp"
 
 #include <algorithm>
 #include <bit>
@@ -54,42 +50,6 @@ private:
     std::size_t cursor_ = 0;
 };
 
-std::string hex(std::span<const unsigned char> bytes) {
-    constexpr char alphabet[] = "0123456789abcdef";
-    std::string result;
-    for (const auto b : bytes) { result += alphabet[b >> 4]; result += alphabet[b & 15]; }
-    return result;
-}
-
-std::array<unsigned char, 32> sha256(std::span<const unsigned char> bytes) {
-    // Windows CNG is a system library, not an added third-party dependency.
-    std::vector<unsigned char> object;
-    struct Handles {
-        BCRYPT_ALG_HANDLE algorithm = nullptr;
-        BCRYPT_HASH_HANDLE hash = nullptr;
-        ~Handles() {
-            if (hash) { BCryptDestroyHash(hash); }
-            if (algorithm) { BCryptCloseAlgorithmProvider(algorithm, 0); }
-        }
-    } handles;
-    auto check = [](NTSTATUS status) {
-        if (status < 0) { throw std::runtime_error("Windows SHA256 operation failed"); }
-    };
-    check(BCryptOpenAlgorithmProvider(&handles.algorithm, BCRYPT_SHA256_ALGORITHM, nullptr, 0));
-    DWORD object_length = 0, received = 0;
-    check(BCryptGetProperty(handles.algorithm, BCRYPT_OBJECT_LENGTH,
-        reinterpret_cast<PUCHAR>(&object_length), sizeof(object_length), &received, 0));
-    object.resize(object_length);
-    check(BCryptCreateHash(handles.algorithm, &handles.hash, object.data(), object_length, nullptr, 0, 0));
-    check(BCryptHashData(handles.hash, const_cast<PUCHAR>(bytes.data()), static_cast<ULONG>(bytes.size()), 0));
-    std::array<unsigned char, 32> result{};
-    check(BCryptFinishHash(handles.hash, result.data(), static_cast<ULONG>(result.size()), 0));
-    // Destroy the hash before its CNG object storage leaves scope.
-    check(BCryptDestroyHash(handles.hash));
-    handles.hash = nullptr;
-    return result;
-}
-
 bool in_ranges(const std::vector<std::pair<std::uint32_t, std::uint32_t>>& ranges, std::uint32_t cp) {
     const auto it = std::upper_bound(ranges.begin(), ranges.end(), cp,
         [](std::uint32_t value, const auto& range) { return value < range.first; });
@@ -113,12 +73,12 @@ Tokenizer::Tokenizer(const std::filesystem::path& asset) {
         header.u32() != 1 || header.u32() != 4000 || header.u32() != 0) {
         throw std::runtime_error("Unsupported Pocket tokenizer header");
     }
-    if (header.u32() != bytes.size() - 88 || hex(header.take(32)) != source_sha256) {
+    if (header.u32() != bytes.size() - 88 || detail::hex(header.take(32)) != source_sha256) {
         throw std::runtime_error("Tokenizer asset identity mismatch");
     }
     const auto expected_digest = header.take(32);
     const auto payload = header.take(bytes.size() - 88);
-    const auto digest = sha256(payload);
+    const auto digest = detail::sha256(payload);
     if (!std::equal(digest.begin(), digest.end(), expected_digest.begin())) {
         throw std::runtime_error("Tokenizer asset payload SHA256 mismatch");
     }
