@@ -1,0 +1,473 @@
+{
+  "schema_version": 1,
+  "evidence": "Installed Pocket TTS 3.3.0 source and offline runtime inspection; recorded oracle retained.",
+  "pocket_tts_version": "3.3.0",
+  "python_version": "3.12.10",
+  "torch_version": "2.14.1+cpu",
+  "tokenizers_version": "0.23.2",
+  "model": {
+    "repository": "kyutai/pocket-tts",
+    "file": "languages/english/model.safetensors",
+    "revision": "983151f13aaeab1b13c1e5e3c2c383d49a9edf3f",
+    "sha256": "fb0dc01b0d4d2e1c905b7a3e0676e3d9c96d5ae460e24e3ab94981805babf997",
+    "metadata": null,
+    "stored_dtype": "bfloat16",
+    "runtime_dtype": "float32",
+    "tensor_count": 214,
+    "element_count": 109502146
+  },
+  "tokenizer": {
+    "repository": "kyutai/pocket-tts-without-voice-cloning",
+    "file": "languages/english/tokenizer.json",
+    "revision": "00eac05ed3d16bdc3f6b5d598874019c34a89214",
+    "sha256": "f498428e1eafee50492f7be13dc9bfafcfc12e508cd0eb1b01c92ecd5d8c6687",
+    "implementation": "pocket_tts.modules.text_conditioner.JsonTokenizer",
+    "model_type": "Unigram",
+    "vocabulary_size": 4000,
+    "byte_fallback": true,
+    "special_tokens": {
+      "<unk>": 0,
+      "<s>": 1,
+      "</s>": 2,
+      "<pad>": 3
+    },
+    "automatically_inserted_bos_eos": false,
+    "lookup_table_shape": [
+      4001,
+      1024
+    ],
+    "sentence_boundary_ids": [
+      263,
+      682,
+      799,
+      292
+    ],
+    "fallback_boundary_ids": [
+      262,
+      1230,
+      3244
+    ]
+  },
+  "voice": {
+    "file": "voices/gnome_male.safetensors",
+    "sha256": "2118ea60dfe87bd515b27e051e1d677a7fe15663875740599147bde37a9c4cea",
+    "metadata": null,
+    "prefix_length": 112,
+    "tensor_count": 18,
+    "tensors": [
+      {
+        "name": "transformer.layers.0.self_attn/cache",
+        "shape": [
+          2,
+          1,
+          112,
+          16,
+          64
+        ],
+        "dtype": "float32"
+      },
+      {
+        "name": "transformer.layers.0.self_attn/offset",
+        "shape": [
+          1
+        ],
+        "dtype": "int64",
+        "value": [
+          112
+        ]
+      },
+      {
+        "name": "transformer.layers.0.self_attn/pad",
+        "shape": [
+          1
+        ],
+        "dtype": "int64",
+        "value": [
+          0
+        ]
+      },
+      {
+        "name": "transformer.layers.1.self_attn/cache",
+        "shape": [
+          2,
+          1,
+          112,
+          16,
+          64
+        ],
+        "dtype": "float32"
+      },
+      {
+        "name": "transformer.layers.1.self_attn/offset",
+        "shape": [
+          1
+        ],
+        "dtype": "int64",
+        "value": [
+          112
+        ]
+      },
+      {
+        "name": "transformer.layers.1.self_attn/pad",
+        "shape": [
+          1
+        ],
+        "dtype": "int64",
+        "value": [
+          0
+        ]
+      },
+      {
+        "name": "transformer.layers.2.self_attn/cache",
+        "shape": [
+          2,
+          1,
+          112,
+          16,
+          64
+        ],
+        "dtype": "float32"
+      },
+      {
+        "name": "transformer.layers.2.self_attn/offset",
+        "shape": [
+          1
+        ],
+        "dtype": "int64",
+        "value": [
+          112
+        ]
+      },
+      {
+        "name": "transformer.layers.2.self_attn/pad",
+        "shape": [
+          1
+        ],
+        "dtype": "int64",
+        "value": [
+          0
+        ]
+      },
+      {
+        "name": "transformer.layers.3.self_attn/cache",
+        "shape": [
+          2,
+          1,
+          112,
+          16,
+          64
+        ],
+        "dtype": "float32"
+      },
+      {
+        "name": "transformer.layers.3.self_attn/offset",
+        "shape": [
+          1
+        ],
+        "dtype": "int64",
+        "value": [
+          112
+        ]
+      },
+      {
+        "name": "transformer.layers.3.self_attn/pad",
+        "shape": [
+          1
+        ],
+        "dtype": "int64",
+        "value": [
+          0
+        ]
+      },
+      {
+        "name": "transformer.layers.4.self_attn/cache",
+        "shape": [
+          2,
+          1,
+          112,
+          16,
+          64
+        ],
+        "dtype": "float32"
+      },
+      {
+        "name": "transformer.layers.4.self_attn/offset",
+        "shape": [
+          1
+        ],
+        "dtype": "int64",
+        "value": [
+          112
+        ]
+      },
+      {
+        "name": "transformer.layers.4.self_attn/pad",
+        "shape": [
+          1
+        ],
+        "dtype": "int64",
+        "value": [
+          0
+        ]
+      },
+      {
+        "name": "transformer.layers.5.self_attn/cache",
+        "shape": [
+          2,
+          1,
+          112,
+          16,
+          64
+        ],
+        "dtype": "float32"
+      },
+      {
+        "name": "transformer.layers.5.self_attn/offset",
+        "shape": [
+          1
+        ],
+        "dtype": "int64",
+        "value": [
+          112
+        ]
+      },
+      {
+        "name": "transformer.layers.5.self_attn/pad",
+        "shape": [
+          1
+        ],
+        "dtype": "int64",
+        "value": [
+          0
+        ]
+      }
+    ]
+  },
+  "generation": {
+    "language": "english",
+    "device": "cpu",
+    "batch_size": 1,
+    "temperature": 0.3,
+    "sampler_type": "lsd",
+    "sampler_decode_steps": 1,
+    "noise_clamp": null,
+    "eos_threshold": -4.0,
+    "minimum_eos_frame_index": 6,
+    "max_text_tokens": 50,
+    "copy_state": true,
+    "sample_rate_hz": 24000,
+    "channels": 1,
+    "frame_rate_hz": 12.5,
+    "frame_samples": 1920,
+    "mimi_transformer_rate_hz": 200.0,
+    "mimi_steps_per_latent": 16,
+    "upstream_default_max_decoder_frames_per_call": 0,
+    "decoder_frames_per_call_in_diagnostic_matching_recorded_hash": 1,
+    "quantization_enabled": false
+  },
+  "oracle": {
+    "text": "The watch captain needs your help before the next caravan arrives. Follow the river to the abandoned tower, speak with the scout waiting at its gate, and bring his report back to the village. Keep your lantern burning, for the path is narrow.",
+    "seed": 73,
+    "token_ids": [
+      364,
+      626,
+      331,
+      3492,
+      1634,
+      312,
+      525,
+      260,
+      531,
+      265,
+      598,
+      722,
+      362,
+      1834,
+      260,
+      486,
+      582,
+      314,
+      261,
+      263,
+      496,
+      574,
+      1851,
+      265,
+      3250,
+      266,
+      265,
+      267,
+      2065,
+      307,
+      449,
+      278,
+      266,
+      479,
+      295,
+      262,
+      931,
+      291,
+      265,
+      1050,
+      629,
+      934,
+      273,
+      309,
+      275,
+      261,
+      3487,
+      262,
+      269,
+      750,
+      376,
+      260,
+      1596,
+      382,
+      266,
+      265,
+      3034,
+      590,
+      263,
+      3602,
+      312,
+      697,
+      2041,
+      306,
+      1862,
+      273,
+      262,
+      284,
+      265,
+      1871,
+      277,
+      913,
+      334,
+      1141,
+      263
+    ],
+    "segments": [
+      {
+        "text": "The watch captain needs your help before the next caravan arrives.",
+        "token_ids": [
+          364,
+          626,
+          331,
+          3492,
+          1634,
+          312,
+          525,
+          260,
+          531,
+          265,
+          598,
+          722,
+          362,
+          1834,
+          260,
+          486,
+          582,
+          314,
+          261,
+          263
+        ],
+        "token_count": 20,
+        "frames_after_eos": 3,
+        "max_gen_len": 109,
+        "first_accepted_eos_frame": 43,
+        "emitted_frames": 46,
+        "candidate_calls": 47,
+        "flow_cache_capacity": 241,
+        "mimi_cache_capacity": 1744
+      },
+      {
+        "text": "Follow the river to the abandoned tower, speak with the scout waiting at its gate, and bring his report back to the village.",
+        "token_ids": [
+          496,
+          574,
+          1851,
+          265,
+          3250,
+          266,
+          265,
+          267,
+          2065,
+          307,
+          449,
+          278,
+          266,
+          479,
+          295,
+          262,
+          931,
+          291,
+          265,
+          1050,
+          629,
+          934,
+          273,
+          309,
+          275,
+          261,
+          3487,
+          262,
+          269,
+          750,
+          376,
+          260,
+          1596,
+          382,
+          266,
+          265,
+          3034,
+          590,
+          263
+        ],
+        "token_count": 39,
+        "frames_after_eos": 3,
+        "max_gen_len": 188,
+        "first_accepted_eos_frame": 81,
+        "emitted_frames": 84,
+        "candidate_calls": 85,
+        "flow_cache_capacity": 339,
+        "mimi_cache_capacity": 3008
+      },
+      {
+        "text": "Keep your lantern burning, for the path is narrow.",
+        "token_ids": [
+          3602,
+          312,
+          697,
+          2041,
+          306,
+          1862,
+          273,
+          262,
+          284,
+          265,
+          1871,
+          277,
+          913,
+          334,
+          1141,
+          263
+        ],
+        "token_count": 16,
+        "frames_after_eos": 3,
+        "max_gen_len": 92,
+        "first_accepted_eos_frame": 37,
+        "emitted_frames": 40,
+        "candidate_calls": 41,
+        "flow_cache_capacity": 220,
+        "mimi_cache_capacity": 1472
+      }
+    ],
+    "expected_sample_count": 326400,
+    "recorded_chunk_count": 170,
+    "expected_float32_sha256": "e4e1004ffda5a83b205a6d131d34209a88596012b249657702657c924ec529b9",
+    "serialization": "little-endian contiguous float32 mono",
+    "flow_sampling_call_count": 176,
+    "emitted_latent_frame_count": 170,
+    "text_prefill_discarded_samples": 3,
+    "final_discarded_candidates": 3
+  }
+}
