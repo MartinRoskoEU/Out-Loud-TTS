@@ -81,6 +81,21 @@ float Kernels::dot(std::span<const float> a, std::span<const float> b) const {
     require(a.size() == b.size(), "Dot product dimension mismatch");
     return dot_(a.data(), b.data(), a.size());
 }
+void Kernels::dot_rows(std::span<const float> weight, MatrixView input, std::span<float> output,
+                        std::size_t output_stride, float bias) const {
+    matrix(input.data.size(), input.rows, input.columns);
+    require(weight.size() == input.columns && !output.empty() && output_stride > 0 &&
+            input.rows - 1 <= (output.size() - 1) / output_stride, "Mimi row-dot dimensions mismatch");
+#ifdef OUTLOUD_HAS_AVX2
+    if (path_ == KernelPath::avx2_fma) {
+        detail::avx2_fma_dot_rows(weight.data(), input.data.data(), output.data(), input.rows, input.columns, output_stride, bias);
+        return;
+    }
+#endif
+    for (std::size_t row = 0; row < input.rows; ++row) {
+        output[row * output_stride] = dot_(weight.data(), input.data.data() + row * input.columns, input.columns) + bias;
+    }
+}
 void Kernels::linear(MatrixView input, ModelTensorView weight, MutableMatrixView output,
                      std::span<const std::uint16_t> bias) {
     OUTLOUD_PERF_SCOPE(::outloud::perf::linear_stage(static_cast<std::uint32_t>(weight.id)));
@@ -91,6 +106,13 @@ void Kernels::linear(MatrixView input, ModelTensorView weight, MutableMatrixView
             weight.bf16_values.size() == output.columns * input.columns && output.rows == input.rows &&
             (bias.empty() || bias.size() == output.columns), "Linear weight/activation dimensions mismatch");
     require(input.data.data() != output.data.data(), "Linear input/output cannot alias");
+#ifdef OUTLOUD_HAS_AVX2
+    if (path_ == KernelPath::avx2_fma) {
+        detail::avx2_bf16_linear(input.data.data(), weight.bf16_values.data(), output.data.data(),
+                                input.rows, input.columns, output.columns, bias.empty() ? nullptr : bias.data());
+        return;
+    }
+#endif
     const auto row = std::span(widened_row_).first(input.columns);
     for (std::size_t out = 0; out < output.columns; ++out) {
         widen_bf16(weight.bf16_values.subspan(out * input.columns, input.columns), row);

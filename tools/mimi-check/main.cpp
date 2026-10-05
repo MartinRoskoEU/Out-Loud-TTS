@@ -38,16 +38,23 @@ void write_report(const std::filesystem::path& path, const outloud::test::MimiRe
 }
 int wmain(int argc, wchar_t** argv) {
     try {
-        const bool measure = argc == 2 && std::wstring_view(argv[1]) == L"--measure";
-        if (argc > 1 && !measure) { throw std::invalid_argument("Usage: outloud-mimi-check [--measure]"); }
+        bool measure = false, write_audio = false;
+        for (int i = 1; i < argc; ++i) {
+            const std::wstring_view option(argv[i]);
+            if (option == L"--measure") { measure = true; }
+            else if (option == L"--write-audio") { write_audio = true; }
+            else { throw std::invalid_argument("Usage: outloud-mimi-check [--measure] [--write-audio]"); }
+        }
         const std::filesystem::path directory = OUTLOUD_NEURAL_DIRECTORY, assets = OUTLOUD_ASSET_DIRECTORY;
         const outloud::PocketModelAsset model(assets / "pocket-english.olp");
         const outloud::OutLoudVoice voice(assets / "gnome_male.olv");
         const outloud::test::MimiFixture fixture(directory);
         const outloud::test::GenerationFixture generation(directory);
         const auto audio = directory.parent_path() / "audio";
-        std::filesystem::create_directories(audio);
-        wav(audio / "upstream-segment1.wav", fixture.values("pcm.complete"));
+        if (write_audio) {
+            std::filesystem::create_directories(audio);
+            wav(audio / "upstream-segment1.wav", fixture.values("pcm.complete"));
+        }
         std::optional<outloud::test::MimiReport> portable;
         std::cout << "Out Loud Pocket Mimi decoder\nReference latent frames: 46\nSample rate: 24000\nSamples/frame: 1920\nExpected samples: 88320\n";
         for (const auto path : {outloud::cpu::KernelPath::portable, outloud::cpu::KernelPath::avx2_fma}) {
@@ -74,8 +81,10 @@ int wmain(int argc, wchar_t** argv) {
                 if (!measure) { outloud::test::enforce_mimi_errors(agreement); }
                 std::cout << "Path agreement: " << (measure ? "MEASURED" : "PASS") << '\n';
             } else {
-                wav(audio / "native-reference-latents.wav", r.reference_pcm);
-                wav(audio / "native-free-running.wav", r.native_pcm);
+                if (write_audio) {
+                    wav(audio / "native-reference-latents.wav", r.reference_pcm);
+                    wav(audio / "native-free-running.wav", r.native_pcm);
+                }
                 portable = std::move(r);
             }
         }

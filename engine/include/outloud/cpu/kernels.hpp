@@ -22,10 +22,13 @@ public:
     explicit Kernels(KernelPath requested = KernelPath::portable);
     [[nodiscard]] KernelPath selected_path() const { return path_; }
     // Weights [output,input], activations [tokens,input], result [tokens,output].
-    // A single weight row is widened into this context's fixed 16 KiB scratch.
+    // Portable widens one row into fixed 16 KiB scratch; AVX2 widens in registers.
     void linear(MatrixView input, ModelTensorView weight, MutableMatrixView output,
                 std::span<const std::uint16_t> bias = {});
     [[nodiscard]] float dot(std::span<const float> a, std::span<const float> b) const;
+    // Mimi windows: reuse one FP32 weight row across independent time positions.
+    void dot_rows(std::span<const float> weight, MatrixView input, std::span<float> output,
+                  std::size_t output_stride, float bias = 0.0f) const;
     [[nodiscard]] static constexpr std::size_t widening_scratch_bytes() { return 4096 * sizeof(float); }
 private:
     using Dot = float (*)(const float*, const float*, std::size_t);

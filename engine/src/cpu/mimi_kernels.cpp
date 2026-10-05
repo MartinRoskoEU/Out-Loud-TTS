@@ -47,9 +47,8 @@ void MimiConvolutionKernels::run(const PocketModelAsset& model, std::size_t conf
         for (std::size_t c = 0; c < s.output; ++c) {
             auto row = std::span(row_).first(width);
             widen_bf16(weight.subspan(c * width, width), row);
-            for (std::size_t t = 0; t < steps; ++t) {
-                output[c * steps + t] = kernels_.dot(row, std::span(windows_).subspan(t * width, width)) + add(c);
-            }
+            kernels_.dot_rows(row, {std::span(windows_).first(steps * width), steps, width},
+                              output.subspan(c * steps, steps), 1, add(c));
         }
         for (std::size_t c = 0; c < s.input; ++c) {
             for (std::size_t p = 0; p < history; ++p) { carry[c * history + p] = input[c * steps + steps - history + p]; }
@@ -86,11 +85,9 @@ void MimiConvolutionKernels::run(const PocketModelAsset& model, std::size_t conf
                 row_[in * 2 + 1] = bf16_to_float32(weight[w + s.stride]);
             }
             });
-            for (std::size_t t = 0; t < steps; ++t) {
-                float value = kernels_.dot(std::span(row_).first(width), std::span(windows_).subspan(t * width, width)) + add(c);
-                if (t == 0) { value += carry[c * s.stride + p]; }
-                output[c * length + t * s.stride + p] = value;
-            }
+            kernels_.dot_rows(std::span(row_).first(width), {std::span(windows_).first(steps * width), steps, width},
+                              output.subspan(c * length + p, length - p), s.stride, add(c));
+            output[c * length + p] += carry[c * s.stride + p];
             const float tail = kernels_.dot(std::span(row_).first(width), std::span(windows_).subspan(steps * width, width)) + add(c);
             carry[c * s.stride + p] = tail - add(c); // Source explicitly subtracts the tail bias.
         }
