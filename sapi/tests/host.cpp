@@ -170,6 +170,14 @@ void bookmark_checks(ISpTTSEngine* engine,const WAVEFORMATEX* wave) {
         Site recovered(Mode::normal,true); speak(engine,wave,&speech,recovered); same_audio(recovered);
         check(recovered.bookmarks.empty(),"Bookmark leaked into the next request");
     };
+    // Neither a missing bookmark subscription nor an unavailable event method
+    // is relevant to a request with no leading bookmarks.
+    for (const auto mask : {ULONGLONG{0},ULONGLONG{SPFEI_FLAGCHECK}}) {
+        Site no_events(Mode::normal,true); no_events.event_interest = mask;
+        no_events.interest_result = E_ACCESSDENIED; no_events.fail_event_after = 0;
+        speak(engine,wave,&speech,no_events); same_audio(no_events);
+        check(!no_events.interest_queries && no_events.bookmarks.empty(),"Plain speech required event calls");
+    }
     // A fragment is a counted substring, not necessarily a terminated name.
     std::wstring source = L"OUTLOUD_TEST_123\"/>trailing XML";
     auto one = bookmark(std::wstring_view(source).substr(0,std::wstring_view(L"OUTLOUD_TEST_123").size())); one.pNext = &speech;
@@ -195,6 +203,15 @@ void bookmark_checks(ISpTTSEngine* engine,const WAVEFORMATEX* wave) {
     Site uninterested(Mode::normal,true); uninterested.event_interest = SPFEI_FLAGCHECK;
     speak(engine,wave,chain.data(),uninterested); same_audio(uninterested);
     check(uninterested.bookmarks.empty() && uninterested.interest_queries==1,"Reserved bits mistaken for bookmark interest");
+    for (const auto mask : {ULONGLONG{0},ULONGLONG{SPFEI(SPEI_TTS_BOOKMARK)}}) {
+        Site status(Mode::normal,true); status.event_interest = mask; status.interest_result = S_FALSE;
+        speak(engine,wave,chain.data(),status); same_audio(status);
+        check(status.interest_queries==1 && status.bookmarks.size()==(mask ? names.size() : 0),
+              "Successful HRESULT status suppressed speech or misread event interest");
+    }
+    Site zero_interest(Mode::normal,true); zero_interest.event_interest = 0;
+    speak(engine,wave,chain.data(),zero_interest); same_audio(zero_interest);
+    check(zero_interest.bookmarks.empty() && zero_interest.interest_queries==1,"Zero interest suppressed speech or emitted events");
 
     Site entry(Mode::normal,false); entry.entry_abort = true;
     speak(engine,wave,chain.data(),entry);
@@ -218,8 +235,16 @@ void bookmark_checks(ISpTTSEngine* engine,const WAVEFORMATEX* wave) {
     check(write_failed.bookmarks.size()==names.size() && !write_failed.bytes,"Bookmarked Write failure differed"); recovery();
 
     auto tail = bookmark(L"mid"); speech.pNext = &tail;
-    Site mid(Mode::normal,false); speak(engine,wave,chain.data(),mid,E_NOTIMPL);
-    check(mid.bookmarks.empty() && !mid.calls,"Non-leading bookmark was approximated or partially emitted"); speech.pNext = nullptr;
+    Site mid(Mode::normal,true); speak(engine,wave,chain.data(),mid); same_audio(mid);
+    check(mid.bookmarks.size()==names.size(),"Non-leading bookmark suppressed speech or acquired a false offset");
+    for (std::size_t i=0; i<names.size(); ++i) {
+        check(mid.bookmarks[i].name==names[i],"Non-leading metadata changed leading bookmark order");
+    }
+    Site trailing_only(Mode::normal,true); trailing_only.interest_result = E_ACCESSDENIED;
+    trailing_only.fail_event_after = 0;
+    speak(engine,wave,&speech,trailing_only); same_audio(trailing_only);
+    check(!trailing_only.interest_queries && trailing_only.bookmarks.empty(),"Trailing-only bookmark required events or suppressed speech");
+    speech.pNext = nullptr;
     auto malformed = bookmark(std::wstring_view(L"a\0b",3));
     Site invalid(Mode::normal,false); speak(engine,wave,&malformed,invalid,E_INVALIDARG);
     malformed.pTextStart = nullptr; speak(engine,wave,&malformed,invalid,E_POINTER);
@@ -230,6 +255,68 @@ void bookmark_checks(ISpTTSEngine* engine,const WAVEFORMATEX* wave) {
           "Bookmark-only request differed");
     recovery();
     std::cout << "PASS: leading bookmarks, exact/order/offset/ownership/interest, failures and cancellation recovery.\n";
+}
+void real_host_checks(IClassFactory* factory,const TestToken& configuration,std::span<const std::uint8_t> canonical) {
+    // Actual Windows parser/site/event queue; the in-memory token instantiates
+    // the DLL's factory. No Pocket token/CLSID is registered or looked up.
+    check(SUCCEEDED(CoInitializeEx(nullptr,COINIT_MULTITHREADED)),"Cannot initialize COM for real SAPI");
+    struct EndCOM { ~EndCOM() { CoUninitialize(); } } end_com;
+    Com<TestToken> token; token.p = new TestToken; token->values = configuration.values;
+    token->values[L"TestId"] = L"OutLoud_Check_InMemory";
+    token->values[L"Language"] = L"409"; token->factory = factory;
+    Com<ISpVoice> voice;
+    hr(CoCreateInstance(CLSID_SpVoice,nullptr,CLSCTX_INPROC_SERVER,__uuidof(ISpVoice),
+        reinterpret_cast<void**>(voice.put())),"Cannot create real SAPI voice");
+    Com<IStream> memory; hr(CreateStreamOnHGlobal(nullptr,TRUE,memory.put()),"Cannot create memory output");
+    Com<ISpStream> stream;
+    hr(CoCreateInstance(CLSID_SpStream,nullptr,CLSCTX_INPROC_SERVER,__uuidof(ISpStream),
+        reinterpret_cast<void**>(stream.put())),"Cannot create real SAPI stream");
+    auto format = outloud::sapi::native_format();
+    hr(stream->SetBaseStream(memory.p,SPDFID_WaveFormatEx,&format),"Cannot set real SAPI format");
+    hr(voice->SetOutput(stream.p,FALSE),"Cannot set real SAPI output");
+    hr(voice->SetVoice(token.p),"Cannot set in-memory real SAPI voice");
+    hr(voice->SetInterest(SPFEI(SPEI_TTS_BOOKMARK),SPFEI(SPEI_TTS_BOOKMARK)),"Cannot set bookmark interest");
+    std::uint64_t offset = 0;
+    const auto run = [&](const std::wstring& input,const std::vector<std::wstring>& names) {
+        hr(voice->Speak(input.c_str(),SPF_IS_XML,nullptr),"Real SAPI Speak failed");
+        STATSTG stat{}; hr(memory->Stat(&stat,STATFLAG_NONAME),"Cannot measure real SAPI output");
+        check(stat.cbSize.QuadPart>offset && stat.cbSize.QuadPart-offset<=652800,"Real SAPI wrote no/invalid PCM");
+        std::vector<std::uint8_t> pcm(static_cast<std::size_t>(stat.cbSize.QuadPart-offset));
+        LARGE_INTEGER position{}; position.QuadPart = static_cast<LONGLONG>(offset);
+        hr(memory->Seek(position,STREAM_SEEK_SET,nullptr),"Cannot seek real SAPI PCM");
+        ULONG read = 0; hr(memory->Read(pcm.data(),static_cast<ULONG>(pcm.size()),&read),"Cannot read real SAPI PCM");
+        check(read==pcm.size(),"Real SAPI PCM truncated");
+        std::vector<std::wstring> received;
+        for (;;) {
+            SPEVENT event{}; ULONG count = 0;
+            const auto result = voice->GetEvents(1,&event,&count);
+            struct Clear {
+                SPEVENT& event;
+                ~Clear() {
+                    if (event.elParamType==SPET_LPARAM_IS_STRING || event.elParamType==SPET_LPARAM_IS_POINTER) {
+                        CoTaskMemFree(reinterpret_cast<void*>(event.lParam));
+                    } else if (event.elParamType==SPET_LPARAM_IS_TOKEN || event.elParamType==SPET_LPARAM_IS_OBJECT) {
+                        if (event.lParam) { reinterpret_cast<IUnknown*>(event.lParam)->Release(); }
+                    }
+                }
+            } clear{event};
+            if (result==S_FALSE && !count) { break; }
+            hr(result,"Cannot fetch real SAPI event");
+            check(count==1 && event.eEventId==SPEI_TTS_BOOKMARK && event.elParamType==SPET_LPARAM_IS_STRING &&
+                  event.lParam && event.ullAudioStreamOffset==offset,"Real SAPI bookmark fields differ");
+            received.emplace_back(reinterpret_cast<const wchar_t*>(event.lParam));
+        }
+        check(received==names,"Real SAPI bookmark names/order differ");
+        offset = stat.cbSize.QuadPart; return pcm;
+    };
+    const auto plain = run(L"Hello traveler.",{});
+    check(run(L"Hello traveler.<bookmark mark=\"End\"/>",{})==plain,"Real SAPI trailing metadata changed PCM");
+    check(run(L"<bookmark mark=\"Start\"/><bookmark mark=\"OUTLOUD_TEST_123\"/>Hello traveler.<bookmark mark=\"End\"/>",
+              {L"Start",L"OUTLOUD_TEST_123"})==plain,"Real SAPI leading/trailing metadata changed PCM");
+    const auto full = run(std::wstring(text)+L"<bookmark mark=\"End\"/>",{});
+    check(full.size()==canonical.size() && std::equal(full.begin(),full.end(),canonical.begin()),
+          "Real SAPI canonical PCM differs from native PCM16");
+    std::cout << "PASS: real Windows SAPI parser/site/queued bookmarks, trailing metadata, exact canonical PCM.\n";
 }
 }
 int wmain(int argc,wchar_t** argv) {
@@ -295,6 +382,14 @@ int wmain(int argc,wchar_t** argv) {
             check(reference.gcount()==static_cast<std::streamsize>(pcm.size()*4) && reference.peek()==EOF,"Native reference shape differs");
             std::vector<std::int16_t> expected(pcm.size()); outloud::convert_pcm16(pcm,expected);
             check(std::memcmp(expected.data(),a.pcm.data(),652800)==0,"SAPI PCM16 differs from native listening conversion");
+            real_host_checks(factory.p,*token.p,a.pcm);
+            auto end_bookmark = bookmark(L"End"); third.pNext = &end_bookmark;
+            Site real_shape(Mode::normal,true); real_shape.event_interest = 0;
+            real_shape.interest_result = E_ACCESSDENIED; real_shape.fail_event_after = 0;
+            speak(engine.p,wave,&first,real_shape); validate(real_shape);
+            check(real_shape.pcm==a.pcm && real_shape.calls==170 && !real_shape.interest_queries,
+                  "Host trailing bookmark changed canonical PCM or required event methods");
+            third.pNext = nullptr;
             const auto residency = Residency::capture(argv[2],argv[4],true);
             const auto recover = [&] {
                 check(Residency::capture(argv[2],argv[4]).retains(residency),"Cancellation lost resident asset bases/worker IDs");
@@ -341,8 +436,8 @@ int wmain(int argc,wchar_t** argv) {
         FreeLibrary(module); module = nullptr;
         const auto directory = std::filesystem::absolute(argv[2]).parent_path().parent_path()/"perf";
         std::filesystem::create_directories(directory);
-        std::ofstream report(directory/(observation ? "2n-normal-observation.json" : benchmark ? "2m-sapi-benchmark.json" : "2o-sapi-check.json"));
-        report << std::setprecision(17) << "{\"registration_free\":true,\"no_registry_operations\":true,\"frames\":170,\"samples\":326400,\"audio_bytes\":652800,"
+        std::ofstream report(directory/(observation ? "2n-normal-observation.json" : benchmark ? "2m-sapi-benchmark.json" : "2o-bugfix-sapi-check.json"));
+        report << std::setprecision(17) << "{\"registration_free\":true,\"no_registry_mutations\":true,\"frames\":170,\"samples\":326400,\"audio_bytes\":652800,"
             "\"normal_write_calls\":170,\"partial_write_calls\":" << partial_calls << ",\"caller_thread_site\":true,\"module_unloadable\":true,\"warmups\":" << (benchmark || observation ? 1 : 0)
             << ",\"timed_repetitions\":" << (observation ? 1 : benchmark ? 3 : 0) << ",\"first_write_ms\":[";
         for (std::size_t i = 0; i < (benchmark ? 3u : 1u); ++i) { if (i) { report << ','; } report << first_times[i]; }
@@ -357,7 +452,8 @@ int wmain(int argc,wchar_t** argv) {
             report << "{\"case\":\"" << r.name << "\",\"bytes\":" << r.bytes << ",\"writes\":" << r.writes
                    << ",\"observations\":" << r.observations << ",\"abort_to_quiesce_ms\":" << r.latency << ",\"same_resident_recovery\":true}";
         }
-        report << "],\"leading_bookmark_checks\":" << (benchmark || observation ? "false" : "true") << "}\n"; check(bool(report),"Cannot write report");
+        report << "],\"leading_bookmark_checks\":" << (benchmark || observation ? "false" : "true")
+               << ",\"real_sapi_checks\":" << (benchmark || observation ? "false" : "true") << "}\n"; check(bool(report),"Cannot write report");
         std::cout << "PASS: registration-free SAPI, 170 frames / 652800 bytes, caller-thread streaming, COM/module release"
                   << (observation ? "; one warm-up plus one normal observation.\n" : benchmark ? "; one warm-up plus three timed Speak calls.\n" : "; exact native PCM16, abort/recovery cases, 5270 partial Writes.\n");
         return 0;

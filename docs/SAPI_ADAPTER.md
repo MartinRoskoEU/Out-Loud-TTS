@@ -95,8 +95,9 @@ per-fragment synthesis/reseed. Null data with nonzero length returns E_POINTER;
 a cycle returns E_INVALIDARG. Section and ParseUnknownTag metadata are ignored
 without speaking their contents. Step 2O forwards leading Bookmark fragments
 as ordered SPEI_TTS_BOOKMARK string events at byte offset zero when requested
-by the site; names never enter synthesis. Non-leading bookmarks return
-E_NOTIMPL before events/audio begin. Zero-length silence is ignored.
+by the site; names never enter synthesis. The Step 2O compatibility fix ignores
+unsupported non-leading bookmarks as metadata so they cannot suppress speech;
+no approximate mid-speech event offsets are emitted. Zero-length silence is ignored.
 Pronounce, SpellOut, nonzero silence and other unsupported actions return
 E_NOTIMPL before audio begins. Other events/SSML/prosody transforms are not
 implemented. Fragment pitch/emphasis/rate/volume state does not alter synthesis;

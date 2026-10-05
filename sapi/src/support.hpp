@@ -41,9 +41,10 @@ inline SpeechRequest collect_request(const SPVTEXTFRAG* fragments) {
             if (f->ulTextLen && !f->pTextStart) { throw Failure{E_POINTER}; }
             if (f->ulTextLen) { text.append(f->pTextStart,f->ulTextLen); }
         } else if (f->State.eAction == SPVA_Bookmark) {
-            // No text-to-audio alignment exists for bookmarks after spoken text.
-            // Validate the whole request before emitting any events or audio.
-            if (!text.empty()) { throw Failure{E_NOTIMPL}; }
+            // Unsupported non-leading bookmarks remain metadata, as before
+            // Step 2O. Rejecting the whole request here suppresses valid speech
+            // when a host appends a bookmark. Do not invent an audio offset.
+            if (!text.empty()) { continue; }
             if (f->ulTextLen && !f->pTextStart) { throw Failure{E_POINTER}; }
             std::wstring name;
             if (f->ulTextLen) { name.assign(f->pTextStart,f->ulTextLen); }

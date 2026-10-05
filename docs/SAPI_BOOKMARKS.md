@@ -56,9 +56,10 @@ in `CSpEvent::CopyTo` and corresponding cleanup in `SpClearEvent`.
 
 All fragments are validated before event/audio output. Null nonempty names
 return `E_POINTER`; embedded NULs return `E_INVALIDARG`, since a NUL-terminated
-event cannot preserve them. Bookmarks after nonempty spoken text return
-`E_NOTIMPL` for the entire request, before any output. Correct mid-speech offsets
-require text/audio alignment and are intentionally unsupported.
+event cannot preserve them. Bookmarks after nonempty spoken text are ignored as
+unsupported metadata: their names are neither spoken nor emitted at an invented
+offset, and the speech continues. Correct mid-speech offsets require text/audio
+alignment and remain intentionally unsupported.
 
 Site calls remain on the Speak caller thread. Existing action polling runs
 before each event and after event forwarding. An observed abort suppresses later
@@ -71,13 +72,73 @@ Existing native cancellation and partial Writes are unchanged.
 The existing registration-free checker tests plain text, the exact
 `OUTLOUD_TEST_123` / `Hello traveler.` request, multiple ordered/duplicate/Unicode
 names, numeric wParam, copied lifetime after Speak, offset zero before Write,
-event interest, bookmark-only requests, rejected non-leading/malformed names,
+event interest, bookmark-only requests, ignored non-leading/rejected malformed names,
 event/query/Write errors, entry/event/partial-Write aborts and same-engine
 recovery. Canonical synthesis and all existing cancellation checks remain.
 No new CTest or performance test is added. Results are recorded in
 `generated/perf/2o-sapi-check.json` (ignored).
 
-Release x64 DLL/checker and the full Release build passed. The registration-free
+## Zero-PCM compatibility bugfix
+
+Step 2O's whole-request `E_NOTIMPL` for a non-leading bookmark was a regression
+from the previous metadata policy. Through real Windows `ISpVoice`,
+`<bookmark mark="Start"/>Hello traveler.<bookmark mark="End"/>` returned
+`0x80004001` and added zero PCM bytes with the preserved Step 2O DLL. The fix
+skips unsupported non-leading bookmarks and retains every spoken fragment and
+leading event. No model, format, scheduling, event mask or cancellation change
+is involved. This implements an additive bookmark subset; arbitrary mid-speech
+event timing is still unsupported.
+
+SAPI XML may contain bookmark fragments anywhere in the chain; their action is
+metadata, not a directive to reject speech. See
+[SPVACTIONS](https://learn.microsoft.com/en-us/previous-versions/windows/desktop/ms717279(v=vs.85)).
+The old fake host missed this because its plain/canonical chains had only
+speech fragments, and its non-leading case explicitly expected whole-request
+failure. That expectation is replaced with stronger byte-for-byte PCM and
+leading-event assertions. The checker now additionally uses real Windows SAPI
+parsing/site/queued-event delivery, an in-memory token, and an in-memory PCM
+stream, without registering Pocket or opening its registered token.
+
+`GetEventInterest` has separate HRESULT and mask outputs. Absence of the bookmark
+bit is normal, including zero and reserved-only masks. Plain speech never calls
+either event method, even if those methods would fail. `FAILED(hr)` remains the
+event error check; success statuses such as `S_FALSE` are not errors under
+[COM HRESULT rules](https://learn.microsoft.com/en-us/windows/win32/learnwin32/error-handling-in-com).
+`S_FALSE` coverage is defensive, not a claim that Windows SAPI's interest method
+was observed returning it. The real site returned `S_OK` with
+`0x000000024000ffff`; event interest was not the reproduced cause. Genuine
+interest/event failures still propagate, and existing failure tests remain.
+
+Bare plain text and leading-only requests already produced PCM with both the
+original workspace DLL and preserved signed Step 2O DLL in isolated real-SAPI
+tests (direct factory and normal COM activation via a private manifest). No
+automatic trailing bookmark is assumed: the original WoW/PowerShell input chain
+was not captured. The reproduced placement regression is fixed, but attributing
+the original unwrapped-plain-text silence to it requires live confirmation.
+The diagnostic Gnome playback heard during this investigation came from the
+preserved Step 2O DLL through Windows SAPI, not from a deployment change.
+Bugfix checker evidence is recorded separately in
+`generated/perf/2o-bugfix-sapi-check.json` (ignored).
+
+Normal COM activation via private, registration-free manifests also verified
+the same XML request against the preserved deployment binaries and the fixed
+workspace DLL, using the registered token read-only and unchanged deployed assets:
+
+| DLL | HRESULT | PCM bytes added for Start / Hello traveler. / End |
+| --- | --- | ---: |
+| Preserved pre-Step-2O | `S_OK` | 72960 |
+| Preserved Step 2O | `E_NOTIMPL` | 0 |
+| Fixed workspace | `S_OK` | 72960 |
+
+Logs are `generated/perf/2o-bugfix-{pre2o,before,after}-activation.txt`
+(ignored). No deployment binary or registered value was replaced.
+The final full Release x64 build and checker passed, including real-SAPI
+canonical equality, all original abort/recovery cases and retained leading
+bookmarks. All 12 existing CTests passed (28.87 seconds) and
+`git diff --check` passed. DLL and checker PE import lists are unchanged from
+Step 2O; no new runtime dependency is introduced. No production logging remains.
+
+Original Step 2O Release x64 DLL/checker and the full Release build passed. The registration-free
 checker passed all bookmark and existing abort/recovery checks, with exact
 canonical PCM16: 170 frames, 326400 samples, 652800 bytes and 5270 partial Writes.
 All 12 existing CTests passed (27.40 seconds); `git diff --check` passed.
