@@ -260,3 +260,14 @@ if(EXISTS "${OUTLOUD_ORCHESTRATION_DIRECTORY}/orchestration_reference.hpp")
     target_compile_definitions(outloud-utterance-check PRIVATE OUTLOUD_UTTERANCE_CHECK=1 OUTLOUD_WORKER_AUDIT=1
         OUTLOUD_ASSET_DIRECTORY=L"${OUTLOUD_ASSET_DIRECTORY}" OUTLOUD_TOKENIZER_ASSET=L"${OUTLOUD_TOKENIZER_ASSET}")
 endif()
+
+# Thin SAPI adapter; all native project libraries remain statically linked.
+add_library(OutLoudPocketSAPI SHARED sapi/src/adapter.cpp sapi/src/OutLoudPocketSAPI.def)
+target_link_libraries(OutLoudPocketSAPI PRIVATE outloud_orchestration ole32 sapi uuid)
+target_compile_definitions(OutLoudPocketSAPI PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+target_compile_options(OutLoudPocketSAPI PRIVATE /W4 /WX /utf-8 /permissive- /fp:precise)
+add_executable(outloud-sapi-check sapi/tests/host.cpp)
+target_include_directories(outloud-sapi-check PRIVATE sapi/src engine/include)
+target_link_libraries(outloud-sapi-check PRIVATE ole32 sapi uuid)
+target_compile_definitions(outloud-sapi-check PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+target_compile_options(outloud-sapi-check PRIVATE /W4 /WX /utf-8 /permissive- /fp:precise)

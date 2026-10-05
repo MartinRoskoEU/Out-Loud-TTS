@@ -1,0 +1,4 @@
+LIBRARY OutLoudPocketSAPI
+EXPORTS
+    DllGetClassObject PRIVATE
+    DllCanUnloadNow PRIVATE
