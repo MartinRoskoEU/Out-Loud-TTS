@@ -1,5 +1,9 @@
 # Step 2M: Windows SAPI adapter and manual deployment
 
+**Current runtime:** Step 2N adds cooperative native/SAPI cancellation; see
+[SAPI_CANCELLATION.md](SAPI_CANCELLATION.md). Step 2M timings below remain
+historical; current deployment also ships `msvcp140_atomic_wait.dll`.
+
 Step 2L was committed as `fde997e` (Implement native full-text streaming
 orchestration), with a clean tree before Step 2M began. This step adds a thin
 Windows x64 COM boundary over `UtterancePipeline`; it changes no neural kernels,
@@ -202,6 +206,7 @@ OutLoud-Pocket-<version>/
   bin/OutLoudPocketSAPI.dll
   bin/outloud-sapi-check.exe
   bin/msvcp140.dll
+  bin/msvcp140_atomic_wait.dll
   bin/vcruntime140.dll
   bin/vcruntime140_1.dll
   runtime/pocket-english.olp
@@ -209,31 +214,36 @@ OutLoud-Pocket-<version>/
   voices/gnome_male.olv
   scripts/*.ps1
   docs/SAPI_ADAPTER.md
+  docs/SAPI_CANCELLATION.md
   RNG_NOTICES.md
   deployment-inventory.json
   deployment.json
 ```
 
 **VERIFIED Release dependency closure:** dumpbin /exports /dependents /headers
-was run on the adapter and /dependents on the checker and all three shipped
+was run on the adapter and /dependents on the checker and all four shipped
 Microsoft runtime images. `sapi.lib`/`uuid.lib` supply SDK symbols; there is no
 sapi.dll import in the adapter. Its direct imports are:
 
 - ole32.dll, bcrypt.dll, KERNEL32.dll (Windows, not shipped).
-- MSVCP140.dll, VCRUNTIME140.dll, VCRUNTIME140_1.dll (VC runtime, shipped app-local).
+- MSVCP140.dll, MSVCP140_ATOMIC_WAIT.dll, VCRUNTIME140.dll, VCRUNTIME140_1.dll
+  (VC runtime, shipped app-local). The atomic-wait image is added in Step 2N by
+  MSVC's stop-token callback synchronization, verified from actual Release imports.
 - api-ms-win-crt-runtime/heap/math/string/stdio/filesystem/locale-l1-1-0.dll
   (Windows UCRT API sets, not shipped).
 
 The VC runtime closure adds only Windows UCRT time/environment/convert/utility
 API sets and the already listed VC images/KERNEL32. Windows 10/11 supplies UCRT
 and OS transitive dependencies; no OS/driver DLLs or VC installer is copied.
+The atomic-wait image additionally imports ADVAPI32.dll and
+api-ms-win-core-synch-l1-2-0.dll (Windows, not shipped).
 Local System32 VC images were inspected as x64 with valid Microsoft signatures;
-copy-only staging uses the same three sources as Chatterbox, and checks them
+copy-only staging extends Chatterbox's three VC sources with this required image, and checks them
 again. Redistribution rights/licensing remain those of Microsoft's runtime.
 No third-party neural DLL ships. All outloud_* model, text, RNG, CPU,
 generation, Mimi, worker, orchestration and asset libraries are static/internal.
 
-`sapi/deployment-inventory.json` explicitly lists ALL five shipped PE images.
+`sapi/deployment-inventory.json` explicitly lists ALL six shipped PE images.
 The checker is included as a development diagnostic EXE; final consumer pack
 selection is later work. All other packaged assets/scripts/docs are non-PE
 and checked by SHA256, not Authenticode. The generated deployment manifest
@@ -244,6 +254,7 @@ records every copied file, source hash and current deployed hash.
 | OutLoudPocketSAPI.dll | Project Authenticode signature required before registration |
 | outloud-sapi-check.exe | Project Authenticode signature required before registration |
 | msvcp140.dll | Preserve/verify existing valid Microsoft signature |
+| msvcp140_atomic_wait.dll | Preserve/verify existing valid Microsoft signature |
 | vcruntime140.dll | Preserve/verify existing valid Microsoft signature |
 | vcruntime140_1.dll | Preserve/verify existing valid Microsoft signature |
 
@@ -284,7 +295,7 @@ $bundle = 'C:\OutLoud\OutLoud-Pocket-development-01'  # editable install destina
     -CertificateThumbprint '<YOUR EXISTING CERTIFICATE THUMBPRINT>'
 # Optional: -CertificateStoreLocation LocalMachine -SignToolPath <SDK tool> -TimestampUrl <RFC3161 URL>
 & "$bundle\scripts\verify-deployment.ps1" -DeploymentRoot $bundle -RequireSignatures
-# Complete Step 2N cancellation first, then use an elevated x64 shell with WoW closed:
+# After reviewing/committing Step 2N, use an elevated x64 shell with WoW closed:
 & "$bundle\scripts\register.ps1" -DeploymentRoot $bundle
 # Later manual removal, with WoW closed:
 & "$bundle\scripts\unregister.ps1" -ReportDirectory 'C:\OutLoud\reports\unregister-01'
@@ -392,31 +403,28 @@ buffer. Report: `generated/perf/2m-sapi-benchmark.json`. Step 2L's separate host
 observation was first PCM median 92.2589 ms and total median 3860.1418 ms;
 these different sessions do not establish a speedup/regression. No mean is used.
 
-## Cancellation boundary and Step 2N
+## Current cancellation behavior (Step 2N)
 
-**NATIVE STOP SPEAKING / CANCELLATION IS NOT IMPLEMENTED IN STEP 2M.**
+GetActions is polled on the Speak caller thread at entry, while waiting for the
+request gate and for PCM (10 ms timed condition-variable waits), immediately
+before every Write/partial retry, after each full frame before sink acknowledgement,
+and on completion. SPVES_ABORT requests a
+request-scoped native stop source once. Both workers and orchestration cooperate,
+queue/delivery waits wake, and the coordinator joins before Speak returns S_OK,
+matching Chatterbox's requested-abort result. Real Write errors remain distinct;
+SP_AUDIO_STOPPED is still returned exactly rather than assumed to be an abort.
 
-**Verified SDK:** GetActions returns SPVES_ABORT=1, SPVES_SKIP=2, SPVES_RATE=4,
-SPVES_VOLUME=8 flags. GetSkipInfo/CompleteSkip, GetRate and GetVolume provide
-associated control data. **Verified Chatterbox:** polls on request entry,
-during generation waits (10 ms), and before output writes; abort requests its
-native stop source; rate/volume are observed without waveform transformation,
-skip reports CompleteSkip(0). These are reference facts, not implemented
-Pocket cancellation behavior.
+Skip is acknowledged with CompleteSkip(0); rate/volume are queried without
+waveform transformation. Lazy resident construction and native text preparation
+now run on the joined coordinator, permitting caller-thread action polling while
+they execute. The consumer still converts one PCM16 frame; the caller alone
+writes it. No new neural worker or full PCM buffer is introduced.
 
-Step 2M does not poll GetActions or add native stop tokens. Write failure/
-SP_AUDIO_STOPPED invokes the existing error recovery; this does not implement
-SAPI StopSpeaking. A host abort alone can therefore wait for the request to
-finish if Write continues accepting audio. No reliable WoW StopSpeaking claim
-is made.
-
-Step 2N should poll on the Speak caller thread at entry, timed rendezvous waits,
-and before/between partial Writes; connect abort to coordinated native
-orchestration/FlowLM/Mimi cancellation and queue wakeups, safely join/quiesce
-jobs, and test abort before first PCM/during frames/at segment boundaries plus
-same-resident recovery. Define skip completion and rate/volume policy separately.
-Then the USER manually signs, verifies, registers, tests Windows SAPI and tests
-WoW `C_VoiceChat.SpeakText`/StopSpeaking. Stop after Step 2M here.
+The current operation/Write cannot be forcibly interrupted; cancellation takes
+effect at safe boundaries. See [SAPI_CANCELLATION.md](SAPI_CANCELLATION.md) for
+ownership, wake-up graph, deterministic checks, latency and memory. Windows SAPI
+playback and WoW SpeakText/StopSpeaking remain MANUAL, after signing/verification/
+registration. No live WoW integration claim is made from the fake host alone.
 
 ## Actions and repository state
 

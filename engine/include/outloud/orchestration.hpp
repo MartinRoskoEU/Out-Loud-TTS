@@ -15,6 +15,7 @@ struct SegmentResult {
     double wall_ms = 0; // segment prepare/reset plus worker run
 };
 struct UtteranceResult {
+    SynthesisStatus status = SynthesisStatus::completed;
     std::vector<SegmentResult> segments;
     std::uint64_t draws = 0, candidates = 0, frames = 0, samples = 0;
     double text_preparation_ms = 0, first_pcm_ms = 0, total_ms = 0;
@@ -42,7 +43,8 @@ public:
     // No PCM buffer is owned or required. Sink/context must survive this call.
     // Optional observer is development-only, called on the producer per draw.
     [[nodiscard]] UtteranceResult run(UtterancePCMSink sink, void* context = nullptr,
-                                     const GenerationObserver* observer = nullptr);
+                                     const GenerationObserver* observer = nullptr,
+                                     std::stop_token cancellation = {});
     [[nodiscard]] const TextPipelineResult& text() const;
     [[nodiscard]] OrchestrationStorage storage() const;
 private:

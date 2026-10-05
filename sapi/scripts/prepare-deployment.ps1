@@ -23,6 +23,7 @@ $sources = [ordered]@{
     'bin/OutLoudPocketSAPI.dll' = (Join-Path $BuildDirectory 'OutLoudPocketSAPI.dll')
     'bin/outloud-sapi-check.exe' = (Join-Path $BuildDirectory 'outloud-sapi-check.exe')
     'bin/msvcp140.dll' = (Join-Path $env:SystemRoot 'System32/msvcp140.dll')
+    'bin/msvcp140_atomic_wait.dll' = (Join-Path $env:SystemRoot 'System32/msvcp140_atomic_wait.dll')
     'bin/vcruntime140.dll' = (Join-Path $env:SystemRoot 'System32/vcruntime140.dll')
     'bin/vcruntime140_1.dll' = (Join-Path $env:SystemRoot 'System32/vcruntime140_1.dll')
     'runtime/pocket-english.olp' = (Source-Path $ModelPath)
@@ -30,6 +31,7 @@ $sources = [ordered]@{
     'voices/gnome_male.olv' = (Source-Path $VoicePath)
     'deployment-inventory.json' = (Join-Path $ProjectRoot 'sapi/deployment-inventory.json')
     'docs/SAPI_ADAPTER.md' = (Join-Path $ProjectRoot 'docs/SAPI_ADAPTER.md')
+    'docs/SAPI_CANCELLATION.md' = (Join-Path $ProjectRoot 'docs/SAPI_CANCELLATION.md')
     'RNG_NOTICES.md' = (Join-Path $ProjectRoot 'RNG_NOTICES.md')
 }
 foreach ($name in @('deployment-common.ps1', 'prepare-deployment.ps1', 'sign-deployment.ps1', 'verify-deployment.ps1',

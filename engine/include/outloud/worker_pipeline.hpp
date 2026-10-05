@@ -1,6 +1,7 @@
 #pragma once
 #include "outloud/generation.hpp"
 #include "outloud/mimi.hpp"
+#include "outloud/cancellation.hpp"
 #include <memory>
 #include <ostream>
 
@@ -10,6 +11,7 @@ namespace outloud {
 // Callback/context must outlive run().
 using PCMFrameSink = void (*)(void*, std::uint32_t, std::span<const float>);
 struct WorkerResult {
+    SynthesisStatus status = SynthesisStatus::completed;
     std::uint32_t candidates = 0, emitted = 0, draws = 0, samples = 0;
     std::uint32_t flow_offset = 0, mimi_offset = 0;
     std::optional<std::uint32_t> first_eos;
@@ -38,7 +40,9 @@ public:
     void prepare(std::span<const std::uint32_t> tokens, std::uint64_t seed, std::span<float> destination,
                  const GenerationOptions& options = {}, PCMFrameSink sink = nullptr, void* context = nullptr,
                  const GenerationObserver* observer = nullptr);
-    [[nodiscard]] WorkerResult run(); // joins request completion, not OS threads
+    // Only stop-source request_stop() may run concurrently with the coordinator.
+    // On cancellation both resident workers quiesce; a fresh prepare permits reuse.
+    [[nodiscard]] WorkerResult run(std::stop_token cancellation = {});
     // Completed state views are valid until the next prepare; diagnostic use only.
     [[nodiscard]] const FlowLMPrefillState& flow_state() const;
     [[nodiscard]] const MimiDecoderState& mimi_state() const;

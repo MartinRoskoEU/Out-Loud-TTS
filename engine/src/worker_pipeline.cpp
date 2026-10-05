@@ -1,6 +1,7 @@
 #include "outloud/worker_pipeline.hpp"
 #include "outloud/production_noise.hpp"
 #include "worker_audit.hpp"
+#include "cancellation_audit.hpp"
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -56,6 +57,7 @@ struct WorkerPipeline::Impl {
     void* sink_context = nullptr;
     const GenerationObserver* observer = nullptr;
     WorkerResult result;
+    std::stop_token cancellation;
     Clock::time_point start;
     std::uint64_t producer_allocations = 0, consumer_allocations = 0;
 #ifdef OUTLOUD_WORKER_TRACE
@@ -128,11 +130,15 @@ struct WorkerPipeline::Impl {
         }
     }
     void produce() {
+        OUTLOUD_CANCEL_POINT(before_prefill,true);
+        if (cancellation.stop_requested()) { return; }
         GenerationStopPolicy policy(options);
         TRACE(prefill_begin = now());
         const auto before = flow.offset();
         {
             const auto prefill = backbone.prefill(tokens, flow);
+            OUTLOUD_CANCEL_POINT(after_prefill,true);
+            if (cancellation.stop_requested()) { return; }
             const auto row = noise->next(); ++result.draws;
             const auto sample = sampler.sample(prefill.last_hidden(), row); // deliberately discarded
             if (observer && *observer) { (*observer)({GenerationInput::text, 0, before, flow.offset(), {},
@@ -145,6 +151,7 @@ struct WorkerPipeline::Impl {
 #endif
         std::array<float, 32> previous{};
         for (std::uint32_t i = 0; i < options.max_gen_len; ++i) {
+            if (cancellation.stop_requested()) { break; }
             TRACE(candidates[i].begin = now());
             const auto offset = flow.offset();
             const auto row = noise->next(); ++result.draws;
@@ -152,6 +159,8 @@ struct WorkerPipeline::Impl {
             else { sampler.frame_candidate_into(backbone, flow, previous, row, candidate); }
             TRACE(candidates[i].end = now());
             ++result.candidates;
+            OUTLOUD_CANCEL_POINT(candidate_complete,true);
+            if (cancellation.stop_requested()) { break; }
             const bool emit = policy.emit(i, candidate.backbone.eos_logit);
             result.first_eos = policy.first_eos();
             if (observer && *observer) { (*observer)({i == 0 ? GenerationInput::bos : GenerationInput::previous_normalized_latent,
@@ -163,9 +172,10 @@ struct WorkerPipeline::Impl {
             TRACE(candidates[i].ready = now());
             std::unique_lock lock(mutex);
             TRACE(const double wait_begin = now(); const bool blocked = size == queue.size());
-            changed.wait(lock, [this] { return size < queue.size() || stopping || failure; });
+            if (size == queue.size()) { OUTLOUD_CANCEL_POINT(full_queue,false); }
+            changed.wait(lock, [this] { return size < queue.size() || stopping || failure || cancellation.stop_requested(); });
             TRACE(if (blocked) { candidates[i].wait = now() - wait_begin; });
-            if (stopping || failure) { return; }
+            if (stopping || failure || cancellation.stop_requested()) { return; }
             queue[(head + size) % queue.size()] = previous;
             ++size; ++result.emitted;
             TRACE(candidates[i].pushed = now(); occupancy[events++] = {now(), size});
@@ -181,15 +191,20 @@ struct WorkerPipeline::Impl {
             std::array<float, 32> latent;
             std::unique_lock lock(mutex);
             TRACE(const double wait_begin = now(); const bool blocked = size == 0 && !producer_done);
-            changed.wait(lock, [this] { return size || producer_done || stopping || failure; });
+            if (!size && !producer_done) { OUTLOUD_CANCEL_POINT(empty_queue,false); }
+            changed.wait(lock, [this] { return size || producer_done || stopping || failure || cancellation.stop_requested(); });
             // The terminal wait uses its own scalar, because i can equal maximum_frames.
             TRACE(const double waited = blocked ? now() - wait_begin : 0);
-            if (stopping || failure || (!size && producer_done)) { TRACE(terminal_wait = waited); break; }
+            if (stopping || failure || cancellation.stop_requested() || (!size && producer_done)) { TRACE(terminal_wait = waited); break; }
             latent = queue[head]; head = (head + 1) % queue.size(); --size;
             TRACE(occupancy[events++] = {now(), size}; frames[i].wait = waited; frames[i].popped = now());
             lock.unlock(); changed.notify_one();
+            OUTLOUD_CANCEL_POINT(before_decode,true);
+            if (cancellation.stop_requested()) { break; }
             TRACE(frames[i].begin = now());
             const auto pcm = mimi.decode_frame(latent, decoder);
+            OUTLOUD_CANCEL_POINT(pcm_ready,true);
+            if (cancellation.stop_requested()) { break; }
             TRACE(frames[i].end = now());
             std::span<const float> output = pcm;
             if (!destination.empty()) {
@@ -201,6 +216,7 @@ struct WorkerPipeline::Impl {
             if (i == 0) { result.first_pcm_ms = elapsed(start, available); }
             TRACE(frames[i].pcm = elapsed(start, available));
             result.samples += 1920;
+            if (cancellation.stop_requested()) { break; }
             if (sink) { sink(sink_context, i, output); }
         }
         result.mimi_offset = decoder.offset();
@@ -246,10 +262,18 @@ void WorkerPipeline::prepare(std::span<const std::uint32_t> tokens, NoiseSource&
     p.finished.wait(lock, [&] { return p.completed == 2; });
     if (p.failure) { p.prepared = false; std::rethrow_exception(p.failure); }
 }
-WorkerResult WorkerPipeline::run() {
+WorkerResult WorkerPipeline::run(std::stop_token cancellation) {
     auto& p = *impl_;
     if (!p.prepared || p.running) { throw std::logic_error("Worker request not prepared/already running"); }
+    // Register before locking: an already-stopped token invokes this callback
+    // synchronously. Taking the wait mutex prevents a lost wake-up between a
+    // waiter's predicate test and sleep. The callback never touches neural state.
+    std::stop_callback wake(cancellation, [&p] {
+        { std::lock_guard lock(p.mutex); }
+        p.changed.notify_all();
+    });
     std::unique_lock lock(p.mutex);
+    p.cancellation = cancellation;
     p.running = true; p.prepared = false;
     p.reset_job = false; p.completed = 0;
     p.start = Clock::now(); ++p.epoch;
@@ -257,10 +281,15 @@ WorkerResult WorkerPipeline::run() {
     p.finished.wait(lock, [&] { return p.completed == 2; });
     const auto end = Clock::now();
     p.running = false;
+    p.cancellation = {};
     if (p.failure) { std::rethrow_exception(p.failure); }
     p.result.total_ms = elapsed(p.start, end);
     p.result.hot_allocations = p.producer_allocations + p.consumer_allocations;
     lock.unlock();
+    if (cancellation.stop_requested()) {
+        p.result.status = SynthesisStatus::cancelled;
+        return p.result; // partial fixture consumption is not a successful EOF
+    }
     p.noise->finish_segment(); // fixture EOF check outside request compute timing
     p.valid_result = true;
     return p.result;

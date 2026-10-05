@@ -8,11 +8,35 @@
 #ifdef OUTLOUD_UTTERANCE_CHECK
 #include "orchestration_reference.hpp"
 #include "worker_audit.hpp"
+#include "cancellation_audit.hpp"
+#include <condition_variable>
+#include <mutex>
+#include <thread>
 #include <cstdlib>
 #include <new>
 namespace outloud::development {
 thread_local bool audit = false;
 thread_local std::uint64_t allocations = 0;
+struct CancellationProbe {
+    CancellationPoint target;
+    std::mutex mutex;
+    std::condition_variable changed;
+    bool hit = false, released = false, done = false;
+    explicit CancellationProbe(CancellationPoint point) : target(point) {}
+    void point(CancellationPoint value,bool may_block) {
+        std::unique_lock lock(mutex);
+        if (value!=target || hit) { return; }
+        hit = true; changed.notify_all();
+        if (may_block) { changed.wait(lock,[&] { return released; }); }
+    }
+    void hold_sink() {
+        std::unique_lock lock(mutex); changed.wait(lock,[&] { return released; });
+    }
+};
+std::atomic<CancellationProbe*> cancellation_probe{nullptr};
+void cancellation_point(CancellationPoint point,bool may_block) {
+    if (auto probe = cancellation_probe.load()) { probe->point(point,may_block); }
+}
 }
 void* operator new(std::size_t n) {
     if (void* p = std::malloc(n ? n : 1)) {
@@ -81,6 +105,63 @@ struct Sink {
     }
 };
 #ifdef OUTLOUD_UTTERANCE_CHECK
+void cancellation_checks(UtterancePipeline& pipeline,std::span<const float> reference,const std::filesystem::path& directory) {
+    using namespace outloud::development;
+    std::vector<float> pcm(reference.size());
+    const auto recover = [&] {
+        pipeline.prepare(canonical,73); Sink sink; sink.pcm = pcm;
+        const auto result = pipeline.run(Sink::frame,&sink); validate(result);
+        require(result.status==SynthesisStatus::completed && std::memcmp(pcm.data(),reference.data(),pcm.size()*4)==0,
+                "Native cancellation recovery changed PCM");
+    };
+    std::stop_source early; require(early.request_stop() && !early.request_stop(),"Stop is not idempotent");
+    pipeline.prepare(canonical,73); Sink no_audio;
+    const auto before = pipeline.run(Sink::frame,&no_audio,nullptr,early.get_token());
+    require(before.status==SynthesisStatus::cancelled && before.draws==0 && before.frames==0 && before.segments.empty(),"Precancelled request computed audio");
+    recover();
+    const std::array<const char*,8> names{"before_prefill","after_prefill","candidate_complete","full_queue","empty_queue","before_decode","pcm_ready","segment_boundary"};
+    std::ofstream report(directory/"2n-native-cancellation.json"); report << "{\"pre_cancelled\":true,\"cases\":[";
+    for (unsigned i = 0; i < names.size(); ++i) {
+        const auto point = static_cast<CancellationPoint>(i);
+        CancellationProbe probe(point); std::stop_source source;
+        struct Output {
+            Sink sink; CancellationProbe* probe;
+            static void frame(void* context,std::uint64_t global,std::size_t segment,std::uint32_t local,std::span<const float> pcm) {
+                auto& o = *static_cast<Output*>(context); Sink::frame(&o.sink,global,segment,local,pcm);
+                if (!global && o.probe->target==CancellationPoint::full_queue) { o.probe->hold_sink(); }
+            }
+        } output{{},&probe};
+        pipeline.prepare(canonical,73); cancellation_probe = &probe;
+        UtteranceResult result; std::exception_ptr failure;
+        std::thread coordinator([&] {
+            try { result = pipeline.run(Output::frame,&output,nullptr,source.get_token()); } catch (...) { failure = std::current_exception(); }
+            { std::lock_guard lock(probe.mutex); probe.done = true; } probe.changed.notify_all();
+        });
+        bool reached = false;
+        {
+            std::unique_lock lock(probe.mutex);
+            probe.changed.wait_for(lock,std::chrono::seconds(10),[&] { return probe.hit || probe.done; });
+            reached = probe.hit;
+        }
+        const bool first_stop = source.request_stop(), second_stop = source.request_stop();
+        { std::lock_guard lock(probe.mutex); probe.released = true; } probe.changed.notify_all();
+        coordinator.join(); cancellation_probe = nullptr;
+        if (failure) { std::rethrow_exception(failure); }
+        require(reached && first_stop && !second_stop && result.status==SynthesisStatus::cancelled,"Native cancellation point failed");
+        if (point==CancellationPoint::segment_boundary) { require(result.segments.size()==1 && result.draws==48 && result.frames==46,"Next segment started after cancellation"); }
+        else { require(result.segments.size()==1 && result.segments[0].worker.status==SynthesisStatus::cancelled,"Worker cancellation was reported as completion"); }
+        if (point==CancellationPoint::before_prefill || point==CancellationPoint::before_decode || point==CancellationPoint::pcm_ready) {
+            require(output.sink.frames==0,"Cancelled frame was published");
+        }
+        recover();
+        if (i) { report << ','; }
+        report << "{\"point\":\"" << names[i] << "\",\"cancelled\":true,\"recovered_exact_pcm\":true}";
+        std::cout << "PASS native cancellation: " << names[i] << "; exact same-pipeline recovery\n";
+    }
+    const auto storage = pipeline.storage();
+    report << "],\"orchestration_object_bytes\":" << storage.object_bytes << ",\"worker_inline_bytes\":" << storage.worker_inline_bytes << "}\n";
+    require(bool(report),"Cannot write native cancellation report");
+}
 void correctness(UtterancePipeline& pipeline, const std::filesystem::path& directory, const char* path) {
     using namespace outloud::test;
     require(canonical == full_text, "Canonical text changed");
@@ -165,6 +246,7 @@ void correctness(UtterancePipeline& pipeline, const std::filesystem::path& direc
         raw.write(reinterpret_cast<const char*>(pcm.data()),std::streamsize(pcm.size()*4)); require(bool(raw),"Cannot write native development PCM");
     }
     std::cout << "PASS: full tokens/splits, continuous RNG, EOS/counts, immediate streaming, A/B bit equality and sink error recovery; SHA " << hash << '\n';
+    cancellation_checks(pipeline,first,directory);
 }
 #endif
 }

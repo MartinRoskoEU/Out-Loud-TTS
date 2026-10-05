@@ -1,9 +1,12 @@
 #include "identity.hpp"
 #include "support.hpp"
 #include "token.hpp"
+#include "residency.hpp"
 #include "outloud/pcm16.hpp"
+#include "outloud/cancellation.hpp"
 #include <array>
 #include <chrono>
+#include <condition_variable>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -41,13 +44,28 @@ public:
     ULONG STDMETHODCALLTYPE Release() override { const auto n = --refs; if (!n) { delete this; } return n; }
     HRESULT STDMETHODCALLTYPE AddEvents(const SPEVENT*,ULONG) override { return S_OK; }
     HRESULT STDMETHODCALLTYPE GetEventInterest(ULONGLONG* out) override { if (!out) { return E_POINTER; } *out = 0; return S_OK; }
-    DWORD STDMETHODCALLTYPE GetActions() override { ++actions; return 0; }
-    HRESULT STDMETHODCALLTYPE GetRate(long* out) override { if (!out) { return E_POINTER; } *out = 0; return S_OK; }
-    HRESULT STDMETHODCALLTYPE GetVolume(USHORT* out) override { if (!out) { return E_POINTER; } *out = 100; return S_OK; }
-    HRESULT STDMETHODCALLTYPE GetSkipInfo(SPVSKIPTYPE*,long*) override { return E_NOTIMPL; }
-    HRESULT STDMETHODCALLTYPE CompleteSkip(long) override { return S_OK; }
+    void affinity() { if (GetCurrentThreadId()!=caller) { wrong_thread = true; } }
+    DWORD STDMETHODCALLTYPE GetActions() override {
+        affinity(); ++actions;
+        DWORD flags = 0;
+        if (controls && !controls_reported) { flags = SPVES_SKIP|SPVES_RATE|SPVES_VOLUME; controls_reported = true; }
+        const bool byte_abort = bytes>=abort_bytes && (!late_abort || ++end_polls>=2);
+        if (entry_abort || byte_abort || (timed_abort && Clock::now()-begun>=std::chrono::milliseconds(20))) {
+            if (!abort_observable) {
+                abort_observable = true;
+                observable = timed_abort ? begun+std::chrono::milliseconds(20) : begun;
+            }
+            ++abort_observations; flags |= SPVES_ABORT;
+        }
+        return flags;
+    }
+    HRESULT STDMETHODCALLTYPE GetRate(long* out) override { affinity(); ++rates; if (!out) { return E_POINTER; } *out = 2; return S_OK; }
+    HRESULT STDMETHODCALLTYPE GetVolume(USHORT* out) override { affinity(); ++volumes; if (!out) { return E_POINTER; } *out = 50; return S_OK; }
+    HRESULT STDMETHODCALLTYPE GetSkipInfo(SPVSKIPTYPE* type,long* count) override { affinity(); ++skips; *type = SPVST_SENTENCE; *count = 1; return S_OK; }
+    HRESULT STDMETHODCALLTYPE CompleteSkip(long count) override { affinity(); ++skip_completions; return count==0 ? S_OK : E_UNEXPECTED; }
     HRESULT STDMETHODCALLTYPE Write(const void* data,ULONG count,ULONG* written) override {
-        if (GetCurrentThreadId()!=caller) { wrong_thread = true; }
+        affinity();
+        if (abort_observations) { write_after_abort = true; }
         if (!calls) { first_ms = std::chrono::duration<double,std::milli>(Clock::now()-begun).count(); }
         ++calls;
         if (mode==Mode::failed) { return E_ACCESSDENIED; }
@@ -62,6 +80,7 @@ public:
                 std::copy(input,input+*written,pcm.begin()+static_cast<std::size_t>(bytes));
             }
             bytes += *written; remaining -= *written;
+            if (!abort_observable && bytes>=abort_bytes) { abort_observable = true; observable = Clock::now(); }
         }
         return S_OK;
     }
@@ -71,6 +90,14 @@ public:
     ULONG calls = 0, frames = 0, remaining = 0, actions = 0;
     DWORD caller = GetCurrentThreadId();
     bool wrong_thread = false;
+    bool entry_abort = false, timed_abort = false, abort_observable = false, write_after_abort = false;
+    bool controls = false, controls_reported = false;
+    bool late_abort = false;
+    ULONG end_polls = 0;
+    std::uint64_t abort_bytes = UINT64_MAX;
+    ULONG abort_observations = 0, rates = 0, volumes = 0, skips = 0, skip_completions = 0;
+    Clock::time_point observable;
+    double abort_latency_ms = 0;
     Clock::time_point begun;
     double first_ms = 0, total_ms = 0;
 private:
@@ -82,12 +109,14 @@ double speak(ISpTTSEngine* engine,const WAVEFORMATEX* wave,SPVTEXTFRAG* fragment
     const auto end = Clock::now();
     check(result==expected,"Speak HRESULT differs");
     check(!site.wrong_thread,"Site called from a different thread");
-    site.total_ms = std::chrono::duration<double,std::milli>(end-start).count(); return site.total_ms;
+    site.total_ms = std::chrono::duration<double,std::milli>(end-start).count();
+    if (site.abort_observable) { site.abort_latency_ms = std::chrono::duration<double,std::milli>(end-site.observable).count(); }
+    return site.total_ms;
 }
 void validate(const Site& site) {
     check(site.frames==170 && site.bytes==652800 && !site.remaining && site.first_ms<site.total_ms,
           "Canonical samples/frames/immediate streaming differ");
-    check(!site.actions,"Unexpected cancellation integration");
+    check(site.actions>0,"SAPI actions not polled");
 }
 void text_checks() {
     auto f = fragment(L"caf\u00e9 \U0001f600");
@@ -102,9 +131,10 @@ void text_checks() {
 int wmain(int argc,wchar_t** argv) {
     HMODULE module = nullptr; WAVEFORMATEX* wave = nullptr;
     try {
-        check(argc==6 || argc==7,"Usage: outloud-sapi-check DLL model.olp tokenizer.bin voice.olv native-reference.f32 [bench]");
+        check(argc==6 || argc==7,"Usage: outloud-sapi-check DLL model.olp tokenizer.bin voice.olv native-reference.f32 [bench|observe]");
         const bool benchmark = argc==7 && std::wstring_view(argv[6])==L"bench";
-        check(argc==6 || benchmark,"Unknown mode");
+        const bool observation = argc==7 && std::wstring_view(argv[6])==L"observe";
+        check(argc==6 || benchmark || observation,"Unknown mode");
         text_checks();
         const auto path = std::filesystem::absolute(argv[1]);
         module = LoadLibraryExW(path.c_str(),nullptr,LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR|LOAD_LIBRARY_SEARCH_SYSTEM32);
@@ -138,9 +168,11 @@ int wmain(int argc,wchar_t** argv) {
         first.pNext = &second; second.pNext = &third;
         std::uint64_t partial_calls = 0;
         std::array<double,3> first_times{}, totals{};
-        if (benchmark) {
+        struct AbortResult { const char* name; std::uint64_t bytes; ULONG writes, observations; double latency; };
+        std::vector<AbortResult> abort_results;
+        if (benchmark || observation) {
             Site warm(Mode::normal,false); speak(engine.p,wave,&first,warm); validate(warm);
-            for (std::size_t i = 0; i < 3; ++i) {
+            for (std::size_t i = 0; i < (observation ? 1u : 3u); ++i) {
                 Site site(Mode::normal,false); speak(engine.p,wave,&first,site); validate(site);
                 check(site.calls==170,"Normal Write count differs"); first_times[i] = site.first_ms; totals[i] = site.total_ms;
             }
@@ -158,6 +190,35 @@ int wmain(int argc,wchar_t** argv) {
             check(reference.gcount()==static_cast<std::streamsize>(pcm.size()*4) && reference.peek()==EOF,"Native reference shape differs");
             std::vector<std::int16_t> expected(pcm.size()); outloud::convert_pcm16(pcm,expected);
             check(std::memcmp(expected.data(),a.pcm.data(),652800)==0,"SAPI PCM16 differs from native listening conversion");
+            const auto residency = Residency::capture(argv[2],argv[4],true);
+            const auto recover = [&] {
+                check(Residency::capture(argv[2],argv[4]).retains(residency),"Cancellation lost resident asset bases/worker IDs");
+                Site recovered(Mode::normal,true); speak(engine.p,wave,&first,recovered); validate(recovered);
+                check(recovered.pcm==a.pcm,"Cancellation recovery PCM differs");
+                check(Residency::capture(argv[2],argv[4]).retains(residency),"Recovery lost resident asset bases/worker IDs");
+            };
+            struct AbortCase { const char* name; std::uint64_t bytes; bool entry, timed, partial; };
+            for (const auto c : std::array<AbortCase,10>{{
+                {"entry",0,true,false,false}, {"first_pcm_wait",0,false,true,false},
+                {"first_frame",3840,false,false,false}, {"segment1",38400,false,false,false},
+                {"before_segment_boundary",45*3840,false,false,false}, {"segment_boundary",46*3840,false,false,false},
+                {"segment2",70*3840,false,false,false}, {"near_eos",169*3840,false,false,false},
+                {"natural_end",170*3840,false,false,false}, {"partial_write",126,false,false,true}
+            }}) {
+                Site aborted(c.partial ? Mode::partial : Mode::normal,false);
+                aborted.entry_abort = c.entry; aborted.timed_abort = c.timed;
+                aborted.late_abort = c.bytes==652800;
+                if (!c.entry && !c.timed) { aborted.abort_bytes = c.bytes; }
+                speak(engine.p,wave,&first,aborted);
+                check(aborted.abort_observations>0 && !aborted.write_after_abort && aborted.bytes==c.bytes,"Abort delivery boundary differs");
+                if (c.bytes==3840) { check(aborted.abort_observations>=2,"Repeated abort observation not exercised"); }
+                abort_results.push_back({c.name,aborted.bytes,aborted.calls,aborted.abort_observations,aborted.abort_latency_ms});
+                std::cout << "Abort " << c.name << ": " << aborted.bytes << " bytes, quiesced in " << aborted.abort_latency_ms << " ms\n";
+                recover();
+            }
+            Site controls(Mode::normal,true); controls.controls = true; speak(engine.p,wave,&first,controls); validate(controls);
+            check(controls.rates==1 && controls.volumes==1 && controls.skips==1 && controls.skip_completions==1 && controls.pcm==a.pcm,
+                  "Skip/rate/volume policy differs");
             auto unsupported = fragment(L"Text"); unsupported.State.eAction = SPVA_Pronounce;
             Site unused(Mode::normal,false); speak(engine.p,wave,&unsupported,unused,E_NOTIMPL); check(!unused.calls,"Unsupported fragment produced audio");
             std::wstring invalid(1,wchar_t(0xd800)); auto malformed = fragment(invalid);
@@ -175,16 +236,25 @@ int wmain(int argc,wchar_t** argv) {
         FreeLibrary(module); module = nullptr;
         const auto directory = std::filesystem::absolute(argv[2]).parent_path().parent_path()/"perf";
         std::filesystem::create_directories(directory);
-        std::ofstream report(directory/(benchmark ? "2m-sapi-benchmark.json" : "2m-sapi-check.json"));
+        std::ofstream report(directory/(observation ? "2n-normal-observation.json" : benchmark ? "2m-sapi-benchmark.json" : "2n-sapi-check.json"));
         report << std::setprecision(17) << "{\"registration_free\":true,\"no_registry_operations\":true,\"frames\":170,\"samples\":326400,\"audio_bytes\":652800,"
-            "\"normal_write_calls\":170,\"partial_write_calls\":" << partial_calls << ",\"caller_thread_site\":true,\"module_unloadable\":true,\"warmups\":" << (benchmark ? 1 : 0)
-            << ",\"timed_repetitions\":" << (benchmark ? 3 : 0) << ",\"first_write_ms\":[";
+            "\"normal_write_calls\":170,\"partial_write_calls\":" << partial_calls << ",\"caller_thread_site\":true,\"module_unloadable\":true,\"warmups\":" << (benchmark || observation ? 1 : 0)
+            << ",\"timed_repetitions\":" << (observation ? 1 : benchmark ? 3 : 0) << ",\"first_write_ms\":[";
         for (std::size_t i = 0; i < (benchmark ? 3u : 1u); ++i) { if (i) { report << ','; } report << first_times[i]; }
         report << "],\"total_speak_ms\":[";
         for (std::size_t i = 0; i < (benchmark ? 3u : 1u); ++i) { if (i) { report << ','; } report << totals[i]; }
+        report << "],\"stop_source_bytes\":" << sizeof(std::stop_source) << ",\"stop_token_bytes\":" << sizeof(std::stop_token)
+               << ",\"msvc_shared_stop_state_bytes\":" << sizeof(std::_Stop_state)
+               << ",\"stop_callback_bytes\":" << sizeof(std::stop_callback<void(*)()>)
+               << ",\"engine_gate_cv_bytes\":" << sizeof(std::condition_variable) << ",\"aborts\":[";
+        for (std::size_t i = 0; i < abort_results.size(); ++i) {
+            const auto& r = abort_results[i]; if (i) { report << ','; }
+            report << "{\"case\":\"" << r.name << "\",\"bytes\":" << r.bytes << ",\"writes\":" << r.writes
+                   << ",\"observations\":" << r.observations << ",\"abort_to_quiesce_ms\":" << r.latency << ",\"same_resident_recovery\":true}";
+        }
         report << "]}\n"; check(bool(report),"Cannot write report");
         std::cout << "PASS: registration-free SAPI, 170 frames / 652800 bytes, caller-thread streaming, COM/module release"
-                  << (benchmark ? "; one warm-up plus three timed Speak calls.\n" : "; exact native PCM16, A/B recovery, 5270 partial Writes.\n");
+                  << (observation ? "; one warm-up plus one normal observation.\n" : benchmark ? "; one warm-up plus three timed Speak calls.\n" : "; exact native PCM16, abort/recovery cases, 5270 partial Writes.\n");
         return 0;
     } catch (const std::exception& e) {
         if (wave) { CoTaskMemFree(wave); } if (module) { FreeLibrary(module); }

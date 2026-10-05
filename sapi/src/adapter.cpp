@@ -90,6 +90,21 @@ struct Resident {
         : model(c.model), voice(c.voice), tokenizer(c.tokenizer),
           pipeline(model,voice,tokenizer,c.tokens,FlowLMGenerator::estimate_max_gen_len(c.tokens),c.path) {}
 };
+struct RequestControl {
+    ISpTTSEngineSite* site;
+    std::stop_source cancellation;
+    bool aborted = false;
+    bool poll() {
+        const auto actions = site->GetActions(); // always Speak caller thread
+        if ((actions & SPVES_ABORT) && !aborted) { aborted = true; cancellation.request_stop(); }
+        // Chatterbox policy: consume controls without waveform transforms/seeking.
+        if (actions & SPVES_RATE) { long value = 0; (void)site->GetRate(&value); }
+        if (actions & SPVES_VOLUME) { USHORT value = 100; (void)site->GetVolume(&value); }
+        if (actions & SPVES_SKIP) { SPVSKIPTYPE type{}; long count = 0; (void)site->GetSkipInfo(&type,&count); (void)site->CompleteSkip(0); }
+        return aborted;
+    }
+};
+constexpr auto poll_interval = std::chrono::milliseconds(10);
 // Chatterbox's host checks require every site call on the Speak caller thread.
 // One joined coordinator runs the unchanged core; one-frame rendezvous retains
 // caller-thread delivery without COM proxies or extra neural/audio workers.
@@ -99,45 +114,74 @@ struct Delivery {
     std::array<std::int16_t,1920> pcm{};
     bool ready = false, done = false;
     HRESULT output_error = S_OK, native_error = S_OK;
+    SynthesisStatus native_status = SynthesisStatus::completed;
+    std::stop_token cancellation;
+    explicit Delivery(std::stop_token stop) : cancellation(stop) {}
     static void frame(void* context, std::uint64_t, std::size_t, std::uint32_t, std::span<const float> input) {
         auto& d = *static_cast<Delivery*>(context);
         std::unique_lock lock(d.mutex);
-        d.changed.wait(lock,[&] { return !d.ready || d.output_error!=S_OK; });
+        d.changed.wait(lock,[&] { return !d.ready || d.output_error!=S_OK || d.cancellation.stop_requested(); });
         if (d.output_error!=S_OK) { throw Failure{d.output_error}; }
+        if (d.cancellation.stop_requested()) { return; }
         convert_pcm16(input,d.pcm);
+        if (d.cancellation.stop_requested()) { return; }
         d.ready = true; d.changed.notify_one();
-        d.changed.wait(lock,[&] { return !d.ready || d.output_error!=S_OK; });
+        d.changed.wait(lock,[&] { return !d.ready || d.output_error!=S_OK || d.cancellation.stop_requested(); });
         if (d.output_error!=S_OK) { throw Failure{d.output_error}; }
     }
 };
-HRESULT write_frame(ISpTTSEngineSite* site, std::span<const std::int16_t> pcm) {
+HRESULT write_frame(RequestControl& control, std::span<const std::int16_t> pcm) {
     const auto* bytes = reinterpret_cast<const std::uint8_t*>(pcm.data());
     ULONG delivered = 0;
     const auto total = static_cast<ULONG>(pcm.size_bytes());
     while (delivered<total) {
+        if (control.poll()) { return S_OK; } // including every partial retry
         ULONG written = 0;
-        const auto hr = site->Write(bytes+delivered,total-delivered,&written);
+        const auto hr = control.site->Write(bytes+delivered,total-delivered,&written);
         if (FAILED(hr) || hr==SP_AUDIO_STOPPED) { return hr; }
         if (!written || written>total-delivered || written%2) { return E_UNEXPECTED; }
         delivered += written;
     }
+    // Observe a stop signalled by the last Write before acknowledging the sink;
+    // otherwise the coordinator could dispatch the next segment during our wait.
+    (void)control.poll();
     return S_OK;
 }
-HRESULT stream(Resident& resident, ISpTTSEngineSite* site) {
-    Delivery d;
+HRESULT stream(std::unique_ptr<Resident>& resident, const Configuration& configuration,
+        std::string_view text, RequestControl& control) {
+    Delivery d(control.cancellation.get_token());
+    std::stop_callback wake(d.cancellation,[&d] {
+        { std::lock_guard lock(d.mutex); }
+        d.changed.notify_all();
+    });
     std::thread coordinator([&] {
         HRESULT hr = S_OK;
-        try { (void)resident.pipeline.run(Delivery::frame,&d); }
+        SynthesisStatus status = SynthesisStatus::completed;
+        try {
+            if (!d.cancellation.stop_requested()) {
+                if (!resident) { resident = std::make_unique<Resident>(configuration); }
+                if (!d.cancellation.stop_requested()) {
+                    resident->pipeline.prepare(text,configuration.seed);
+                    if (!d.cancellation.stop_requested()) {
+                        status = resident->pipeline.run(Delivery::frame,&d,nullptr,d.cancellation).status;
+                    }
+                }
+            }
+        }
         catch (...) { hr = exception_code(); }
-        std::lock_guard lock(d.mutex); d.native_error = hr; d.done = true; d.changed.notify_one();
+        std::lock_guard lock(d.mutex); d.native_error = hr; d.native_status = status; d.done = true; d.changed.notify_one();
     });
     try {
         std::unique_lock lock(d.mutex);
         for (;;) {
-            d.changed.wait(lock,[&] { return d.ready || d.done; });
+            // Stop is deliberately not this predicate: after abort, wait for
+            // actual quiescence rather than repeatedly waking on a latched flag.
+            d.changed.wait_for(lock,poll_interval,[&] { return d.ready || d.done; });
+            lock.unlock(); control.poll(); lock.lock();
             if (d.done) { break; }
+            if (!d.ready) { continue; }
             lock.unlock();
-            const auto hr = write_frame(site,d.pcm);
+            const auto hr = control.aborted ? S_OK : write_frame(control,d.pcm);
             lock.lock(); d.ready = false;
             if (hr!=S_OK) { d.output_error = hr; }
             d.changed.notify_one();
@@ -145,10 +189,14 @@ HRESULT stream(Resident& resident, ISpTTSEngineSite* site) {
     } catch (...) {
         const auto hr = exception_code();
         { std::lock_guard lock(d.mutex); d.output_error = hr; d.ready = false; }
-        d.changed.notify_one(); coordinator.join(); return hr;
+        d.changed.notify_all(); control.cancellation.request_stop(); coordinator.join(); return hr;
     }
     coordinator.join();
-    return d.output_error!=S_OK ? d.output_error : d.native_error;
+    if (d.output_error!=S_OK) { return d.output_error; }
+    if (d.native_error!=S_OK) { return d.native_error; }
+    // Same distinction as Chatterbox: requested SAPI abort is normal S_OK;
+    // an unexpected internally cancelled generation would be E_ABORT.
+    return d.native_status==SynthesisStatus::cancelled && !control.aborted ? E_ABORT : S_OK;
 }
 class Engine final : public ISpTTSEngine, public ISpObjectWithToken {
 public:
@@ -165,7 +213,8 @@ public:
         if (!token) { return E_POINTER; }
         try {
             auto c = read_configuration(token);
-            std::lock_guard lock(serial_);
+            std::unique_lock lock(serial_);
+            available_.wait(lock,[&] { return !active_; });
             if (!token_ || !c.same_runtime(configuration_)) { resident_.reset(); }
             token->AddRef(); if (token_) { token_->Release(); } token_ = token;
             configuration_ = std::move(c); return S_OK;
@@ -188,20 +237,35 @@ public:
         if (format!=SPDFID_WaveFormatEx || !valid_format(wave)) { return SPERR_UNSUPPORTED_FORMAT; }
         AddRef(); struct Keep { Engine* value; ~Keep() { value->Release(); } } keep{this};
         try {
-            std::lock_guard lock(serial_);
+            RequestControl control{site};
+            if (control.poll()) { return S_OK; }
+            std::unique_lock lock(serial_);
+            while (active_) {
+                available_.wait_for(lock,poll_interval,[&] { return !active_; });
+                lock.unlock(); const bool aborted = control.poll(); lock.lock();
+                if (aborted) { return S_OK; }
+            }
+            active_ = true; lock.unlock();
+            struct EndRequest {
+                Engine* engine;
+                ~EndRequest() {
+                    { std::lock_guard guard(engine->serial_); engine->active_ = false; }
+                    engine->available_.notify_all();
+                }
+            } end{this};
             if (!token_) { return SPERR_UNINITIALIZED; }
             const auto text = collect_text(fragments);
             if (text.empty()) { return S_OK; }
-            if (!resident_) { resident_ = std::make_unique<Resident>(configuration_); }
-            resident_->pipeline.prepare(text,configuration_.seed);
-            // GetActions/native cancellation integration is deliberately Step 2N.
-            return stream(*resident_,site);
+            if (control.poll()) { return S_OK; }
+            return stream(resident_,configuration_,text,control);
         } catch (...) { return exception_code(); }
     }
 private:
     ~Engine() { resident_.reset(); if (token_) { token_->Release(); } --objects; }
     std::atomic<ULONG> references_{1};
     std::mutex serial_;
+    std::condition_variable available_;
+    bool active_ = false;
     ISpObjectToken* token_ = nullptr;
     Configuration configuration_;
     std::unique_ptr<Resident> resident_;
