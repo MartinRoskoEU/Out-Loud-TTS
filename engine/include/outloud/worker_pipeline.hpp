@@ -5,8 +5,9 @@
 #include <ostream>
 
 namespace outloud {
-// Invoked on the consumer immediately after copying one frame to the destination.
-// The destination view remains valid; callback/context must outlive run().
+// Invoked on the consumer as soon as one frame is available. With a destination,
+// the copied view remains valid; sink-only views expire when the callback returns.
+// Callback/context must outlive run().
 using PCMFrameSink = void (*)(void*, std::uint32_t, std::span<const float>);
 struct WorkerResult {
     std::uint32_t candidates = 0, emitted = 0, draws = 0, samples = 0;
@@ -28,6 +29,7 @@ public:
     WorkerPipeline& operator=(const WorkerPipeline&) = delete;
     // Reset while workers are idle, before the measured dispatch/prefill boundary.
     // Borrowed inputs and destination must remain valid until run returns.
+    // An empty destination selects sink-only streaming and requires a sink.
     void prepare(std::span<const std::uint32_t> tokens, NoiseSource& noise, std::span<float> destination,
                  const GenerationOptions& options = {}, PCMFrameSink sink = nullptr, void* context = nullptr,
                  const GenerationObserver* observer = nullptr);

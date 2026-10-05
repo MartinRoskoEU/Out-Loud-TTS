@@ -191,8 +191,12 @@ struct WorkerPipeline::Impl {
             TRACE(frames[i].begin = now());
             const auto pcm = mimi.decode_frame(latent, decoder);
             TRACE(frames[i].end = now());
-            auto output = destination.subspan(std::size_t(i) * 1920, 1920);
-            std::copy(pcm.begin(), pcm.end(), output.begin());
+            std::span<const float> output = pcm;
+            if (!destination.empty()) {
+                const auto stored = destination.subspan(std::size_t(i) * 1920, 1920);
+                std::copy(pcm.begin(), pcm.end(), stored.begin());
+                output = stored;
+            }
             const auto available = Clock::now();
             if (i == 0) { result.first_pcm_ms = elapsed(start, available); }
             TRACE(frames[i].pcm = elapsed(start, available));
@@ -221,7 +225,7 @@ void WorkerPipeline::prepare(std::span<const std::uint32_t> tokens, NoiseSource&
     auto& p = *impl_;
     const auto maximum = options.max_gen_len ? options.max_gen_len : FlowLMGenerator::estimate_max_gen_len(tokens.size());
     if (p.running || tokens.empty() || tokens.size() > p.maximum_tokens || !maximum || maximum > p.maximum_frames ||
-        destination.size() < std::size_t(maximum) * 1920 || !std::isfinite(options.eos_threshold) ||
+        (destination.empty() ? !sink : destination.size() < std::size_t(maximum) * 1920) || !std::isfinite(options.eos_threshold) ||
         !std::all_of(tokens.begin(), tokens.end(), [](auto t) { return t < 4001; })) {
         throw std::invalid_argument("Invalid worker request/capacity");
     }

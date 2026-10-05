@@ -239,3 +239,24 @@ target_include_directories(outloud-rng-synth PRIVATE engine/src)
 target_compile_options(outloud-rng-synth PRIVATE /W4 /WX /utf-8 /permissive- /fp:precise)
 target_compile_definitions(outloud-rng-synth PRIVATE OUTLOUD_WORKER_AUDIT=1
     OUTLOUD_ASSET_DIRECTORY=L"${OUTLOUD_ASSET_DIRECTORY}" OUTLOUD_TOKENIZER_ASSET=L"${OUTLOUD_TOKENIZER_ASSET}")
+
+add_library(outloud_orchestration STATIC engine/src/orchestration.cpp)
+target_link_libraries(outloud_orchestration PUBLIC outloud_workers outloud_text)
+target_compile_options(outloud_orchestration PRIVATE /W4 /WX /utf-8 /permissive- /fp:precise)
+add_executable(outloud-utterance-synth tools/utterance-check/main.cpp)
+target_link_libraries(outloud-utterance-synth PRIVATE outloud_orchestration outloud_asset_io)
+target_include_directories(outloud-utterance-synth PRIVATE engine/src)
+target_compile_options(outloud-utterance-synth PRIVATE /W4 /WX /utf-8 /permissive- /fp:precise)
+target_compile_definitions(outloud-utterance-synth PRIVATE
+    OUTLOUD_ASSET_DIRECTORY=L"${OUTLOUD_ASSET_DIRECTORY}" OUTLOUD_TOKENIZER_ASSET=L"${OUTLOUD_TOKENIZER_ASSET}")
+
+set(OUTLOUD_ORCHESTRATION_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/generated/orchestration" CACHE PATH "Development-only utterance reference")
+if(EXISTS "${OUTLOUD_ORCHESTRATION_DIRECTORY}/orchestration_reference.hpp")
+    add_executable(outloud-utterance-check tools/utterance-check/main.cpp
+        engine/src/orchestration.cpp engine/src/worker_pipeline.cpp)
+    target_link_libraries(outloud-utterance-check PRIVATE outloud_noise outloud_mimi outloud_text outloud_asset_io)
+    target_include_directories(outloud-utterance-check PRIVATE engine/src "${OUTLOUD_ORCHESTRATION_DIRECTORY}")
+    target_compile_options(outloud-utterance-check PRIVATE /W4 /WX /utf-8 /permissive- /fp:precise)
+    target_compile_definitions(outloud-utterance-check PRIVATE OUTLOUD_UTTERANCE_CHECK=1 OUTLOUD_WORKER_AUDIT=1
+        OUTLOUD_ASSET_DIRECTORY=L"${OUTLOUD_ASSET_DIRECTORY}" OUTLOUD_TOKENIZER_ASSET=L"${OUTLOUD_TOKENIZER_ASSET}")
+endif()
