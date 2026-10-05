@@ -1,3 +1,4 @@
+#include "outloud/perf_diagnostics.hpp"
 #include "outloud/cpu/kernels.hpp"
 
 #include <cmath>
@@ -29,10 +30,12 @@ Moments moments(std::span<const float> input, bool sample) {
 }
 } // namespace
 void silu(std::span<float> values) {
+    OUTLOUD_PERF_SCOPE(::outloud::perf::Stage::silu);
     for (auto& x : values) { x = x / (1.0f + std::exp(-x)); }
 }
 void sampler_layer_norm(std::span<const float> input, std::span<const std::uint16_t> scale,
                         std::span<const std::uint16_t> bias, std::span<float> output) {
+    OUTLOUD_PERF_SCOPE(::outloud::perf::Stage::normalization);
     require(input.size() == 512 && output.size() == 512 &&
             ((scale.empty() && bias.empty()) || (scale.size() == 512 && bias.size() == 512)),
             "Sampler LayerNorm dimensions mismatch");
@@ -46,6 +49,7 @@ void sampler_layer_norm(std::span<const float> input, std::span<const std::uint1
 }
 void sample_variance_norm(std::span<const float> input, std::span<const std::uint16_t> alpha,
                           std::span<float> output) {
+    OUTLOUD_PERF_SCOPE(::outloud::perf::Stage::normalization);
     require(input.size() == 512 && output.size() == 512 && alpha.size() == 512,
             "Sample-variance norm dimensions mismatch");
     const auto stats = moments(input, true);
@@ -55,6 +59,7 @@ void sample_variance_norm(std::span<const float> input, std::span<const std::uin
     }
 }
 void time_features(float time, std::span<const std::uint16_t> stored_frequencies, std::span<float> output) {
+    OUTLOUD_PERF_SCOPE(::outloud::perf::Stage::time_features);
     require(std::isfinite(time) && stored_frequencies.size() == 128 && output.size() == 256,
             "Time feature dimensions/value mismatch");
     for (std::size_t i = 0; i < 128; ++i) {

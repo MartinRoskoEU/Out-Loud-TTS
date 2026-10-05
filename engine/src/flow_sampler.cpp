@@ -1,3 +1,4 @@
+#include "outloud/perf_diagnostics.hpp"
 #include "outloud/flow_sampler.hpp"
 
 #include <algorithm>
@@ -24,6 +25,7 @@ static_assert(sizeof(Scratch) == FlowSampler::activation_scratch_bytes());
 FlowSampler::FlowSampler(PocketModelAsset model, cpu::KernelPath path) : model_(std::move(model)), kernels_(path) {}
 FlowSample FlowSampler::sample(std::span<const float> hidden, std::span<const float> supplied_noise,
                                const SamplerObserver& observer) {
+    OUTLOUD_PERF_DOMAIN(sampler); OUTLOUD_PERF_SCOPE(::outloud::perf::Stage::sampler);
     finite_input(hidden, 1024); finite_input(supplied_noise, 32);
     observe(observer, "input.hidden", hidden); observe(observer, "input.noise", supplied_noise);
     Scratch work;
@@ -53,7 +55,7 @@ FlowSample FlowSampler::sample(std::span<const float> hidden, std::span<const fl
         emit("normalized", output);
     };
     time_embedding(0, work.s); time_embedding(1, work.t);
-    for (std::size_t i = 0; i < 512; ++i) { work.y[i] = work.y[i] + (work.s[i] + work.t[i]) / 2.0f; }
+    OUTLOUD_PERF_CALL(::outloud::perf::Stage::modulation, for (std::size_t i = 0; i < 512; ++i) { work.y[i] = work.y[i] + (work.s[i] + work.t[i]) / 2.0f; });
     observe(observer, "condition.combined", work.y);
     static_assert(static_cast<std::uint32_t>(PocketTensorId::flow_lm_flow_net_res_blocks_0_adaLN_modulation_1_bias) == 12);
     static_assert(static_cast<std::uint32_t>(PocketTensorId::flow_lm_flow_net_res_blocks_5_mlp_2_weight) == 59);
@@ -72,12 +74,12 @@ FlowSample FlowSampler::sample(std::span<const float> hidden, std::span<const fl
         emit("shift", shift); emit("scale", scale); emit("gate", gate);
         cpu::sampler_layer_norm(work.x, tensor(base + 3).bf16_values, tensor(base + 2).bf16_values, work.norm);
         emit("norm", work.norm);
-        for (std::size_t i = 0; i < 512; ++i) { work.h[i] = work.norm[i] * (1.0f + scale[i]) + shift[i]; }
+        OUTLOUD_PERF_CALL(::outloud::perf::Stage::modulation, for (std::size_t i = 0; i < 512; ++i) { work.h[i] = work.norm[i] * (1.0f + scale[i]) + shift[i]; });
         emit("modulated", work.h);
         linear(work.h, base + 5, base + 4, work.norm); emit("linear1", work.norm);
         cpu::silu(work.norm); emit("silu", work.norm);
         linear(work.norm, base + 7, base + 6, work.update); emit("linear2", work.update);
-        for (std::size_t i = 0; i < 512; ++i) { work.update[i] = gate[i] * work.update[i]; }
+        OUTLOUD_PERF_CALL(::outloud::perf::Stage::modulation, for (std::size_t i = 0; i < 512; ++i) { work.update[i] = gate[i] * work.update[i]; });
         emit("gated_update", work.update);
         cpu::residual_add(work.x, work.update); emit("output", work.x);
     }
@@ -88,7 +90,7 @@ FlowSample FlowSampler::sample(std::span<const float> hidden, std::span<const fl
     const auto shift = final_parameters.first(512), scale = final_parameters.last(512);
     observe(observer, "final.shift", shift); observe(observer, "final.scale", scale);
     cpu::sampler_layer_norm(work.x, {}, {}, work.norm); observe(observer, "final.norm", work.norm);
-    for (std::size_t i = 0; i < 512; ++i) { work.h[i] = work.norm[i] * (1.0f + scale[i]) + shift[i]; }
+    OUTLOUD_PERF_CALL(::outloud::perf::Stage::modulation, for (std::size_t i = 0; i < 512; ++i) { work.h[i] = work.norm[i] * (1.0f + scale[i]) + shift[i]; });
     observe(observer, "final.modulated", work.h);
     FlowSample result;
     linear(work.h, 9, 8, result.velocity); observe(observer, "velocity", result.velocity);
@@ -120,6 +122,7 @@ void FlowSampler::frame_candidate_into(FlowLMBackbone& backbone, FlowLMPrefillSt
 }
 void FlowSampler::candidate_into(FlowLMBackbone& backbone, FlowLMPrefillState& state, std::span<const float> input,
         std::span<const float> supplied_noise, DeterministicCandidate& result, const SamplerObserver& observer) {
+    OUTLOUD_PERF_DOMAIN(flowlm);
     finite_input(supplied_noise, 32); // reject before mutating backbone state
     std::array<float, 32> bos;
     std::array<float, 1024> projected;

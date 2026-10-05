@@ -175,3 +175,23 @@ if(BUILD_TESTING)
     add_test(NAME canonical-mimi-decoder COMMAND outloud-mimi-check)
     add_test(NAME mimi-regressions COMMAND outloud-mimi-tests "${OUTLOUD_ASSET_DIRECTORY}" "${OUTLOUD_NEURAL_DIRECTORY}")
 endif()
+
+# Development tools only: ordinary engine targets contain no diagnostic timers.
+add_executable(outloud-perf tools/perf-check/main.cpp)
+target_link_libraries(outloud-perf PRIVATE outloud_mimi outloud_generation outloud_text outloud_asset_io)
+add_executable(outloud-perf-profile tools/perf-check/main.cpp
+    engine/src/assets.cpp engine/src/cpu/kernels.cpp engine/src/cpu/sampler_kernels.cpp
+    engine/src/flowlm.cpp engine/src/flow_sampler.cpp engine/src/generation.cpp
+    engine/src/mimi.cpp engine/src/cpu/mimi_kernels.cpp)
+target_link_libraries(outloud-perf-profile PRIVATE outloud_text outloud_asset_io)
+target_compile_definitions(outloud-perf-profile PRIVATE OUTLOUD_PERF_DIAGNOSTICS=1)
+if(OUTLOUD_ENABLE_AVX2)
+    target_compile_definitions(outloud-perf-profile PRIVATE OUTLOUD_HAS_AVX2=1)
+    target_link_libraries(outloud-perf-profile PRIVATE outloud_cpu_avx2)
+endif()
+foreach(target IN ITEMS outloud-perf outloud-perf-profile)
+    target_include_directories(${target} PRIVATE engine/include tests engine/src "${OUTLOUD_NEURAL_DIRECTORY}")
+    target_compile_options(${target} PRIVATE /W4 /WX /utf-8 /permissive- /fp:precise)
+    target_compile_definitions(${target} PRIVATE OUTLOUD_NEURAL_DIRECTORY=L"${OUTLOUD_NEURAL_DIRECTORY}"
+        OUTLOUD_ASSET_DIRECTORY=L"${OUTLOUD_ASSET_DIRECTORY}")
+endforeach()

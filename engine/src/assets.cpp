@@ -1,3 +1,4 @@
+#include "outloud/perf_diagnostics.hpp"
 #include "outloud/assets.hpp"
 #include "asset_io.hpp"
 
@@ -41,6 +42,7 @@ void integrity(Bytes bytes, std::uint64_t payload_offset, std::uint64_t payload_
 } // namespace
 
 void widen_bf16(std::span<const std::uint16_t> input, std::span<float> output) {
+    OUTLOUD_PERF_SCOPE(::outloud::perf::Stage::widening);
     static_assert(sizeof(float) == 4 && std::numeric_limits<float>::is_iec559);
     if (input.size() != output.size()) { throw std::invalid_argument("BF16 widening size mismatch"); }
     for (std::size_t i = 0; i < input.size(); ++i) { output[i] = bf16_to_float32(input[i]); }

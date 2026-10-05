@@ -1,3 +1,4 @@
+#include "outloud/perf_diagnostics.hpp"
 #include "outloud/flowlm.hpp"
 
 #include <algorithm>
@@ -63,6 +64,7 @@ ModelTensorView FlowLMBackbone::layer_weight(std::uint32_t layer, std::uint32_t 
     return model_.tensor(static_cast<PocketTensorId>(77 + layer * 8 + field));
 }
 std::vector<float> FlowLMBackbone::embed(std::span<const std::uint32_t> tokens) const {
+    OUTLOUD_PERF_DOMAIN(flowlm); OUTLOUD_PERF_SCOPE(::outloud::perf::Stage::embedding);
     require(!tokens.empty() && tokens.size() <= 4096, "Invalid prefill token count");
     const auto table = model_.tensor(PocketTensorId::flow_lm_conditioner_embed_weight);
     std::vector<float> result(tokens.size() * 1024);
@@ -74,6 +76,7 @@ std::vector<float> FlowLMBackbone::embed(std::span<const std::uint32_t> tokens) 
 }
 FlowLMResult FlowLMBackbone::prefill(std::span<const std::uint32_t> tokens, FlowLMPrefillState& state,
                                     const FlowLMObserver& observer) {
+    OUTLOUD_PERF_DOMAIN(flowlm); OUTLOUD_PERF_SCOPE(::outloud::perf::Stage::prefill);
     require(state.offset() == voice_.prefix_length(), "Text prefill requires fresh voice state");
     const auto embeddings = embed(tokens);
     observe(observer, "text.embedding", embeddings, {static_cast<std::uint32_t>(tokens.size()), 1024});
@@ -87,6 +90,7 @@ FlowLMResult FlowLMBackbone::backbone(std::span<const float> embeddings, FlowLMP
 }
 void FlowLMBackbone::backbone_into(std::span<const float> embeddings, FlowLMPrefillState& state,
                                  FlowLMResult& result, const FlowLMObserver& observer) {
+    OUTLOUD_PERF_DOMAIN(flowlm); OUTLOUD_PERF_SCOPE(::outloud::perf::Stage::backbone);
     require(!embeddings.empty() && embeddings.size() % 1024 == 0, "Invalid backbone embedding dimensions");
     const auto tokens = embeddings.size() / 1024;
     const auto offset = state.offset();

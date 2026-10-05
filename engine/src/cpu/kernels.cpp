@@ -1,3 +1,4 @@
+#include "outloud/perf_diagnostics.hpp"
 #include "outloud/cpu/kernels.hpp"
 #include "dot.hpp"
 
@@ -82,6 +83,7 @@ float Kernels::dot(std::span<const float> a, std::span<const float> b) const {
 }
 void Kernels::linear(MatrixView input, ModelTensorView weight, MutableMatrixView output,
                      std::span<const std::uint16_t> bias) {
+    OUTLOUD_PERF_SCOPE(::outloud::perf::linear_stage(static_cast<std::uint32_t>(weight.id)));
     matrix(input.data.size(), input.rows, input.columns);
     matrix(output.data.size(), output.rows, output.columns);
     require(weight.dtype == AssetDtype::bf16 && weight.dimensions.size() == 2 &&
@@ -102,6 +104,7 @@ void Kernels::linear(MatrixView input, ModelTensorView weight, MutableMatrixView
 
 void layer_norm(MatrixView input, std::span<const std::uint16_t> scale,
                 std::span<const std::uint16_t> bias, MutableMatrixView output) {
+    OUTLOUD_PERF_SCOPE(::outloud::perf::Stage::normalization);
     matrix(input.data.size(), input.rows, input.columns);
     matrix(output.data.size(), output.rows, output.columns);
     require(input.rows == output.rows && input.columns == output.columns &&
@@ -129,6 +132,7 @@ void layer_norm(MatrixView input, std::span<const std::uint16_t> scale,
     }
 }
 void gelu_tanh(std::span<float> values) {
+    OUTLOUD_PERF_SCOPE(::outloud::perf::Stage::gelu);
     constexpr float sqrt_two_over_pi = 0.7978845608028654f;
     for (auto& x : values) {
         const float cube = (x * x) * x;
@@ -136,10 +140,12 @@ void gelu_tanh(std::span<float> values) {
     }
 }
 void residual_add(std::span<float> destination, std::span<const float> update) {
+    OUTLOUD_PERF_SCOPE(::outloud::perf::Stage::residual);
     require(destination.size() == update.size(), "Residual dimension mismatch");
     for (std::size_t i = 0; i < destination.size(); ++i) { destination[i] += update[i]; }
 }
 void rope(std::span<float> queries, std::span<float> keys, std::size_t tokens, std::uint32_t offset) {
+    OUTLOUD_PERF_SCOPE(::outloud::perf::Stage::rope);
     require(tokens > 0 && tokens <= 4096 && queries.size() == tokens * 1024 && keys.size() == queries.size() &&
             offset <= std::numeric_limits<std::uint32_t>::max() - tokens, "RoPE dimensions/positions mismatch");
     // PyTorch multiplies arange(float32) by this Python-double scalar cast to FP32.
@@ -169,6 +175,7 @@ bool causal_visible(std::uint32_t query_absolute, std::uint32_t key_absolute) no
 }
 void causal_attention(const Kernels& kernels, std::span<const float> queries, std::size_t tokens,
                       AttentionCacheView cache, std::span<float> output, std::span<float> score_scratch) {
+    OUTLOUD_PERF_SCOPE(::outloud::perf::Stage::attention);
     const std::size_t prefix = cache.prefix_length, previous = cache.previous_suffix_length;
     require(tokens > 0 && tokens <= 4096 && prefix > 0 && prefix <= 21845 && previous <= 4096 &&
             cache.prefix_keys.size() == prefix * 1024 && cache.prefix_values.size() == prefix * 1024 &&
@@ -185,23 +192,29 @@ void causal_attention(const Kernels& kernels, std::span<const float> queries, st
         for (std::size_t head = 0; head < 16; ++head) {
             const auto query = queries.subspan(token * 1024 + head * 64, 64);
             float maximum = -std::numeric_limits<float>::infinity();
+            OUTLOUD_PERF_CALL(::outloud::perf::Stage::scores, {
             for (std::size_t position = 0; position < visible; ++position) {
                 score_scratch[position] = kernels.dot(query, cached(cache.prefix_keys, cache.suffix_keys, position, head)) * 0.125f;
                 maximum = std::max(maximum, score_scratch[position]);
             }
+            });
+            OUTLOUD_PERF_CALL(::outloud::perf::Stage::softmax, {
             float sum = 0.0f;
             for (std::size_t position = 0; position < visible; ++position) {
                 score_scratch[position] = std::exp(score_scratch[position] - maximum); sum += score_scratch[position];
             }
             require(std::isfinite(sum) && sum > 0, "Nonfinite attention softmax");
             for (std::size_t position = 0; position < visible; ++position) { score_scratch[position] /= sum; }
+            });
             const auto result = output.subspan(token * 1024 + head * 64, 64);
             std::fill(result.begin(), result.end(), 0.0f);
+            OUTLOUD_PERF_CALL(::outloud::perf::Stage::values, {
             for (std::size_t position = 0; position < visible; ++position) {
                 const auto value = cached(cache.prefix_values, cache.suffix_values, position, head);
                 const float probability = score_scratch[position];
                 for (std::size_t component = 0; component < 64; ++component) { result[component] += probability * value[component]; }
             }
+            });
         }
     }
 }

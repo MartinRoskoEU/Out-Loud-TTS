@@ -1,3 +1,4 @@
+#include "outloud/perf_diagnostics.hpp"
 #include "outloud/mimi.hpp"
 #include <algorithm>
 #include <cmath>
@@ -55,6 +56,7 @@ std::size_t MimiDecoder::scratch_bytes() const {
     return bytes; // PCM frame is separate (1920*4).
 }
 void MimiDecoder::transformer(MimiDecoderState& state, const MimiObserver& observer) {
+    OUTLOUD_PERF_SCOPE(::outloud::perf::Stage::mimi_transformer);
     auto tensor = [&](std::uint32_t id) { return model_.tensor(static_cast<PocketTensorId>(id)); };
     auto emit = [&](std::size_t layer, std::string_view field, std::span<const float> x) {
         if (observer) { observer("layer" + std::to_string(layer) + "." + std::string(field), x); }
@@ -98,6 +100,7 @@ void MimiDecoder::transformer(MimiDecoderState& state, const MimiObserver& obser
 }
 std::span<const float> MimiDecoder::decode_frame(std::span<const float> latent,
         MimiDecoderState& state, const MimiObserver& observer) {
+    OUTLOUD_PERF_DOMAIN(mimi); OUTLOUD_PERF_SCOPE(::outloud::perf::Stage::mimi_decode);
     require(!busy_ && !state.busy_, "Reentrant Mimi decoding");
     require(latent.size() == 32 && std::all_of(latent.begin(), latent.end(), [](float x) { return std::isfinite(x); }),
             "Mimi requires one finite normalized 32-D latent");
@@ -107,7 +110,7 @@ std::span<const float> MimiDecoder::decode_frame(std::span<const float> latent,
         auto tensor = [&](std::uint32_t id) { return model_.tensor(static_cast<PocketTensorId>(id)); };
         if (observer) { observer("normalized", latent); }
         const auto mean = tensor(2).bf16_values, std = tensor(3).bf16_values;
-        for (std::size_t i = 0; i < 32; ++i) { denormalized_[i] = latent[i] * bf16_to_float32(std[i]) + bf16_to_float32(mean[i]); }
+        OUTLOUD_PERF_CALL(::outloud::perf::Stage::denormalization, for (std::size_t i = 0; i < 32; ++i) { denormalized_[i] = latent[i] * bf16_to_float32(std[i]) + bf16_to_float32(mean[i]); });
         if (observer) { observer("denormalized", denormalized_); observer("projection.input", denormalized_); }
         auto weight = tensor(167);
         const std::array<std::uint32_t, 2> dimensions = {512, 32}; weight.dimensions = dimensions;
@@ -124,6 +127,7 @@ std::span<const float> MimiDecoder::decode_frame(std::span<const float> latent,
         transpose(a.first(8192), hidden_, 512, 16);
         transformer(state, observer);
         transpose(hidden_, a.first(8192), 16, 512);
+        OUTLOUD_PERF_CALL(::outloud::perf::Stage::seanet, {
         conv(1, a.first(8192), b.first(8192));
         std::size_t channels = 512, steps = 16;
         for (std::size_t group = 0; group < 3; ++group) {
@@ -144,6 +148,7 @@ std::span<const float> MimiDecoder::decode_frame(std::span<const float> latent,
             channels = next_channels; steps = next_steps;
         }
         auto final = b.first(64 * 1920); cpu::elu(final); conv(11, final, pcm_);
+        });
         require(std::all_of(pcm_.begin(), pcm_.end(), [](float x) { return std::isfinite(x); }), "Nonfinite Mimi PCM");
         if (observer) { observer("pcm", pcm_); }
         state.offset_ += 16; state.valid_ = true;
