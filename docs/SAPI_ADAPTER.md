@@ -1,5 +1,10 @@
 # Step 2M: Windows SAPI adapter and manual deployment
 
+For managed library voices sharing this DLL/CLSID, see
+[Step 3C multi-voice SAPI](MULTI_VOICE_SAPI.md). The HKLM development deployment
+procedure below remains separate from managed production tokens and their
+ProgramData library. Legacy per-user tokens remain available for diagnostics.
+
 **Current runtime:** Step 2N adds cooperative native/SAPI cancellation; see
 [SAPI_CANCELLATION.md](SAPI_CANCELLATION.md). Step 2M timings below remain
 historical; current deployment also ships `msvcp140_atomic_wait.dll`.

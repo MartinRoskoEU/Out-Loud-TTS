@@ -26,7 +26,9 @@ int wmain(int argc,wchar_t** argv) {
             std::cerr<<"Usage: outloud-voice-library [--root DIR] list|inspect ID|rename ID NAME|remove ID|cleanup\n"
                 "       ... import-pocket SOURCE --name NAME --model-compatibility pinned|ID [--expected-source-sha256 SHA] [--allow-duplicate]\n"
                 "       ... import-olv SOURCE --name NAME [--allow-duplicate]\n"
-                "       ... export ID DESTINATION.olv [--replace]\n"; return 2;
+                "       ... export ID DESTINATION.olv [--replace]\n"
+                "Default root: ProgramData/OutLoud/VoiceLibrary; machine mutations require manual elevation.\n"
+                "Explicit --root is for development/tests or legacy storage; no automatic migration/UAC.\n"; return 2;
         }
         const std::wstring_view command(argv[at++]);
         outloud::VoiceLibrary library(root.empty()?outloud::default_voice_library_root():root);

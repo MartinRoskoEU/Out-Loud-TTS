@@ -1,5 +1,9 @@
 # Step 3A: native Pocket voice importer
 
+Prepared voice import, [managed library storage](VOICE_LIBRARY.md) and
+[managed SAPI tokens](MULTI_VOICE_SAPI.md) are separate operations. Importing
+never registers a Windows voice.
+
 `outloud_voice_import` is the reusable, offline C++20 Windows x64 boundary for
 importing a **prepared Pocket voice state** into an Out Loud Voice (`.olv`).
 The CLI is `outloud-voice-import.exe`. No GUI, voice library, registration or

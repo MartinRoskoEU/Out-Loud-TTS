@@ -24,6 +24,9 @@ $voice = if ([IO.Path]::IsPathRooted($VoicePath)) { [IO.Path]::GetFullPath($Voic
 if (-not (Test-Path -LiteralPath $voice -PathType Leaf) -or [IO.Path]::GetExtension($voice) -ne '.olv') { throw 'Selected .olv voice file is missing.' }
 if (-not $DisplayName.Trim()) { throw 'DisplayName is required.' }
 $tokenPath = Get-PocketTokenPath $TokenName
+if ($TokenName -match '^OutLoud_Pocket_[0-9a-f]{32}$') {
+    throw 'Managed library tokens use outloud-sapi-voices; this legacy deployment helper cannot register them.'
+}
 if (-not $ReportDirectory) { $ReportDirectory = Join-Path $DeploymentRoot ('reports/register-' + [DateTime]::UtcNow.ToString('yyyyMMddTHHmmssfffZ')) }
 Assert-NoUserOverride
 $machine = [Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::LocalMachine, [Microsoft.Win32.RegistryView]::Registry64)

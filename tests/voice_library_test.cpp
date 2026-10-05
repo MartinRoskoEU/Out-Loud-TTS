@@ -1,7 +1,11 @@
 #include "outloud/voice_library.hpp"
 #include "voice_library_fs.hpp"
+#include "voice_library_security.hpp"
 
 #include <winioctl.h>
+#include <aclapi.h>
+#include <sddl.h>
+#include <shlobj.h>
 #include <barrier>
 #include <cstring>
 #include <fstream>
@@ -62,6 +66,124 @@ struct Scratch {
     }
     ~Scratch() { cleanup_owned(path); }
 };
+struct Descriptor {
+    PSECURITY_DESCRIPTOR value = nullptr;
+    explicit Descriptor(const wchar_t* sddl) {
+        require(ConvertStringSecurityDescriptorToSecurityDescriptorW(sddl,SDDL_REVISION_1,&value,nullptr)!=0,"Cannot build test security descriptor");
+    }
+    ~Descriptor() { if (value) { LocalFree(value); } }
+};
+struct ReadOnlyAcl {
+    fs::Handle file;
+    PSECURITY_DESCRIPTOR original = nullptr;
+    PACL original_dacl = nullptr;
+    SECURITY_DESCRIPTOR_CONTROL original_control{};
+    ReadOnlyAcl(const std::filesystem::path& path,bool directory,const Descriptor& descriptor)
+        : file(directory ? fs::directory(path,READ_CONTROL|WRITE_DAC) :
+            fs::file(path,READ_CONTROL|WRITE_DAC,FILE_SHARE_READ|FILE_SHARE_WRITE)) {
+        require(GetSecurityInfo(file.value,SE_FILE_OBJECT,DACL_SECURITY_INFORMATION,nullptr,nullptr,&original_dacl,nullptr,&original)==ERROR_SUCCESS,
+            "Cannot capture private fixture ACL");
+        DWORD revision = 0;
+        require(GetSecurityDescriptorControl(original,&original_control,&revision)!=0,"Cannot capture fixture inheritance state");
+        PACL dacl = nullptr; BOOL present = FALSE, defaulted = FALSE;
+        require(GetSecurityDescriptorDacl(descriptor.value,&present,&dacl,&defaulted)!=0 && present,"Invalid fixture ACL");
+        require(SetSecurityInfo(file.value,SE_FILE_OBJECT,DACL_SECURITY_INFORMATION|PROTECTED_DACL_SECURITY_INFORMATION,
+            nullptr,nullptr,dacl,nullptr)==ERROR_SUCCESS,"Cannot set private read-only ACL");
+    }
+    ~ReadOnlyAcl() {
+        if (original) {
+            (void)SetSecurityInfo(file.value,SE_FILE_OBJECT,DACL_SECURITY_INFORMATION|
+                ((original_control&SE_DACL_PROTECTED) ? PROTECTED_DACL_SECURITY_INFORMATION : UNPROTECTED_DACL_SECURITY_INFORMATION),
+                nullptr,nullptr,original_dacl,nullptr);
+            LocalFree(original);
+        }
+    }
+};
+struct OrdinaryToken {
+    fs::Handle token;
+    OrdinaryToken() {
+        fs::Handle process;
+        require(OpenProcessToken(GetCurrentProcess(),TOKEN_DUPLICATE|TOKEN_QUERY,&process.value)!=0,"Cannot open own test token");
+        BYTE admin_sid[SECURITY_MAX_SID_SIZE]{}; DWORD size = sizeof(admin_sid);
+        require(CreateWellKnownSid(WinBuiltinAdministratorsSid,nullptr,admin_sid,&size)!=0,"Cannot build admin SID");
+        SID_AND_ATTRIBUTES disabled{admin_sid,0};
+        require(CreateRestrictedToken(process.value,DISABLE_MAX_PRIVILEGE,1,&disabled,0,nullptr,0,nullptr,&token.value)!=0,
+            "Cannot create ordinary-user test token");
+        require(ImpersonateLoggedOnUser(token.value)!=0,"Cannot impersonate own restricted token");
+    }
+    ~OrdinaryToken() { (void)RevertToSelf(); }
+};
+void security_checks(Scratch& scratch,VoiceLibrary& library,const LibraryVoice& voice,const std::filesystem::path& source) {
+    namespace security = detail::library_security;
+    Descriptor safe(security::directory_sddl);
+    require(security::valid_descriptor(safe.value,true,true),"Production protected directory descriptor invalid");
+    Descriptor file(L"O:BAG:BAD:P(A;;FA;;;SY)(A;;FA;;;BA)(A;;FRFX;;;BU)");
+    require(security::valid_descriptor(file.value,false,false),"Production file descriptor invalid");
+    security::FileCreationSecurity machine_file(true), developer_file(false);
+    require(machine_file.get() && machine_file.get()->lpSecurityDescriptor==machine_file.descriptor &&
+        security::valid_descriptor(machine_file.descriptor,false,false),"Machine file creation does not explicitly assign trusted owner/ACL");
+    require(!developer_file.get(),"Developer files received machine security implicitly");
+    for (const auto* unsafe : {
+        L"O:BAG:BAD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;FA;;;BU)",
+        L"O:BAG:BAD:(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;FRFX;;;BU)",
+        L"O:BUG:BAD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;FRFX;;;BU)",
+        L"O:BAG:BAD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;FRFX;;;WD)",
+        L"O:BAG:BAD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;FRFX;;;BU)(A;OICI;FA;;;CO)",
+        L"O:BAG:BAD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)",
+        L"O:BAG:BAD:P(A;;FA;;;SY)(A;;FA;;;BA)(A;;FRFX;;;BU)"}) {
+        Descriptor bad(unsafe); require(!security::valid_descriptor(bad.value,true,true),"Unsafe machine descriptor accepted");
+    }
+    // Apply the production DACL ONLY to uniquely owned temporary fixtures.
+    // Ownership remains the test user; production also requires BA/SYSTEM owner.
+    const auto parent = scratch.path/L"acl-parent";
+    require(CreateDirectoryW(parent.c_str(),nullptr)!=0,"Cannot create private ACL parent");
+    {
+        ReadOnlyAcl acl(parent,true,safe);
+        const auto dir = fs::directory(parent,READ_CONTROL);
+        if (!security::valid_descriptor(safe.value,true,true)) { throw std::runtime_error("Descriptor changed"); }
+        // The ordinary token must be able to list but cannot create or delete children.
+        OrdinaryToken ordinary;
+        require(fs::children(parent).empty(),"Ordinary user could not enumerate read-only directory");
+        const auto denied = rejects(Code::library_access_denied,[&] { security::require_machine_authority(parent); });
+        require(denied.system_error()==ERROR_ACCESS_DENIED,"Elevation denial lost native cause");
+        rejects(Code::library_access_denied,[&] { (void)security::create_directory(parent/L"must-not-exist"); });
+        rejects(Code::library_access_denied,[&] { security::protect_created_file(parent/L"must-not-exist"); });
+        require(!std::filesystem::exists(parent/L"must-not-exist"),"Denied operation created a directory");
+        require(!CreateDirectoryW((parent/L"raw-denied").c_str(),nullptr) && GetLastError()==ERROR_ACCESS_DENIED,"Users could write machine DACL");
+    }
+    const auto child = parent/L"inherited";
+    // Create the inheritance fixture using a held, authorized directory handle.
+    // Temporarily grant the test owner write while creating, then install exact
+    // inheritable ACL on parent and let Windows propagate to this private child.
+    require(CreateDirectoryW(child.c_str(),nullptr)!=0,"Cannot create inheritance child");
+    write(child/L"data.bin","private fixture");
+    {
+        ReadOnlyAcl acl(parent,true,safe);
+        for (const auto& entry : {child,child/L"data.bin"}) {
+            const bool directory = entry==child;
+            const auto handle = directory ? fs::directory(entry,READ_CONTROL) : fs::file(entry);
+            PSECURITY_DESCRIPTOR raw = nullptr; PACL dacl = nullptr;
+            const auto status = GetSecurityInfo(handle.value,SE_FILE_OBJECT,DACL_SECURITY_INFORMATION,nullptr,nullptr,&dacl,nullptr,&raw);
+            require(status==ERROR_SUCCESS,"Cannot inspect inherited private ACL");
+            const bool valid = security::valid_dacl(dacl,directory); LocalFree(raw);
+            require(valid,"Windows inheritance did not produce expected child ACL");
+        }
+    }
+    {
+        ReadOnlyAcl lock(library.root()/L".library.lock",false,file);
+        ReadOnlyAcl asset(voice.managed_olv_path,false,file);
+        ReadOnlyAcl record(voice.managed_olv_path.parent_path()/L"metadata.json",false,file);
+        OrdinaryToken ordinary;
+        require(library.inspect_voice(voice.library_id).health==VoiceHealth::valid && !library.list_voices().empty(),
+            "Read-only lock/metadata/voice require write permission");
+        require(validate_olv(voice.managed_olv_path).file_sha256==voice.metadata->olv_sha256,"Ordinary asset read/validation failed");
+        rejects(Code::library_access_denied,[&] { (void)library.rename_voice(voice.library_id,"Denied rename"); });
+        rejects(Code::library_access_denied,[&] { (void)library.remove_voice(voice.library_id); });
+        rejects(Code::library_access_denied,[&] { (void)library.import_olv(source,"Denied import",DuplicateContentPolicy::allow_separate_entry); });
+        rejects(Code::library_access_denied,[&] { (void)library.cleanup_pending(); });
+    }
+    require(library.inspect_voice(voice.library_id).health==VoiceHealth::valid,"Permission failures damaged entry");
+}
 void junction(const std::filesystem::path& link,const std::filesystem::path& target) {
     require(CreateDirectoryW(link.c_str(),nullptr)!=0,"Cannot create junction test directory");
     auto handle=fs::directory(link,GENERIC_WRITE);
@@ -86,8 +208,13 @@ int wmain(int argc,wchar_t** argv) {
         require(argc==3,"Usage: outloud-voice-library-tests Gnome.safetensors Gnome.olv");
         const auto original_source=read(argv[1]),original_olv=read(argv[2]);
         const auto real_root=default_voice_library_root(); const auto real_before=GetFileAttributesW(real_root.c_str());
+        PWSTR program_data = nullptr;
+        require(SUCCEEDED(SHGetKnownFolderPath(FOLDERID_ProgramData,KF_FLAG_DONT_VERIFY,nullptr,&program_data)),"Cannot resolve ProgramData for default-root check");
+        const auto expected_root = std::filesystem::path(program_data)/L"OutLoud"/L"VoiceLibrary"; CoTaskMemFree(program_data);
+        require(real_root==expected_root,"Default root is not ProgramData known-folder result");
         Scratch scratch; const auto root=scratch.path/L"kni\u017enica";
         VoiceLibrary library(root);
+        require(!library.is_machine_storage(),"Explicit temporary root gained production status");
         require(library.list_voices().empty() && !std::filesystem::exists(root),"Empty enumeration created a library");
         rejects(Code::invalid_library_root,[&] { VoiceLibrary bad(L"C:\\OutLoud\\forbidden"); });
         rejects(Code::invalid_library_root,[&] { VoiceLibrary bad(L"\\\\server\\share\\voices"); });
@@ -98,6 +225,8 @@ int wmain(int argc,wchar_t** argv) {
         require(first.health==VoiceHealth::valid && first.metadata && !first.metadata->model_provenance_verified &&
                 first.metadata->import_kind==VoiceImportKind::pocket_prepared,"Pocket import metadata is invalid");
         require(read(first.managed_olv_path)==original_olv,"Pocket library import changed .olv bytes");
+        require(first.metadata->schema_version==1 && fs::id(first.library_id),"Schema or library ID format changed");
+        security_checks(scratch,library,first,argv[2]);
         require(validate_olv(first.managed_olv_path).file_sha256==first.metadata->olv_sha256,"Production loader identity mismatch");
         auto duplicate=rejects(Code::duplicate_content,[&] { (void)library.import_olv(argv[2],"Other",DuplicateContentPolicy::reject); });
         require(duplicate.duplicate_ids()==std::vector<std::string>{first.library_id},"Duplicate result has no stable IDs");
@@ -143,6 +272,14 @@ int wmain(int argc,wchar_t** argv) {
             OVERLAPPED overlap{}; require(LockFileEx(locked.value,LOCKFILE_EXCLUSIVE_LOCK|LOCKFILE_FAIL_IMMEDIATELY,0,1,0,&overlap)!=0,"Cannot acquire library lock fixture");
             rejects(Code::library_busy,[&] { (void)library.list_voices(); });
             rejects(Code::library_busy,[&] { (void)library.rename_voice(first.library_id,"Busy"); });
+        }
+        {
+            auto shared=fs::file(root/L".library.lock",GENERIC_READ,FILE_SHARE_READ|FILE_SHARE_WRITE);
+            OVERLAPPED overlap{};
+            require(LockFileEx(shared.value,LOCKFILE_FAIL_IMMEDIATELY,0,1,0,&overlap)!=0,"Cannot acquire shared library lock fixture");
+            require(library.inspect_voice(first.library_id).health==VoiceHealth::valid && !library.list_voices().empty(),"Concurrent readers conflict");
+            rejects(Code::library_busy,[&] { (void)library.rename_voice(first.library_id,"Blocked by reader"); });
+            rejects(Code::library_busy,[&] { (void)library.cleanup_pending(); });
         }
         auto no_declaration=options; no_declaration.declared_model_compatibility_id.clear();
         const auto error=rejects(Code::import_failed,[&] { (void)library.import_pocket_voice(argv[1],"Missing declaration",no_declaration); });
@@ -277,10 +414,10 @@ int wmain(int argc,wchar_t** argv) {
         const auto removed=library.remove_voice(first.library_id); require(!removed.cleanup_pending,"Ordinary removal failed");
         rejects(Code::voice_not_found,[&] { (void)library.inspect_voice(first.library_id); });
         require(read(argv[1])==original_source && read(argv[2])==original_olv,"Import/remove changed original source assets");
-        require(GetFileAttributesW(real_root.c_str())==real_before,"Test touched the real user library");
+        require(GetFileAttributesW(real_root.c_str())==real_before,"Test touched the real machine library");
         require(fs::children(outside)==std::vector<std::wstring>{L"sentinel.txt"},"Operation changed external sentinel directory");
         std::cout<<"PASS: "<<checks<<" voice library assertions; imports/exports exact Gnome bytes; IDs/rename; metadata/health; duplicates; locks; junctions/hard links/traversal; recovery/concurrency\n"
-            "Real user library, source assets, deployment and SAPI untouched\nRESULT: PASS\n";
+            "Real machine/user libraries, source assets, deployment and SAPI untouched\nRESULT: PASS\n";
         return 0;
     } catch (const VoiceLibraryError& error) {
         std::cerr<<voice_library_error_name(error.code())<<": "<<error.what()<<" system="<<error.system_error()<<'\n';

@@ -37,8 +37,8 @@ add_executable(outloud-voice-import tools/voice-import/main.cpp)
 target_link_libraries(outloud-voice-import PRIVATE outloud_voice_import)
 target_compile_options(outloud-voice-import PRIVATE /W4 /WX /utf-8 /permissive- /fp:precise)
 
-add_library(outloud_voice_library STATIC engine/src/voice_library.cpp)
-target_link_libraries(outloud_voice_library PUBLIC outloud_voice_import PRIVATE outloud_asset_io shell32 ole32 uuid)
+add_library(outloud_voice_library STATIC engine/src/voice_library.cpp engine/src/voice_library_security.cpp)
+target_link_libraries(outloud_voice_library PUBLIC outloud_voice_import PRIVATE outloud_asset_io shell32 ole32 uuid advapi32)
 target_compile_options(outloud_voice_library PRIVATE /W4 /WX /utf-8 /permissive- /fp:precise)
 add_executable(outloud-voice-library tools/voice-library/main.cpp)
 target_include_directories(outloud-voice-library PRIVATE engine/src)
@@ -302,3 +302,32 @@ target_include_directories(outloud-sapi-check PRIVATE sapi/src engine/include)
 target_link_libraries(outloud-sapi-check PRIVATE ole32 sapi uuid)
 target_compile_definitions(outloud-sapi-check PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
 target_compile_options(outloud-sapi-check PRIVATE /W4 /WX /utf-8 /permissive- /fp:precise)
+
+# Managed tokens are a separate integration layer, never linked into the DLL
+# or VoiceLibrary. Automated token mutations use an injected in-memory registry.
+add_library(outloud_sapi_voices STATIC sapi/src/voice_tokens.cpp sapi/src/voice_registry.cpp)
+target_include_directories(outloud_sapi_voices PRIVATE sapi/src engine/src)
+target_link_libraries(outloud_sapi_voices PUBLIC outloud_voice_library PRIVATE outloud_text advapi32 ktmw32)
+target_compile_definitions(outloud_sapi_voices PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+target_compile_options(outloud_sapi_voices PRIVATE /W4 /WX /utf-8 /permissive-)
+add_executable(outloud-sapi-voices tools/sapi-voices/main.cpp)
+target_include_directories(outloud-sapi-voices PRIVATE engine/src)
+target_link_libraries(outloud-sapi-voices PRIVATE outloud_sapi_voices)
+target_compile_options(outloud-sapi-voices PRIVATE /W4 /WX /utf-8 /permissive-)
+add_executable(outloud-sapi-voice-tests sapi/tests/voice_tokens_test.cpp)
+target_include_directories(outloud-sapi-voice-tests PRIVATE engine/src sapi/src)
+target_link_libraries(outloud-sapi-voice-tests PRIVATE outloud_sapi_voices)
+target_compile_options(outloud-sapi-voice-tests PRIVATE /W4 /WX /utf-8 /permissive-)
+add_executable(outloud-sapi-multi-check sapi/tests/multi_voice.cpp)
+target_include_directories(outloud-sapi-multi-check PRIVATE sapi/src engine/src)
+target_link_libraries(outloud-sapi-multi-check PRIVATE outloud_voice_library outloud_orchestration ole32 sapi uuid)
+target_compile_options(outloud-sapi-multi-check PRIVATE /W4 /WX /utf-8 /permissive- /fp:precise)
+if(BUILD_TESTING)
+    add_test(NAME sapi-token-regressions COMMAND outloud-sapi-voice-tests
+        "$<TARGET_FILE:OutLoudPocketSAPI>" "${OUTLOUD_ASSET_DIRECTORY}/pocket-english.olp"
+        "${OUTLOUD_TOKENIZER_ASSET}" "${OUTLOUD_ASSET_DIRECTORY}/gnome_male.olv")
+    add_test(NAME sapi-multi-voice-regressions COMMAND outloud-sapi-multi-check
+        "$<TARGET_FILE:OutLoudPocketSAPI>" "${OUTLOUD_ASSET_DIRECTORY}/pocket-english.olp"
+        "${OUTLOUD_TOKENIZER_ASSET}" "${OUTLOUD_ASSET_DIRECTORY}/gnome_male.olv" "${OUTLOUD_ASSET_DIRECTORY}/undead_male.olv")
+    set_tests_properties(sapi-token-regressions sapi-multi-voice-regressions PROPERTIES TIMEOUT 180)
+endif()

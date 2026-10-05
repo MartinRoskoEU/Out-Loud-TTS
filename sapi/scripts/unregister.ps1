@@ -11,6 +11,9 @@ Assert-RegistryAdministrator
 Assert-GameClosed
 Assert-NoUserOverride
 $tokenPath = Get-PocketTokenPath $TokenName
+if ($TokenName -match '^OutLoud_Pocket_[0-9a-f]{32}$') {
+    throw 'Managed library tokens use outloud-sapi-voices remove; this legacy helper cannot remove them.'
+}
 $machine = [Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::LocalMachine, [Microsoft.Win32.RegistryView]::Registry64)
 try {
     Assert-OwnedClass $machine
@@ -26,6 +29,21 @@ try {
             try { if ($key.GetValue('CLSID') -eq $PocketClsid) { $otherUsers += $name } } finally { $key.Dispose() }
         }
     } finally { $voices.Dispose() }
+    # Managed HKCU voices can share the machine engine. Retain that COM class
+    # even if the development token is its last HKLM voice.
+    $user = [Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::CurrentUser, [Microsoft.Win32.RegistryView]::Registry64)
+    try {
+        $userVoices = $user.OpenSubKey($PocketVoiceRoot)
+        if ($null -ne $userVoices) {
+            try {
+                foreach ($name in $userVoices.GetSubKeyNames()) {
+                    $key = $userVoices.OpenSubKey($name)
+                    try { if ($key.GetValue('CLSID') -eq $PocketClsid) { $otherUsers += "HKCU:$name" } }
+                    finally { $key.Dispose() }
+                }
+            } finally { $userVoices.Dispose() }
+        }
+    } finally { $user.Dispose() }
     Save-RegistrySnapshot $ReportDirectory $before
     Assert-GameClosed
     try {

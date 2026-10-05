@@ -11,7 +11,7 @@ enum class VoiceLibraryErrorCode {
     invalid_id, voice_not_found, metadata_corrupt, unsupported_metadata_version,
     invalid_display_name, duplicate_content, import_failed, incompatible_voice,
     corrupt_voice, replace_required, source_io, destination_io, remove_failed,
-    internal_failure
+    internal_failure, library_access_denied, library_security_invalid
 };
 [[nodiscard]] std::string_view voice_library_error_name(VoiceLibraryErrorCode code) noexcept;
 class VoiceLibraryError : public std::runtime_error {
@@ -68,12 +68,15 @@ struct LibraryCleanupResult {
     std::vector<std::filesystem::path> pending;
 };
 
-// SHGetKnownFolderPath(FOLDERID_LocalAppData), never creates the real library.
+// SHGetKnownFolderPath(FOLDERID_ProgramData), never creates the real library.
 [[nodiscard]] std::filesystem::path default_voice_library_root();
 class VoiceLibrary {
 public:
     explicit VoiceLibrary(std::filesystem::path root = default_voice_library_root());
     [[nodiscard]] const std::filesystem::path& root() const noexcept { return root_; }
+    // True only for the canonical production root. Explicit other roots are
+    // development/legacy storage; they do not grant machine-token eligibility.
+    [[nodiscard]] bool is_machine_storage() const noexcept { return machine_storage_; }
     [[nodiscard]] std::vector<LibraryVoice> list_voices() const;
     [[nodiscard]] LibraryVoice inspect_voice(std::string_view id) const;
     [[nodiscard]] LibraryImportResult import_pocket_voice(const std::filesystem::path& source,
@@ -90,5 +93,6 @@ public:
     [[nodiscard]] LibraryCleanupResult cleanup_pending();
 private:
     std::filesystem::path root_;
+    bool machine_storage_ = false;
 };
 } // namespace outloud

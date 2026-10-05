@@ -65,6 +65,12 @@ Configuration read_configuration(ISpObjectToken* token) {
         if (path.empty()) { throw Failure{E_INVALIDARG}; }
         if (!path.is_absolute()) { path = root/path; }
         path = path.lexically_normal();
+        const auto native = path.native();
+        // Local drive files only: reject device/UNC paths and alternate streams.
+        // Absolute managed voices can live anywhere outside the deployment.
+        if (native.size()<3 || native[1]!=L':' || native[2]!=L'\\' ||
+            native.find(L':',2)!=std::wstring::npos || native.find(L'\0')!=std::wstring::npos) { throw Failure{E_INVALIDARG}; }
+        if (std::wstring_view(key)==L"VoicePath" && _wcsicmp(path.extension().c_str(),L".olv")!=0) { throw Failure{E_INVALIDARG}; }
         if (!std::filesystem::is_regular_file(path)) { throw Failure{HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND)}; }
         return path;
     };

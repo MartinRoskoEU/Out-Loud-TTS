@@ -1,4 +1,11 @@
-# Step 3B: Out Loud voice library backend
+# Out Loud voice library backend (Steps 3B and 3C.1)
+
+Step 3C adds a separate [managed SAPI token layer](MULTI_VOICE_SAPI.md).
+Imports and library operations remain independent of Windows registration.
+Step 3C.1 changes production storage to ProgramData with administrator-only
+modification and ordinary-user reads. See the
+[machine architecture and manual validation package](MACHINE_VOICE_LIBRARY.md).
+LocalAppData remains explicit legacy/development storage; no migration occurs.
 
 `outloud_voice_library` is a reusable native C++20 Windows x64 library for
 managed voices. It provides list/inspect, Pocket import, `.olv` import/export,
@@ -31,10 +38,10 @@ Step 3A offers read-only mappings, hashes and local import paths. The existing
 user voice metadata and is not reused or modified here.
 
 The production default is obtained with
-`SHGetKnownFolderPath(FOLDERID_LocalAppData, KF_FLAG_DONT_VERIFY)`:
+`SHGetKnownFolderPath(FOLDERID_ProgramData, KF_FLAG_DONT_VERIFY)`:
 
 ```text
-%LOCALAPPDATA%\OutLoud\VoiceLibrary\
+%ProgramData%\OutLoud\VoiceLibrary\
     .library.lock
     voices\
         <library-id>\
@@ -56,6 +63,25 @@ network/device paths, and reparse points. Existing short-name aliases are
 resolved before protected-root checks. No current deployment or registry is
 queried to discover/migrate voices. All automated tests and CLI validation
 used unique temporary roots, never the default library.
+
+The normal production location is `C:\ProgramData\OutLoud\VoiceLibrary`;
+the drive/path is resolved by Windows, never hardcoded. Production status is
+determined from the canonical root, including case/short-name equivalence.
+Passing the same production path explicitly still applies machine security.
+Other explicit roots remain useful for tests and the old LocalAppData library,
+but do not qualify for production HKLM token installation.
+
+Production creation/mutation requires an enabled Administrators or SYSTEM SID.
+Missing `OutLoud`, `VoiceLibrary` and internal directories are created with
+Administrators ownership and a protected inheritable DACL: SYSTEM/Administrators
+full control, BUILTIN Users read/execute/list, no write/delete/creator-owner
+grant. The two production anchors and all accessed managed directories/files
+are checked. Existing unsafe ACLs return `library_security_invalid`, with no
+automatic ownership/ACL rewrite. Nothing changes ProgramData itself.
+Metadata and assets receive the same access contract and trusted owner at
+creation (or on newly converted unpublished output); production publication
+checks ownership and ACLs before committing. See the linked security audit for
+why raw ProgramData inheritance is insufficient on this machine.
 
 ## Identity, duplicate and replacement policies
 
@@ -191,17 +217,21 @@ parent traversal, trailing-dot/space aliases and malformed IDs are rejected.
 There is no recursive production deletion and no metadata-derived path access.
 Rename/finalization uses handle-based Windows file information operations.
 
-A fail-fast exclusive `LockFileEx` serializes cooperating readers/writers
-across threads, API instances and processes. Contention returns `library_busy`;
+A fail-fast shared `LockFileEx` allows concurrent readers; mutations and cleanup
+take an exclusive lock across threads, API instances and processes. Read calls
+open the existing lock with GENERIC_READ/OPEN_EXISTING; they never create/write
+it. Mutations use GENERIC_READ|GENERIC_WRITE. Contention returns `library_busy`;
 there is no spin/sleep loop. Source snapshots deny write/delete sharing.
 File IDs protect export temporary reopening. External programs that edit the
-user's writable files without using the library lock can change health;
-this is not an access-control boundary against an actor with the same user
-permissions. Files are revalidated at operation boundaries and again after
+development/legacy user's writable files without using the lock can change
+health. Production's protected ACLs prevent ordinary users from doing this;
+administrators can still modify files outside the cooperating library API.
+Files are revalidated at operation boundaries and again after
 removal commit; link/type changes are never followed for cleanup.
 
 List/inspect validate each entry independently and scan its voice; one broken
-entry does not abort enumeration. Available health states:
+entry does not abort enumeration. Production security-contract violations and
+permission errors are structured library errors. Available health states:
 
 | Health | Meaning |
 | --- | --- |
@@ -247,12 +277,17 @@ and an optional intact `VoiceImportError` from Step 3A. Error codes include
 invalid/unavailable/busy root, unsafe path, invalid/missing ID, corrupt/future
 metadata, invalid display name, duplicate content, import failure, incompatible/
 corrupt voice, replacement required, source/destination IO and removal failure.
+Step 3C.1 appends `library_access_denied` and `library_security_invalid`, preserving
+old enum ordinals and importer/native error causes. Access/creation permission
+failures are distinguished from missing storage. Windows rename can report
+ACCESS_DENIED for open children; its existing source/destination/removal code
+and raw Win32 cause are retained rather than claiming every error 5 is UAC.
 The GUI does not need to parse tensors, metadata, filesystem layout or hashes.
 
 ## CLI and validation
 
 CLI root override precedes the command. Without it, operations target the
-default per-user library; the examples deliberately use an isolated directory:
+default machine library; the examples deliberately use an isolated directory:
 
 ```powershell
 $root = Join-Path $env:TEMP 'outloud-library-manual-example'
@@ -287,7 +322,7 @@ malformed/future/oversized metadata, missing/corrupt/future/incompatible assets,
 hash mismatch, Unicode, invalid names, replacement, locks, failed-preflight
 handle release, hard links, real NTFS junction fixtures, traversal, staged/
 committed-removal cleanup, unknown-file retention and concurrent API instances.
-Original inputs and the default user library remain untouched.
+Original inputs and the default machine/legacy user libraries remain untouched.
 
 An isolated CLI list/import/rename/inspect/export/remove/cleanup round trip
 also passed. The exported Gnome SHA256 remained

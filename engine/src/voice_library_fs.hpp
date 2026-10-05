@@ -4,8 +4,12 @@
 #include "asset_io.hpp"
 #include "utf8.hpp"
 
+#ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
 #define NOMINMAX
+#endif
 #include <windows.h>
 #include <bcrypt.h>
 
@@ -16,6 +20,11 @@ namespace outloud::detail::library_fs {
 using Code = VoiceLibraryErrorCode;
 [[noreturn]] inline void fail(Code code,const char* message,const std::filesystem::path& path,DWORD error=0) {
     throw VoiceLibraryError(code,message,path,error);
+}
+// Apply at access/creation boundaries. Rename can return ACCESS_DENIED for an
+// open child handle as well as permissions, so retain its existing error/cause.
+[[noreturn]] inline void fail_access(Code code,const char* message,const std::filesystem::path& path,DWORD error) {
+    fail(error==ERROR_ACCESS_DENIED || error==ERROR_PRIVILEGE_NOT_HELD ? Code::library_access_denied : code,message,path,error);
 }
 struct Handle {
     HANDLE value=INVALID_HANDLE_VALUE;
@@ -95,7 +104,7 @@ inline BY_HANDLE_FILE_INFORMATION info(HANDLE handle,const std::filesystem::path
 inline Handle directory(const std::filesystem::path& path,DWORD extra_access=0) {
     Handle result(CreateFileW(path.c_str(),FILE_READ_ATTRIBUTES|extra_access,FILE_SHARE_READ|FILE_SHARE_WRITE,
         nullptr,OPEN_EXISTING,FILE_FLAG_BACKUP_SEMANTICS|FILE_FLAG_OPEN_REPARSE_POINT,nullptr));
-    if (result.value==INVALID_HANDLE_VALUE) { fail(Code::library_unavailable,"Cannot pin local directory",path,GetLastError()); }
+    if (result.value==INVALID_HANDLE_VALUE) { fail_access(Code::library_unavailable,"Cannot pin local directory",path,GetLastError()); }
     (void)info(result.value,path,true); return result;
 }
 // Ancestors are opened one component at a time without following reparse points.
@@ -113,19 +122,19 @@ struct Pins {
                 const auto error=GetLastError();
                 if (absent(error) && create) {
                     if (!CreateDirectoryW(current.c_str(),nullptr) && GetLastError()!=ERROR_ALREADY_EXISTS) {
-                        fail(Code::library_unavailable,"Cannot create library directory",current,GetLastError());
+                        fail_access(Code::library_unavailable,"Cannot create library directory",current,GetLastError());
                     }
                 } else if (absent(error) && missing_ok) { exists=false; return; }
-                else { fail(Code::library_unavailable,"Cannot access local directory",current,error); }
+                else { fail_access(Code::library_unavailable,"Cannot access local directory",current,error); }
             }
             handles.push_back(directory(current));
         }
     }
 };
 inline Handle file(const std::filesystem::path& path,DWORD access=GENERIC_READ,DWORD sharing=FILE_SHARE_READ,
-                   DWORD creation=OPEN_EXISTING,Code code=Code::source_io) {
-    Handle result(CreateFileW(path.c_str(),access,sharing,nullptr,creation,FILE_FLAG_OPEN_REPARSE_POINT,nullptr));
-    if (result.value==INVALID_HANDLE_VALUE) { fail(code,"Cannot open regular local file",path,GetLastError()); }
+                   DWORD creation=OPEN_EXISTING,Code code=Code::source_io,SECURITY_ATTRIBUTES* security=nullptr) {
+    Handle result(CreateFileW(path.c_str(),access,sharing,security,creation,FILE_FLAG_OPEN_REPARSE_POINT,nullptr));
+    if (result.value==INVALID_HANDLE_VALUE) { fail_access(code,"Cannot open regular local file",path,GetLastError()); }
     (void)info(result.value,path,false); return result;
 }
 inline std::uint64_t size(HANDLE handle,const std::filesystem::path& path) {
@@ -162,7 +171,7 @@ inline std::string random_id() {
 inline bool exists(const std::filesystem::path& path) {
     if (GetFileAttributesW(path.c_str())!=INVALID_FILE_ATTRIBUTES) { return true; }
     const auto error=GetLastError();
-    if (!absent(error)) { fail(Code::library_unavailable,"Cannot determine path existence",path,error); }
+    if (!absent(error)) { fail_access(Code::library_unavailable,"Cannot determine path existence",path,error); }
     return false;
 }
 inline std::vector<std::wstring> children(const std::filesystem::path& path) {
@@ -170,7 +179,7 @@ inline std::vector<std::wstring> children(const std::filesystem::path& path) {
     const auto search=FindFirstFileW((path/L"*").c_str(),&data);
     if (search==INVALID_HANDLE_VALUE) {
         if (GetLastError()==ERROR_FILE_NOT_FOUND) { return result; }
-        fail(Code::library_unavailable,"Cannot enumerate directory",path,GetLastError());
+        fail_access(Code::library_unavailable,"Cannot enumerate directory",path,GetLastError());
     }
     DWORD error=0;
     try {
@@ -199,7 +208,10 @@ inline bool within(const std::filesystem::path& path,const std::filesystem::path
 }
 inline void rename(HANDLE handle,const std::filesystem::path& destination,bool replace,Code code) {
     const auto& name=destination.native();
-    const auto bytes=offsetof(FILE_RENAME_INFO,FileName)+name.size()*sizeof(wchar_t);
+    // Win32 FILE_RENAME_INFO requires a null-terminated FileName, while
+    // FileNameLength excludes that terminator. Reserve it even when the old
+    // allocation rounded to an exact multiple of eight bytes.
+    const auto bytes=offsetof(FILE_RENAME_INFO,FileName)+(name.size()+1)*sizeof(wchar_t);
     std::vector<std::uint64_t> storage((bytes+7)/8,0);
     auto record=reinterpret_cast<FILE_RENAME_INFO*>(storage.data());
     record->ReplaceIfExists=replace?TRUE:FALSE;
