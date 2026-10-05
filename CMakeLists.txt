@@ -195,3 +195,21 @@ foreach(target IN ITEMS outloud-perf outloud-perf-profile)
     target_compile_definitions(${target} PRIVATE OUTLOUD_NEURAL_DIRECTORY=L"${OUTLOUD_NEURAL_DIRECTORY}"
         OUTLOUD_ASSET_DIRECTORY=L"${OUTLOUD_ASSET_DIRECTORY}")
 endforeach()
+
+# Resident one-segment workers; the runtime has no allocation audit or trace.
+add_library(outloud_workers STATIC engine/src/worker_pipeline.cpp)
+target_link_libraries(outloud_workers PUBLIC outloud_generation outloud_mimi)
+target_compile_options(outloud_workers PRIVATE /W4 /WX /utf-8 /permissive- /fp:precise)
+
+# Standalone development validation/benchmark and separately compiled trace.
+# No new CTest or kernel profiler is used by these targets.
+foreach(target IN ITEMS outloud-worker-check outloud-worker-trace)
+    add_executable(${target} tools/worker-check/main.cpp engine/src/worker_pipeline.cpp)
+    target_link_libraries(${target} PRIVATE outloud_generation outloud_mimi outloud_text outloud_asset_io)
+    target_include_directories(${target} PRIVATE tests engine/src "${OUTLOUD_NEURAL_DIRECTORY}")
+    target_compile_options(${target} PRIVATE /W4 /WX /utf-8 /permissive- /fp:precise)
+    target_compile_definitions(${target} PRIVATE OUTLOUD_WORKER_AUDIT=1
+        OUTLOUD_NEURAL_DIRECTORY=L"${OUTLOUD_NEURAL_DIRECTORY}"
+        OUTLOUD_ASSET_DIRECTORY=L"${OUTLOUD_ASSET_DIRECTORY}")
+endforeach()
+target_compile_definitions(outloud-worker-trace PRIVATE OUTLOUD_WORKER_TRACE=1)
