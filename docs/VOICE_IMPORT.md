@@ -6,6 +6,9 @@ The CLI is `outloud-voice-import.exe`. No GUI, voice library, registration or
 deployment feature is introduced. The SAPI engine does not link the importer
 or its source-header parser; its loader and synthesis behavior are unchanged.
 
+Step 3B adds a separate [managed voice library backend](VOICE_LIBRARY.md) that
+calls this API and stores human-facing metadata outside the unchanged `.olv`.
+
 ## Audited source and established conversion
 
 The installed reference environment was inspected locally: Python 3.12.10,

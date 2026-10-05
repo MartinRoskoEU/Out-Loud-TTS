@@ -111,7 +111,9 @@ private:
         }
         if (input_[at_] == '"') { result.kind = Value::Kind::string; result.text = string(); return result; }
         for (auto literal : {std::string_view("true"), std::string_view("false"), std::string_view("null")}) {
-            if (input_.substr(at_, literal.size()) == literal) { at_ += literal.size(); return result; }
+            if (input_.substr(at_, literal.size()) == literal) {
+                result.text = literal; at_ += literal.size(); return result;
+            }
         }
         const auto start = at_; result.kind = Value::Kind::number;
         (void)take('-');

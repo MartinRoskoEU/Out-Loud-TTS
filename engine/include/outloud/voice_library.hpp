@@ -1,0 +1,94 @@
+#pragma once
+
+#include "outloud/voice_import.hpp"
+
+#include <optional>
+
+namespace outloud {
+
+enum class VoiceLibraryErrorCode {
+    invalid_library_root, library_unavailable, library_busy, unsafe_path,
+    invalid_id, voice_not_found, metadata_corrupt, unsupported_metadata_version,
+    invalid_display_name, duplicate_content, import_failed, incompatible_voice,
+    corrupt_voice, replace_required, source_io, destination_io, remove_failed,
+    internal_failure
+};
+[[nodiscard]] std::string_view voice_library_error_name(VoiceLibraryErrorCode code) noexcept;
+class VoiceLibraryError : public std::runtime_error {
+public:
+    VoiceLibraryError(VoiceLibraryErrorCode code, std::string message,
+        std::filesystem::path path = {}, std::uint32_t system_error = 0,
+        std::optional<VoiceImportError> import_error = {}, std::vector<std::string> duplicate_ids = {});
+    [[nodiscard]] VoiceLibraryErrorCode code() const noexcept { return code_; }
+    [[nodiscard]] const std::filesystem::path& path() const noexcept { return path_; }
+    [[nodiscard]] std::uint32_t system_error() const noexcept { return system_error_; }
+    [[nodiscard]] const std::optional<VoiceImportError>& import_error() const noexcept { return import_error_; }
+    [[nodiscard]] const std::vector<std::string>& duplicate_ids() const noexcept { return duplicate_ids_; }
+private:
+    VoiceLibraryErrorCode code_;
+    std::filesystem::path path_;
+    std::uint32_t system_error_;
+    std::optional<VoiceImportError> import_error_;
+    std::vector<std::string> duplicate_ids_;
+};
+enum class VoiceImportKind { pocket_prepared, olv };
+enum class VoiceHealth {
+    valid, missing_voice, corrupt_voice, metadata_corrupt, unsupported_metadata_version,
+    unsupported_voice_version, incompatible_model, hash_mismatch, unsafe_entry, unavailable
+};
+[[nodiscard]] std::string_view voice_health_name(VoiceHealth health) noexcept;
+struct VoiceMetadata {
+    std::uint32_t schema_version = 1;
+    std::string library_id, display_name;
+    std::uint32_t olv_version = 1;
+    std::string olv_sha256, source_sha256, compatibility_id, imported_utc, source_filename;
+    VoiceImportKind import_kind = VoiceImportKind::olv;
+    bool model_provenance_verified = false;
+};
+struct LibraryVoice {
+    // Directory identity is authoritative even when metadata is corrupt.
+    std::string library_id;
+    std::optional<VoiceMetadata> metadata;
+    std::filesystem::path managed_olv_path;
+    VoiceHealth health = VoiceHealth::unavailable;
+    std::string detail;
+};
+enum class DuplicateContentPolicy { reject, allow_separate_entry };
+struct LibraryImportResult {
+    LibraryVoice voice;
+    std::vector<std::string> duplicate_ids;
+};
+struct VoiceRemovalResult {
+    // Removal commits by moving the entry out of enumeration. Cleanup can be retried.
+    bool cleanup_pending = false;
+    std::string detail;
+};
+struct LibraryCleanupResult {
+    std::size_t cleaned = 0;
+    std::vector<std::filesystem::path> pending;
+};
+
+// SHGetKnownFolderPath(FOLDERID_LocalAppData), never creates the real library.
+[[nodiscard]] std::filesystem::path default_voice_library_root();
+class VoiceLibrary {
+public:
+    explicit VoiceLibrary(std::filesystem::path root = default_voice_library_root());
+    [[nodiscard]] const std::filesystem::path& root() const noexcept { return root_; }
+    [[nodiscard]] std::vector<LibraryVoice> list_voices() const;
+    [[nodiscard]] LibraryVoice inspect_voice(std::string_view id) const;
+    [[nodiscard]] LibraryImportResult import_pocket_voice(const std::filesystem::path& source,
+        std::string_view display_name, const VoiceImportOptions& options,
+        DuplicateContentPolicy duplicates = DuplicateContentPolicy::reject);
+    [[nodiscard]] LibraryImportResult import_olv(const std::filesystem::path& source,
+        std::string_view display_name, DuplicateContentPolicy duplicates = DuplicateContentPolicy::reject);
+    [[nodiscard]] OlvInfo export_olv(std::string_view id, const std::filesystem::path& destination,
+                                   bool replace_existing = false) const;
+    [[nodiscard]] LibraryVoice rename_voice(std::string_view id, std::string_view display_name);
+    [[nodiscard]] VoiceRemovalResult remove_voice(std::string_view id);
+    // Explicitly discards unpublished staging work and completes already committed removals.
+    // Never cleans/deletes an active entry; unsafe/locked/unknown files are retained and reported.
+    [[nodiscard]] LibraryCleanupResult cleanup_pending();
+private:
+    std::filesystem::path root_;
+};
+} // namespace outloud
