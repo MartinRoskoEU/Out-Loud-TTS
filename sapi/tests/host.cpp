@@ -31,6 +31,7 @@ SPVTEXTFRAG fragment(std::wstring_view value) {
     f.pTextStart = value.data(); f.ulTextLen = static_cast<ULONG>(value.size()); return f;
 }
 enum class Mode { normal, partial, failed, zero, odd, oversized, stopped };
+struct Bookmark { std::wstring name; WPARAM value; };
 class Site final : public ISpTTSEngineSite {
 public:
     explicit Site(Mode m,bool capture) : mode(m), pcm(capture ? 652800 : 0) {}
@@ -42,15 +43,35 @@ public:
     }
     ULONG STDMETHODCALLTYPE AddRef() override { return ++refs; }
     ULONG STDMETHODCALLTYPE Release() override { const auto n = --refs; if (!n) { delete this; } return n; }
-    HRESULT STDMETHODCALLTYPE AddEvents(const SPEVENT*,ULONG) override { return S_OK; }
-    HRESULT STDMETHODCALLTYPE GetEventInterest(ULONGLONG* out) override { if (!out) { return E_POINTER; } *out = 0; return S_OK; }
+    HRESULT STDMETHODCALLTYPE AddEvents(const SPEVENT* events,ULONG count) override {
+        affinity();
+        if (!events && count) { return E_POINTER; }
+        if (bookmarks.size()>=fail_event_after) { return E_ACCESSDENIED; }
+        try {
+            for (ULONG i = 0; i < count; ++i) {
+                const auto& e = events[i];
+                if (bytes || e.eEventId!=SPEI_TTS_BOOKMARK || e.elParamType!=SPET_LPARAM_IS_STRING ||
+                    e.ullAudioStreamOffset!=0 || e.ulStreamNum!=0 || !e.lParam) { return E_UNEXPECTED; }
+                // Copy synchronously, just like SAPI. Retain no borrowed event
+                // or fragment pointer; assertions below run after Speak returns.
+                bookmarks.push_back({reinterpret_cast<const wchar_t*>(e.lParam),e.wParam});
+            }
+            return S_OK;
+        } catch (const std::bad_alloc&) { return E_OUTOFMEMORY; }
+        catch (...) { return E_FAIL; }
+    }
+    HRESULT STDMETHODCALLTYPE GetEventInterest(ULONGLONG* out) override {
+        affinity(); ++interest_queries;
+        if (!out) { return E_POINTER; } *out = event_interest; return interest_result;
+    }
     void affinity() { if (GetCurrentThreadId()!=caller) { wrong_thread = true; } }
     DWORD STDMETHODCALLTYPE GetActions() override {
         affinity(); ++actions;
         DWORD flags = 0;
         if (controls && !controls_reported) { flags = SPVES_SKIP|SPVES_RATE|SPVES_VOLUME; controls_reported = true; }
         const bool byte_abort = bytes>=abort_bytes && (!late_abort || ++end_polls>=2);
-        if (entry_abort || byte_abort || (timed_abort && Clock::now()-begun>=std::chrono::milliseconds(20))) {
+        if (entry_abort || byte_abort || bookmarks.size()>=abort_events ||
+            (timed_abort && Clock::now()-begun>=std::chrono::milliseconds(20))) {
             if (!abort_observable) {
                 abort_observable = true;
                 observable = timed_abort ? begun+std::chrono::milliseconds(20) : begun;
@@ -85,6 +106,11 @@ public:
         return S_OK;
     }
     Mode mode;
+    std::vector<Bookmark> bookmarks;
+    ULONGLONG event_interest = SPFEI(SPEI_TTS_BOOKMARK);
+    HRESULT interest_result = S_OK;
+    ULONG interest_queries = 0;
+    std::size_t abort_events = SIZE_MAX, fail_event_after = SIZE_MAX;
     std::vector<std::uint8_t> pcm;
     std::uint64_t bytes = 0;
     ULONG calls = 0, frames = 0, remaining = 0, actions = 0;
@@ -117,15 +143,93 @@ void validate(const Site& site) {
     check(site.frames==170 && site.bytes==652800 && !site.remaining && site.first_ms<site.total_ms,
           "Canonical samples/frames/immediate streaming differ");
     check(site.actions>0,"SAPI actions not polled");
+    check(site.bookmarks.empty(),"Plain canonical text emitted an unsolicited bookmark");
 }
 void text_checks() {
     auto f = fragment(L"caf\u00e9 \U0001f600");
-    check(outloud::sapi::collect_text(&f)=="caf\xc3\xa9 \xf0\x9f\x98\x80","Unicode conversion failed");
+    check(outloud::sapi::collect_request(&f).text=="caf\xc3\xa9 \xf0\x9f\x98\x80","Unicode conversion failed");
     std::wstring a(1,wchar_t(0xd83d)), b(1,wchar_t(0xde00)); auto one = fragment(a), two = fragment(b); one.pNext = &two;
-    check(outloud::sapi::collect_text(&one)=="\xf0\x9f\x98\x80","Fragment-spanning surrogate pair failed");
+    check(outloud::sapi::collect_request(&one).text=="\xf0\x9f\x98\x80","Fragment-spanning surrogate pair failed");
     one.pNext = nullptr;
-    bool rejected = false; try { (void)outloud::sapi::collect_text(&one); } catch (const outloud::sapi::Failure&) { rejected = true; }
+    bool rejected = false; try { (void)outloud::sapi::collect_request(&one); } catch (const outloud::sapi::Failure&) { rejected = true; }
     check(rejected,"Invalid UTF16 accepted");
+}
+SPVTEXTFRAG bookmark(std::wstring_view name) {
+    auto f = fragment(name); f.State.eAction = SPVA_Bookmark; return f;
+}
+void bookmark_checks(ISpTTSEngine* engine,const WAVEFORMATEX* wave) {
+    auto speech = fragment(L"Hello traveler.");
+    Site plain(Mode::normal,true); speak(engine,wave,&speech,plain);
+    check(plain.bytes>0 && !plain.remaining && plain.bookmarks.empty() && !plain.interest_queries,
+          "Plain text bookmark behavior changed");
+    const auto same_audio = [&](const Site& site) {
+        check(site.bytes==plain.bytes && site.frames==plain.frames && site.pcm==plain.pcm && !site.remaining,
+              "Bookmark changed synthesized speech");
+    };
+    const auto recovery = [&] {
+        Site recovered(Mode::normal,true); speak(engine,wave,&speech,recovered); same_audio(recovered);
+        check(recovered.bookmarks.empty(),"Bookmark leaked into the next request");
+    };
+    // A fragment is a counted substring, not necessarily a terminated name.
+    std::wstring source = L"OUTLOUD_TEST_123\"/>trailing XML";
+    auto one = bookmark(std::wstring_view(source).substr(0,std::wstring_view(L"OUTLOUD_TEST_123").size())); one.pNext = &speech;
+    const auto parsed = outloud::sapi::collect_request(&one);
+    check(parsed.text=="Hello traveler." && parsed.bookmarks==std::vector<std::wstring>{L"OUTLOUD_TEST_123"},
+          "Bookmark entered TTS text or substring extraction differed");
+    Site single(Mode::normal,true); speak(engine,wave,&one,single); same_audio(single);
+    source.assign(source.size(),L'x');
+    check(single.bookmarks.size()==1 && single.bookmarks[0].name==L"OUTLOUD_TEST_123" && !single.bookmarks[0].value,
+          "Single bookmark event or copied lifetime differs");
+
+    std::array<std::wstring_view,5> names{L"Start",L"OUTLOUD:17:3",L"42",L"caf\u00e9 \U0001f600",L"Start"};
+    std::array<SPVTEXTFRAG,5> chain{};
+    for (std::size_t i=0; i<chain.size(); ++i) {
+        chain[i] = bookmark(names[i]); chain[i].pNext = i+1<chain.size() ? &chain[i+1] : &speech;
+    }
+    Site multiple(Mode::normal,true); speak(engine,wave,chain.data(),multiple); same_audio(multiple);
+    check(multiple.bookmarks.size()==names.size(),"Multiple bookmark count differs");
+    for (std::size_t i=0; i<names.size(); ++i) {
+        check(multiple.bookmarks[i].name==names[i] && multiple.bookmarks[i].value==(i==2 ? WPARAM{42} : 0),
+              "Bookmark order, opaque string or numeric wParam differs");
+    }
+    Site uninterested(Mode::normal,true); uninterested.event_interest = SPFEI_FLAGCHECK;
+    speak(engine,wave,chain.data(),uninterested); same_audio(uninterested);
+    check(uninterested.bookmarks.empty() && uninterested.interest_queries==1,"Reserved bits mistaken for bookmark interest");
+
+    Site entry(Mode::normal,false); entry.entry_abort = true;
+    speak(engine,wave,chain.data(),entry);
+    check(entry.bookmarks.empty() && !entry.calls,"Entry abort emitted bookmark/audio"); recovery();
+    Site between(Mode::normal,false); between.abort_events = 1;
+    speak(engine,wave,chain.data(),between);
+    check(between.bookmarks.size()==1 && between.bookmarks[0].name==L"Start" && !between.calls,
+          "Abort between leading bookmarks did not stop emission"); recovery();
+    Site partial(Mode::partial,false); partial.abort_bytes = 126;
+    speak(engine,wave,chain.data(),partial);
+    check(partial.bookmarks.size()==names.size() && partial.bytes==126 && !partial.write_after_abort,
+          "Bookmark broke partial Write cancellation"); recovery();
+    Site failed(Mode::normal,false); failed.fail_event_after = 1;
+    speak(engine,wave,chain.data(),failed,E_ACCESSDENIED);
+    check(failed.bookmarks.size()==1 && !failed.calls,"AddEvents failure continued output"); recovery();
+    Site interest_failed(Mode::normal,false); interest_failed.interest_result = E_ACCESSDENIED;
+    speak(engine,wave,chain.data(),interest_failed,E_ACCESSDENIED);
+    check(interest_failed.bookmarks.empty() && !interest_failed.calls,"Interest failure continued output");
+    Site write_failed(Mode::failed,false);
+    speak(engine,wave,chain.data(),write_failed,E_ACCESSDENIED);
+    check(write_failed.bookmarks.size()==names.size() && !write_failed.bytes,"Bookmarked Write failure differed"); recovery();
+
+    auto tail = bookmark(L"mid"); speech.pNext = &tail;
+    Site mid(Mode::normal,false); speak(engine,wave,chain.data(),mid,E_NOTIMPL);
+    check(mid.bookmarks.empty() && !mid.calls,"Non-leading bookmark was approximated or partially emitted"); speech.pNext = nullptr;
+    auto malformed = bookmark(std::wstring_view(L"a\0b",3));
+    Site invalid(Mode::normal,false); speak(engine,wave,&malformed,invalid,E_INVALIDARG);
+    malformed.pTextStart = nullptr; speak(engine,wave,&malformed,invalid,E_POINTER);
+    check(invalid.bookmarks.empty() && !invalid.calls,"Invalid bookmark produced output");
+    auto only = bookmark(L"OUTLOUD:17:3");
+    Site no_text(Mode::normal,false); speak(engine,wave,&only,no_text);
+    check(no_text.bookmarks.size()==1 && no_text.bookmarks[0].name==L"OUTLOUD:17:3" && !no_text.calls,
+          "Bookmark-only request differed");
+    recovery();
+    std::cout << "PASS: leading bookmarks, exact/order/offset/ownership/interest, failures and cancellation recovery.\n";
 }
 }
 int wmain(int argc,wchar_t** argv) {
@@ -177,6 +281,7 @@ int wmain(int argc,wchar_t** argv) {
                 check(site.calls==170,"Normal Write count differs"); first_times[i] = site.first_ms; totals[i] = site.total_ms;
             }
         } else {
+            bookmark_checks(engine.p,wave);
             Site a(Mode::normal,true); speak(engine.p,wave,&first,a); validate(a); check(a.calls==170,"Normal frame Write count differs");
             auto short_text = fragment(L"Hello there.");
             for (const auto mode : {Mode::failed,Mode::zero,Mode::odd,Mode::oversized,Mode::stopped}) {
@@ -236,7 +341,7 @@ int wmain(int argc,wchar_t** argv) {
         FreeLibrary(module); module = nullptr;
         const auto directory = std::filesystem::absolute(argv[2]).parent_path().parent_path()/"perf";
         std::filesystem::create_directories(directory);
-        std::ofstream report(directory/(observation ? "2n-normal-observation.json" : benchmark ? "2m-sapi-benchmark.json" : "2n-sapi-check.json"));
+        std::ofstream report(directory/(observation ? "2n-normal-observation.json" : benchmark ? "2m-sapi-benchmark.json" : "2o-sapi-check.json"));
         report << std::setprecision(17) << "{\"registration_free\":true,\"no_registry_operations\":true,\"frames\":170,\"samples\":326400,\"audio_bytes\":652800,"
             "\"normal_write_calls\":170,\"partial_write_calls\":" << partial_calls << ",\"caller_thread_site\":true,\"module_unloadable\":true,\"warmups\":" << (benchmark || observation ? 1 : 0)
             << ",\"timed_repetitions\":" << (observation ? 1 : benchmark ? 3 : 0) << ",\"first_write_ms\":[";
@@ -252,7 +357,7 @@ int wmain(int argc,wchar_t** argv) {
             report << "{\"case\":\"" << r.name << "\",\"bytes\":" << r.bytes << ",\"writes\":" << r.writes
                    << ",\"observations\":" << r.observations << ",\"abort_to_quiesce_ms\":" << r.latency << ",\"same_resident_recovery\":true}";
         }
-        report << "]}\n"; check(bool(report),"Cannot write report");
+        report << "],\"leading_bookmark_checks\":" << (benchmark || observation ? "false" : "true") << "}\n"; check(bool(report),"Cannot write report");
         std::cout << "PASS: registration-free SAPI, 170 frames / 652800 bytes, caller-thread streaming, COM/module release"
                   << (observation ? "; one warm-up plus one normal observation.\n" : benchmark ? "; one warm-up plus three timed Speak calls.\n" : "; exact native PCM16, abort/recovery cases, 5270 partial Writes.\n");
         return 0;

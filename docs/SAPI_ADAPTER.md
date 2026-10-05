@@ -92,12 +92,16 @@ ordered bounded SPVTEXTFRAG UTF-16 spans
 **SDK contract / Chatterbox policy:** SPVA_Speak contributes exactly
 `pTextStart[0..ulTextLen)` in linked-list order; no inserted spaces and no
 per-fragment synthesis/reseed. Null data with nonzero length returns E_POINTER;
-a cycle returns E_INVALIDARG. Bookmark, Section and ParseUnknownTag metadata
-are ignored without speaking their contents. Zero-length silence is ignored.
+a cycle returns E_INVALIDARG. Section and ParseUnknownTag metadata are ignored
+without speaking their contents. Step 2O forwards leading Bookmark fragments
+as ordered SPEI_TTS_BOOKMARK string events at byte offset zero when requested
+by the site; names never enter synthesis. Non-leading bookmarks return
+E_NOTIMPL before events/audio begin. Zero-length silence is ignored.
 Pronounce, SpellOut, nonzero silence and other unsupported actions return
-E_NOTIMPL before audio begins. Bookmarks/events/SSML/prosody transforms are not
+E_NOTIMPL before audio begins. Other events/SSML/prosody transforms are not
 implemented. Fragment pitch/emphasis/rate/volume state does not alter synthesis;
-the supported product subset is ordinary English plain text.
+the supported product subset is ordinary English text with optional leading
+bookmarks. Ownership and limitations are detailed in `docs/SAPI_BOOKMARKS.md`.
 
 WideCharToMultiByte with CP_UTF8/WC_ERR_INVALID_CHARS uses explicit lengths and
 does not depend on locale. Conversion happens after concatenation, allowing a

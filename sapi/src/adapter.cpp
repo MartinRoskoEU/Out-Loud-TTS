@@ -4,6 +4,7 @@
 #include "outloud/pcm16.hpp"
 #include <atomic>
 #include <condition_variable>
+#include <cstdlib>
 #include <filesystem>
 #include <mutex>
 #include <thread>
@@ -105,6 +106,30 @@ struct RequestControl {
     }
 };
 constexpr auto poll_interval = std::chrono::milliseconds(10);
+HRESULT leading_bookmarks(RequestControl& control, const std::vector<std::wstring>& names) {
+    if (names.empty()) { return S_OK; }
+    ULONGLONG interest = 0;
+    auto hr = control.site->GetEventInterest(&interest);
+    if (FAILED(hr)) { return hr; }
+    // SPFEI includes reserved flag-check bits; test only the bookmark bit.
+    if (!(interest & (1ULL << SPEI_TTS_BOOKMARK))) { return S_OK; }
+    for (const auto& name : names) {
+        if (control.poll()) { return S_OK; }
+        SPEVENT event{};
+        event.eEventId = SPEI_TTS_BOOKMARK;
+        event.elParamType = SPET_LPARAM_IS_STRING;
+        // SAPI supplies ulStreamNum. Offset 0 is relative to this Speak's audio,
+        // and events must be queued before their associated audio is written.
+        event.ullAudioStreamOffset = 0;
+        event.wParam = static_cast<WPARAM>(_wtol(name.c_str()));
+        event.lParam = reinterpret_cast<LPARAM>(name.c_str());
+        // Microsoft samplettsengine frees its input string after AddEvents:
+        // the site copies it. Our owned string remains alive through this call.
+        hr = control.site->AddEvents(&event,1);
+        if (FAILED(hr)) { return hr; }
+    }
+    return S_OK;
+}
 // Chatterbox's host checks require every site call on the Speak caller thread.
 // One joined coordinator runs the unchanged core; one-frame rendezvous retains
 // caller-thread delivery without COM proxies or extra neural/audio workers.
@@ -254,10 +279,14 @@ public:
                 }
             } end{this};
             if (!token_) { return SPERR_UNINITIALIZED; }
-            const auto text = collect_text(fragments);
-            if (text.empty()) { return S_OK; }
+            const auto request = collect_request(fragments);
+            if (request.text.empty() && request.bookmarks.empty()) { return S_OK; }
             if (control.poll()) { return S_OK; }
-            return stream(resident_,configuration_,text,control);
+            const auto hr = leading_bookmarks(control,request.bookmarks);
+            if (FAILED(hr)) { return hr; }
+            if (request.text.empty() || control.aborted) { return S_OK; }
+            if (!request.bookmarks.empty() && control.poll()) { return S_OK; }
+            return stream(resident_,configuration_,request.text,control);
         } catch (...) { return exception_code(); }
     }
 private:

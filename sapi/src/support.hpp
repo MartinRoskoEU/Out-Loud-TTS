@@ -6,6 +6,7 @@
 #include <stdexcept>
 #include <string>
 #include <unordered_set>
+#include <vector>
 
 namespace outloud::sapi {
 struct Failure { HRESULT code; };
@@ -26,7 +27,12 @@ inline std::string utf8(std::wstring_view text) {
     }
     return result;
 }
-inline std::string collect_text(const SPVTEXTFRAG* fragments) {
+struct SpeechRequest {
+    std::string text;
+    std::vector<std::wstring> bookmarks;
+};
+inline SpeechRequest collect_request(const SPVTEXTFRAG* fragments) {
+    SpeechRequest request;
     std::wstring text;
     std::unordered_set<const SPVTEXTFRAG*> visited;
     for (auto f = fragments; f; f = f->pNext) {
@@ -34,13 +40,25 @@ inline std::string collect_text(const SPVTEXTFRAG* fragments) {
         if (f->State.eAction == SPVA_Speak) {
             if (f->ulTextLen && !f->pTextStart) { throw Failure{E_POINTER}; }
             if (f->ulTextLen) { text.append(f->pTextStart,f->ulTextLen); }
-        } else if (f->State.eAction == SPVA_Bookmark || f->State.eAction == SPVA_Section ||
+        } else if (f->State.eAction == SPVA_Bookmark) {
+            // No text-to-audio alignment exists for bookmarks after spoken text.
+            // Validate the whole request before emitting any events or audio.
+            if (!text.empty()) { throw Failure{E_NOTIMPL}; }
+            if (f->ulTextLen && !f->pTextStart) { throw Failure{E_POINTER}; }
+            std::wstring name;
+            if (f->ulTextLen) { name.assign(f->pTextStart,f->ulTextLen); }
+            // SPEVENT carries a NUL-terminated string, so embedded NULs cannot
+            // round-trip exactly. Fragment data itself need not be terminated.
+            if (name.find(L'\0') != std::wstring::npos) { throw Failure{E_INVALIDARG}; }
+            request.bookmarks.push_back(std::move(name));
+        } else if (f->State.eAction == SPVA_Section ||
                    f->State.eAction == SPVA_ParseUnknownTag ||
                    (f->State.eAction == SPVA_Silence && !f->State.SilenceMSecs)) {
-            // Chatterbox metadata policy: never speak tag/bookmark contents.
+            // Chatterbox metadata policy: never speak tag contents.
         } else { throw Failure{E_NOTIMPL}; }
     }
     // Convert once after concatenation, so a surrogate pair can span fragments.
-    return utf8(text);
+    request.text = utf8(text);
+    return request;
 }
 }
