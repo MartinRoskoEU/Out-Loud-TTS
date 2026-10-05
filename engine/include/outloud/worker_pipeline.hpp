@@ -31,6 +31,11 @@ public:
     void prepare(std::span<const std::uint32_t> tokens, NoiseSource& noise, std::span<float> destination,
                  const GenerationOptions& options = {}, PCMFrameSink sink = nullptr, void* context = nullptr,
                  const GenerationObserver* observer = nullptr);
+    // Production mode: the producer reseeds its owned RNG during the untimed
+    // reset job. The generation/queue/decoder path is shared with supplied noise.
+    void prepare(std::span<const std::uint32_t> tokens, std::uint64_t seed, std::span<float> destination,
+                 const GenerationOptions& options = {}, PCMFrameSink sink = nullptr, void* context = nullptr,
+                 const GenerationObserver* observer = nullptr);
     [[nodiscard]] WorkerResult run(); // joins request completion, not OS threads
     // Completed state views are valid until the next prepare; diagnostic use only.
     [[nodiscard]] const FlowLMPrefillState& flow_state() const;

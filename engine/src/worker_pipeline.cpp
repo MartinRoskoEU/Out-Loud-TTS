@@ -1,4 +1,5 @@
 #include "outloud/worker_pipeline.hpp"
+#include "outloud/production_noise.hpp"
 #include "worker_audit.hpp"
 #include <algorithm>
 #include <chrono>
@@ -47,6 +48,8 @@ struct WorkerPipeline::Impl {
     std::thread producer, consumer;
     std::span<const std::uint32_t> tokens;
     NoiseSource* noise = nullptr;
+    ProductionNoiseSource production_noise{0};
+    std::uint64_t request_seed = 0;
     std::span<float> destination;
     GenerationOptions options;
     PCMFrameSink sink = nullptr;
@@ -98,7 +101,12 @@ struct WorkerPipeline::Impl {
             const bool resetting = reset_job;
             lock.unlock();
             try {
-                if (resetting) { if (is_producer) { flow.reset(); } else { decoder.reset(); } }
+                if (resetting) {
+                    if (is_producer) {
+                        flow.reset();
+                        if (noise == &production_noise) { production_noise.reseed(request_seed); }
+                    } else { decoder.reset(); }
+                }
                 else { if (is_producer) { produce(); } else { consume(); } }
             }
             catch (...) {
@@ -201,6 +209,13 @@ WorkerPipeline::WorkerPipeline(PocketModelAsset model, OutLoudVoice voice, std::
         std::uint32_t frames, cpu::KernelPath path)
     : impl_(std::make_unique<Impl>(model, voice, tokens, frames, path)) {}
 WorkerPipeline::~WorkerPipeline() = default;
+void WorkerPipeline::prepare(std::span<const std::uint32_t> tokens, std::uint64_t seed, std::span<float> destination,
+        const GenerationOptions& options, PCMFrameSink sink, void* context, const GenerationObserver* observer) {
+    auto& p = *impl_;
+    if (p.running) { throw std::invalid_argument("Worker is already running"); }
+    p.request_seed = seed;
+    prepare(tokens, p.production_noise, destination, options, sink, context, observer);
+}
 void WorkerPipeline::prepare(std::span<const std::uint32_t> tokens, NoiseSource& noise, std::span<float> destination,
         const GenerationOptions& options, PCMFrameSink sink, void* context, const GenerationObserver* observer) {
     auto& p = *impl_;

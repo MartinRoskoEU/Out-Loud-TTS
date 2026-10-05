@@ -1,6 +1,7 @@
 #include "outloud/worker_pipeline.hpp"
 #include "worker_audit.hpp"
 #include "mimi_fixture_checks.hpp"
+#include "../audio/wav.hpp"
 #include <Windows.h>
 #include <atomic>
 #include <cstdlib>
@@ -26,13 +27,16 @@ void operator delete[](void* p, std::size_t) noexcept { std::free(p); }
 namespace {
 using namespace outloud;
 using test::neural_require;
-void validate(const WorkerResult& r, const FixtureNoiseSource& noise, std::span<const float> pcm) {
-    neural_require(r.candidates == 47 && r.emitted == 46 && r.draws == 48 && noise.consumed() == 48 &&
+void validate_result(const WorkerResult& r, std::span<const float> pcm) {
+    neural_require(r.candidates == 47 && r.emitted == 46 && r.draws == 48 &&
         r.samples == 88320 && r.first_eos == 43u && r.flow_offset == 179 && r.mimi_offset == 736 &&
         r.termination == GenerationTermination::eos_tail && r.hot_allocations == 0,
         "Worker scheduling/state/allocation result differs");
     neural_require(std::all_of(pcm.begin(), pcm.begin() + r.samples, [](float x) { return std::isfinite(x); }),
                    "Nonfinite worker PCM");
+}
+void validate(const WorkerResult& r, const FixtureNoiseSource& noise, std::span<const float> pcm) {
+    validate_result(r, pcm); neural_require(noise.consumed() == 48, "Fixture consumption differs");
 }
 WorkerResult request(WorkerPipeline& workers, std::span<const float> rows, std::span<float> pcm) {
     FixtureNoiseSource noise(rows); // full fixture validation before timing
@@ -74,7 +78,7 @@ class ThrowingNoise final : public NoiseSource {
     std::span<const float> next() override { throw std::runtime_error("Injected producer failure"); }
 };
 void correctness(const PocketModelAsset& model, const OutLoudVoice& voice, cpu::KernelPath path,
-        std::span<const float> rows, const std::filesystem::path& directory) {
+        std::span<const float> rows, const std::filesystem::path& directory, bool production = false) {
     // A clean sequential equivalent supplies the exact native arithmetic reference.
     FlowLMBackbone backbone(model, voice, path); FlowSampler sampler(model, path);
     FlowLMGenerator generator(backbone, sampler);
@@ -113,8 +117,11 @@ void correctness(const PocketModelAsset& model, const OutLoudVoice& voice, cpu::
         seen = 0; candidates = 0;
         FixtureNoiseSource noise(rows);
         SinkCheck sink{expected, &candidates};
-        workers.prepare(test::neural_tokens, noise, pcm, {}, check_sink, &sink, &compare);
-        results[repetition] = workers.run(); validate(results[repetition], noise, pcm);
+        if (production) { workers.prepare(test::neural_tokens, std::uint64_t{73}, pcm, {}, check_sink, &sink, &compare); }
+        else { workers.prepare(test::neural_tokens, noise, pcm, {}, check_sink, &sink, &compare); }
+        results[repetition] = workers.run();
+        if (production) { validate_result(results[repetition], pcm); }
+        else { validate(results[repetition], noise, pcm); }
         first_candidates = sink.first_candidates;
         neural_require(seen == 48 && sink.frames == 46 && test::same_float_bits(std::span(pcm).first(88320), expected),
                        "Worker complete PCM/reuse differs");
@@ -131,7 +138,7 @@ void correctness(const PocketModelAsset& model, const OutLoudVoice& voice, cpu::
             neural_require(test::same_float_bits(state.convolution_state(configuration),
                 workers.mimi_state().convolution_state(configuration)), "Worker Mimi carry differs");
         }
-        if (!repetition) {
+        if (!production && !repetition) {
             // Exercise both error directions between A and B: waits must wake and both
             // workers must quiesce before reset. These are short failures, not stress runs.
             FixtureNoiseSource failed_noise(rows);
@@ -146,13 +153,24 @@ void correctness(const PocketModelAsset& model, const OutLoudVoice& voice, cpu::
             neural_require(failed, "Producer exception lost");
         }
     }
-    std::ofstream out(directory / "2j-correctness.json");
+    const auto filename = production ? (path == cpu::KernelPath::portable ? "2k-worker-portable-check.json" : "2k-worker-avx2-check.json")
+                                     : "2j-correctness.json";
+    std::ofstream out(directory / filename);
     out << "{\"path\":\"" << cpu::path_name(path) << "\",\"native_float_bits_equal\":true,\"eos_timeline_equal\":true,"
         "\"all_flow_mimi_cache_and_carry_bits_equal\":true,\"reuse_equal\":true,\"idle_shutdown_passed\":true,"
-        "\"producer_consumer_error_recovery_passed\":true,\"first_pcm_candidate_count\":" << first_candidates << ",\"requests\":[";
+        "\"producer_consumer_error_recovery_tested\":" << (production ? "false" : "true")
+        << ",\"production_rng\":" << (production ? "true" : "false")
+        << ",\"pcm_sha256\":\"" << detail::hex(detail::sha256({reinterpret_cast<const std::uint8_t*>(pcm.data()), 88320*4}))
+        << "\",\"first_pcm_candidate_count\":" << first_candidates << ",\"requests\":[";
     worker_json(out, results[0], 0); out << ','; worker_json(out, results[1], 0); out << "]}\n";
     neural_require(bool(out), "Cannot write worker correctness report");
-    std::cout << "PASS: exact prefill, 47 candidates/EOS/noise, 46 latents/frames, 88320 PCM and all final states; A/B reuse, both error directions, idle/completed shutdown; zero hot allocations.\n";
+    if (production && path == cpu::KernelPath::avx2_fma) {
+        const auto audio = directory.parent_path() / "audio"; std::filesystem::create_directories(audio);
+        development::write_pcm16_wave(audio / "native-production-rng-segment1-avx2.wav", std::span(pcm).first(88320));
+    }
+    std::cout << "PASS: exact prefill, 47 candidates/EOS/noise, 46 latents/frames, 88320 PCM and all final states; A/B reuse, "
+              << (production ? "producer-owned RNG reseed" : "both error directions")
+              << ", idle/completed shutdown; zero hot allocations.\n";
 }
 void benchmark(const PocketModelAsset& model, const OutLoudVoice& voice, std::span<const float> rows,
         const std::filesystem::path& directory, std::size_t repetitions) {
@@ -223,15 +241,15 @@ int wmain(int argc, wchar_t** argv) {
         std::cout << "One diagnostic pipeline trace complete.\n";
 #else
         const std::wstring_view mode = argc >= 2 ? argv[1] : L"check";
-        if (mode == L"check" && argc <= 3) {
+        if ((mode == L"check" || mode == L"rng-check") && argc <= 3) {
             const bool portable = argc == 3 && std::wstring_view(argv[2]) == L"portable";
             if (argc == 3 && !portable && std::wstring_view(argv[2]) != L"avx2") { throw std::invalid_argument("Unknown path"); }
-            correctness(model, voice, portable ? cpu::KernelPath::portable : cpu::KernelPath::avx2_fma, rows, directory);
+            correctness(model, voice, portable ? cpu::KernelPath::portable : cpu::KernelPath::avx2_fma, rows, directory, mode == L"rng-check");
         } else if (mode == L"bench" && argc <= 3) {
             const std::wstring_view count = argc == 3 ? argv[2] : L"5";
             if (count != L"2" && count != L"5") { throw std::invalid_argument("Use two intermediate or five final runs"); }
             benchmark(model, voice, rows, directory, count == L"2" ? 2 : 5);
-        } else { throw std::invalid_argument("Usage: outloud-worker-check check [avx2|portable] | bench [2|5]"); }
+        } else { throw std::invalid_argument("Usage: outloud-worker-check check|rng-check [avx2|portable] | bench [2|5]"); }
 #endif
         return 0;
     } catch (const std::exception& e) { audit = false; std::cerr << e.what() << '\n'; return 1; }
