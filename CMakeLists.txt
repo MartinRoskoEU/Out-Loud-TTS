@@ -29,6 +29,14 @@ target_include_directories(outloud_assets PUBLIC engine/include)
 target_link_libraries(outloud_assets PRIVATE outloud_asset_io)
 target_compile_options(outloud_assets PRIVATE /W4 /WX /utf-8 /permissive- /fp:precise)
 
+# Offline production import boundary; synthesis/SAPI do not link the source parser.
+add_library(outloud_voice_import STATIC engine/src/voice_import.cpp)
+target_link_libraries(outloud_voice_import PUBLIC outloud_assets PRIVATE outloud_asset_io)
+target_compile_options(outloud_voice_import PRIVATE /W4 /WX /utf-8 /permissive- /fp:precise)
+add_executable(outloud-voice-import tools/voice-import/main.cpp)
+target_link_libraries(outloud-voice-import PRIVATE outloud_voice_import)
+target_compile_options(outloud-voice-import PRIVATE /W4 /WX /utf-8 /permissive- /fp:precise)
+
 add_library(outloud_text STATIC engine/src/tokenizer.cpp engine/src/text_pipeline.cpp)
 target_include_directories(outloud_text PUBLIC engine/include)
 target_link_libraries(outloud_text PRIVATE outloud_asset_io)
@@ -243,6 +251,15 @@ target_compile_definitions(outloud-rng-synth PRIVATE OUTLOUD_WORKER_AUDIT=1
 add_library(outloud_orchestration STATIC engine/src/orchestration.cpp)
 target_link_libraries(outloud_orchestration PUBLIC outloud_workers outloud_text)
 target_compile_options(outloud_orchestration PRIVATE /W4 /WX /utf-8 /permissive- /fp:precise)
+
+add_executable(outloud-voice-import-tests tests/voice_import_test.cpp)
+target_link_libraries(outloud-voice-import-tests PRIVATE outloud_voice_import outloud_orchestration outloud_asset_io)
+target_include_directories(outloud-voice-import-tests PRIVATE engine/src)
+target_compile_options(outloud-voice-import-tests PRIVATE /W4 /WX /utf-8 /permissive- /fp:precise)
+if(BUILD_TESTING)
+    add_test(NAME voice-import-regressions COMMAND outloud-voice-import-tests
+        "${CMAKE_CURRENT_SOURCE_DIR}/voices/gnome_male.safetensors" "${OUTLOUD_ASSET_DIRECTORY}/gnome_male.olv")
+endif()
 add_executable(outloud-utterance-synth tools/utterance-check/main.cpp)
 target_link_libraries(outloud-utterance-synth PRIVATE outloud_orchestration outloud_asset_io)
 target_include_directories(outloud-utterance-synth PRIVATE engine/src)

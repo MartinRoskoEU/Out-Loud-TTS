@@ -7,6 +7,11 @@ library uses local read-only file mappings and Windows BCrypt SHA256. It has
 no Python, PyTorch, Hugging Face, safetensors, JSON/YAML or network dependency.
 No neural backend or inference is implemented in this step.
 
+Step 3A adds a separate native production importer for prepared Pocket voice
+states; see [VOICE_IMPORT.md](VOICE_IMPORT.md) for its API, CLI, validation and
+explicit compatibility declaration. The v1 format and synthesis loader below
+remain unchanged; Python exporters here remain development reference tools.
+
 ## Source and fixed model schema
 
 The original local model is `kyutai/pocket-tts`, revision
