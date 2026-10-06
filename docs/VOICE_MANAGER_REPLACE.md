@@ -1,5 +1,9 @@
 # Step 3D.3.1: Import-or-Replace and dismissible notifications
 
+The current helper uses [Step 3D.3.2 protocol v3 and Remove Voice](VOICE_MANAGER_REMOVE.md).
+The protocol v2 description below records this step's original implementation;
+Import/Replace payloads and behavior are retained in v3.
+
 The existing **Import Voice** action now asks for replacement confirmation when
 the final display name matches a managed voice in the current snapshot. Replacement
 uses a first-class native operation and retains the existing entry and SAPI identity.

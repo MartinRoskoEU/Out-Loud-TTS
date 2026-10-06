@@ -1,5 +1,8 @@
 # Step 3D.1: read-only WPF Voice Manager
 
+The current frontend also supports [Step 3D.3.2 Remove Voice](VOICE_MANAGER_REMOVE.md),
+with confirmation, helper-only elevation and the existing severity notifications.
+
 The current frontend also implements [Step 3D.3 import and elevation](VOICE_MANAGER_IMPORT.md).
 Mutations use the separate helper. [Step 3D.3.1](VOICE_MANAGER_REPLACE.md) adds
 Import-or-Replace and an additive content-metadata getter, preserving existing

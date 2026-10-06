@@ -13,7 +13,7 @@ enum class VoiceLibraryErrorCode {
     invalid_display_name, duplicate_content, import_failed, incompatible_voice,
     corrupt_voice, replace_required, source_io, destination_io, remove_failed,
     internal_failure, library_access_denied, library_security_invalid,
-    voice_in_use, replacement_conflict, replacement_pending
+    voice_in_use, replacement_conflict, replacement_pending, removal_conflict, removal_partial
 };
 [[nodiscard]] std::string_view voice_library_error_name(VoiceLibraryErrorCode code) noexcept;
 class VoiceLibraryError : public std::runtime_error {
@@ -74,9 +74,17 @@ struct LibraryReplaceResult {
     std::string detail;
 };
 struct VoiceRemovalResult {
-    // Removal commits by moving the entry out of enumeration. Cleanup can be retried.
+    // Successful removal leaves no active entry. Trash cleanup can be retried.
     bool cleanup_pending = false;
     std::string detail;
+};
+struct VoiceRemoveOptions {
+    // Name/hash/health assertions are required for coordinated removal. Empty
+    // name/hash assert absent metadata; standalone removal remains available.
+    std::optional<std::string> expected_display_name, expected_olv_sha256, expected_health;
+    // Runs under the library lock AFTER reversible detach, BEFORE file deletion.
+    // Must not re-enter VoiceLibrary. Failure attempts to restore the directory.
+    std::function<void(const LibraryVoice&)> remove_registration;
 };
 struct LibraryCleanupResult {
     std::size_t cleaned = 0;
@@ -105,6 +113,7 @@ public:
                                    bool replace_existing = false) const;
     [[nodiscard]] LibraryVoice rename_voice(std::string_view id, std::string_view display_name);
     [[nodiscard]] VoiceRemovalResult remove_voice(std::string_view id);
+    [[nodiscard]] VoiceRemovalResult remove_voice(std::string_view id, const VoiceRemoveOptions&);
     // Explicitly discards unpublished staging work and completes already committed removals.
     // Also recovers journalled replacements in place; never deletes an active entry.
     // Unsafe/locked/unknown recovery state is retained and reported.

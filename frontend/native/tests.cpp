@@ -12,7 +12,7 @@ bool text(const char* value,std::string_view expected) { return value && value==
 class FakeRegistry final : public SapiVoiceRegistry {
 public:
     std::map<std::wstring,SapiTokenTree> tokens;
-    bool fixture_setup = false, deny = false, unexpected = false;
+    bool fixture_setup = false, deny = false, unexpected = false, deny_exchange = false;
     unsigned writes = 0, verifies = 0, reads = 0;
     void scope(SapiVoiceScope value) { check(value==SapiVoiceScope::machine,"Bridge used non-machine scope."); }
     std::vector<std::wstring> keys(SapiVoiceScope value) override {
@@ -30,6 +30,7 @@ public:
     void exchange(SapiVoiceScope value,std::wstring_view key,const std::optional<SapiTokenTree>& expected,
         const std::optional<SapiTokenTree>& replacement) override {
         scope(value); check(fixture_setup,"Read-only bridge attempted token mutation.");
+        if (deny_exchange) { throw SapiVoiceError(SapiVoiceErrorCode::registry_io,"Injected token transaction failure.",5); }
         const auto name = std::wstring(key); const auto it = tokens.find(name);
         const auto current = it==tokens.end() ? std::nullopt : std::optional(it->second);
         check(current==expected,"Fixture token compare mismatch.");
@@ -69,6 +70,7 @@ struct Module {
 }
 #include "../mutation/tests.hpp"
 #include "../mutation/replace_tests.hpp"
+#include "../mutation/remove_tests.hpp"
 int wmain(int argc,wchar_t** argv) {
     try {
         check(argc==7,"Usage: bridge-tests BRIDGE SAPI MODEL TOKENIZER VOICE.olv PREPARED.safetensors");
@@ -117,6 +119,7 @@ int wmain(int argc,wchar_t** argv) {
             std::filesystem::absolute(argv[3]).lexically_normal(),std::filesystem::absolute(argv[4]).lexically_normal()};
         mutation_checks(argv[6],argv[2],runtime,scratch.path);
         replacement_checks(argv[6],runtime,scratch.path);
+        removal_checks(argv[6],runtime,scratch.path);
         SapiVoiceManager setup(library,runtime,registry,MachineVoiceLibraryPolicy::development_override);
         registry->fixture_setup = true; (void)setup.install(id); registry->fixture_setup = false;
         const auto fixture_writes = registry->writes, fixture_verifies = registry->verifies;

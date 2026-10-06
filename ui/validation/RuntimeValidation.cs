@@ -43,6 +43,7 @@ internal static class RuntimeValidation
     }
     private sealed class FakeImport : IVoiceImportService, IImportDialogService
     {
+        public System.Threading.Tasks.Task<bool> ConfirmRemovalAsync(VoiceRecord target) => System.Threading.Tasks.Task.FromResult(true);
         public VoiceImportResult Next = new(ImportPhase.Cancelled);
         public System.Threading.Tasks.Task<VoiceImportRequest?> ChooseAsync() => System.Threading.Tasks.Task.FromResult<VoiceImportRequest?>(new("C:\\fake\\new.safetensors", "No collision"));
         public System.Threading.Tasks.Task<VoiceRecord?> ConfirmReplacementAsync(VoiceImportRequest request, System.Collections.Generic.IReadOnlyList<VoiceRecord> candidates)
@@ -212,9 +213,36 @@ internal static class RuntimeValidation
                     if (banner.Visibility != Visibility.Collapsed || diagnostic.Visibility != Visibility.Collapsed) throw new Exception("Notification dismissal left diagnostic visible.");
                 }
             }
+            var removeDialog = new RemoveVoiceDialog(new RemovalDialogModel(voice));
+            var removeConfirm = (Button)removeDialog.FindName("ConfirmRemoveButton");
+            if (!((Button)removeDialog.FindName("CancelRemoveButton")).IsDefault || removeConfirm.IsDefault)
+                throw new Exception("Destructive removal must require explicit confirmation, with Cancel as default.");
+            var removalService = new FakeService(); var removal = new FakeImport();
+            var removalModel = new MainViewModel(removalService, removal, removal); window.DataContext = removalModel;
+            var removeAction = (Button)window.FindName("RemoveVoiceButton");
+            Layout(window); if (removeAction.IsEnabled) throw new Exception("Remove enabled without a selected voice.");
+            var removalPeer = voice with { LibraryId = "fedcba9876543210fedcba9876543210", DisplayName = "Remaining voice" };
+            foreach (AppTheme theme in new[] { AppTheme.Light, AppTheme.Dark, AppTheme.HighContrast }) {
+                palette.Apply(theme); Layout(removeDialog, 540, 460);
+                removalService.Next = new("fake", new[] { voice, removalPeer }); removalModel.RefreshAsync().GetAwaiter().GetResult(); removalModel.SelectedVoice = voice;
+                Layout(window, 860, 560);
+                if (!removeAction.IsEnabled || !ReferenceEquals(removeConfirm.Background, app.Resources["ErrorBrush"]) ||
+                    !ReferenceEquals(removeConfirm.Foreground, app.Resources["ErrorTextBrush"]) ||
+                    !ReferenceEquals(removeAction.Foreground, app.Resources["ErrorTextBrush"])) throw new Exception("Themed destructive removal styling or selection enablement failed.");
+                removal.Next = new(ImportPhase.Succeeded, voice.LibraryId, Operation: VoiceOperation.Remove);
+                removalService.Next = new("fake", new[] { removalPeer }); removalModel.RemoveAsync().GetAwaiter().GetResult(); Layout(window);
+                if (removalModel.Voices.Count != 1 || removalModel.SelectedVoice?.LibraryId != removalPeer.LibraryId ||
+                    removalModel.ImportStateText != "Voice removed from Out Loud and Windows speech.") throw new Exception("Removal view refresh/selection/result failed.");
+                removalModel.DismissNotificationCommand.Execute(null); Layout(window);
+                if (((Border)window.FindName("OperationNotification")).Visibility != Visibility.Collapsed) throw new Exception("Removal result dismissal failed.");
+                removal.Next = new(ImportPhase.Succeeded, removalPeer.LibraryId, Operation: VoiceOperation.Remove);
+                removalService.Next = new("fake", Array.Empty<VoiceRecord>()); removalModel.RemoveAsync().GetAwaiter().GetResult(); Layout(window);
+                if (!removalModel.IsEmpty || removeAction.IsEnabled) throw new Exception("Last-row removal did not restore empty/disabled state.");
+            }
+            removeDialog.Close();
             if (errors.Errors != 0) throw new Exception("Notification/dialog binding errors.");
             window.Close();
-            Console.WriteLine("PASS: SDK-built WPF view, themes/contrast/status tones, full-row selection, replacement confirmation, severity/dismissal/diagnostics in light/dark/high contrast, fake refresh states and resized layout; no window shown.");
+            Console.WriteLine("PASS: SDK-built WPF view, themes/contrast/status tones, full-row selection, replace/remove confirmations and removal selection/empty state, severity/dismissal/diagnostics in light/dark/high contrast, fake refresh states and resized layout; no window shown.");
             return 0;
         }
         catch (Exception failure) { Console.Error.WriteLine(failure); return 1; }

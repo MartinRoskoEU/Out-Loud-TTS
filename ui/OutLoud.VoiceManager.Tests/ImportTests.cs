@@ -28,6 +28,10 @@ internal static class ImportTests
         public int ReplaceCalls;
         public VoiceRecord? NextTarget;
         public IReadOnlyList<VoiceRecord>? Candidates;
+        public bool RemoveConfirmed;
+        public int RemoveCalls;
+        public VoiceRecord? RemoveTarget;
+        public Task<bool> ConfirmRemovalAsync(VoiceRecord target) { ++RemoveCalls; RemoveTarget=target; return Task.FromResult(RemoveConfirmed); }
         public Task<VoiceImportRequest?> ChooseAsync() { ++Calls; return Task.FromResult(Next); }
         public Task<VoiceRecord?> ConfirmReplacementAsync(VoiceImportRequest request, IReadOnlyList<VoiceRecord> candidates)
         { ++ReplaceCalls; Candidates = candidates; return Task.FromResult(NextTarget); }
@@ -135,8 +139,8 @@ internal static class ImportTests
         parsed = ImportProtocol.DecodeResult(Frame(2, "", new("library", "duplicate_content", "Already imported", "C:\\ž"), new[] { id }));
         check(parsed.DuplicateIds?[0] == id && parsed.Error?.Path == "C:\\ž", "Duplicate result Unicode/error transport.");
         bool Reject(byte[] bytes) { try { ImportProtocol.DecodeResult(bytes); return false; } catch (Exception) { return true; } }
-        byte[] bad = Frame(1, id); bad[4] = 9; check(Reject(bad), "Bad response version rejected.");
-        bad = Frame(1, id); bad[8] = 9; check(Reject(bad), "Unknown response outcome rejected.");
+        byte[] bad = Frame(1, id); bad[4] = 99; check(Reject(bad), "Bad response version rejected.");
+        bad = Frame(1, id); bad[8] = 99; check(Reject(bad), "Unknown response outcome rejected.");
         bad = Frame(1, id); check(Reject(bad[..^1]), "Truncated response rejected.");
         check(Reject(Frame(1, "invalid")) && Reject(Frame(2, id, nativeError)), "Inconsistent outcome/ID rejected.");
         var denied = new DeniedLauncher();
@@ -197,5 +201,74 @@ internal static class ImportTests
         check(Reject(Frame(5, id)) && Reject(Frame(3, id, nativeError, operation: VoiceOperation.Replace)), "Cross-operation outcomes rejected.");
         encoded = ImportProtocol.EncodeRequest(new("C:\\ž.safetensors", "Hlas", id, new string('a', 64)));
         check(BitConverter.ToUInt32(encoded, 8) == 2 && Encoding.UTF8.GetString(encoded).Contains(id), "Replace request kind and optimistic identity transported.");
+        // Remove shares the helper transport; only snapshot ID/name/hash cross it.
+        var removeService = new SnapshotService(); var removeDialog = new Dialog(); var remover = new Importer();
+        var removeModel = new MainViewModel(removeService, removeDialog, remover);
+        check(!removeModel.RemoveCommand.CanExecute(null), "Remove disabled without selection.");
+        await removeModel.RemoveAsync(); check(removeDialog.RemoveCalls == 0 && remover.Calls == 0, "No selection cannot open removal confirmation/helper.");
+        removeService.Next = new("fake", new[] { voice, other }); await removeModel.RefreshAsync();
+        removeModel.SelectedVoice = voice;
+        check(removeModel.RemoveCommand.CanExecute(null), "Selected managed ID enables Remove.");
+        removeModel.SelectedVoice = voice with { LibraryId = "unexpected-folder" };
+        check(!removeModel.RemoveCommand.CanExecute(null), "Unexpected/unmanaged folder cannot be a Remove target."); removeModel.SelectedVoice = voice;
+        await removeModel.RemoveAsync();
+        check(removeDialog.RemoveTarget == voice && remover.Calls == 0 && removeService.Reads == 1 && removeModel.Voices.Count == 2 &&
+            removeModel.NotificationSeverity == NotificationSeverity.Info && removeModel.ImportStateText.Contains("No voice was removed"), "Cancel removal preserves state and never launches helper/UAC.");
+        removeDialog.RemoveConfirmed = true; remover.Next = new(ImportPhase.Succeeded, id, Operation: VoiceOperation.Remove);
+        removeService.Next = new("fake", new[] { other }); await removeModel.RemoveAsync();
+        check(remover.Last?.Operation == VoiceOperation.Remove && remover.Last.TargetId == id && remover.Last.SourcePath == "" &&
+            remover.Last.DisplayName == voice.DisplayName && remover.Last.ExpectedHash == voice.OlvSha256 && remover.Last.ExpectedHealth == voice.Health && removeDialog.RemoveTarget?.LibraryId == id, "Removal uses selected immutable ID/name/hash/health despite duplicate names.");
+        check(removeModel.Voices.Count == 1 && ReferenceEquals(removeModel.SelectedVoice, other) && removeService.Reads == 2 &&
+            removeModel.NotificationSeverity == NotificationSeverity.Success && removeModel.ImportStateText == "Voice removed from Out Loud and Windows speech." && !removeModel.HasImportDiagnostic,
+            "Successful removal refreshes smaller list, selects remaining row and shows clean success.");
+        removeModel.DismissNotificationCommand.Execute(null); check(!removeModel.HasImportResult && !removeModel.HasImportDiagnostic, "Removal success dismisses banner/diagnostic together.");
+        remover.Next = new(ImportPhase.Failed, other.LibraryId, new("library", "voice_in_use", "Mapped"), Operation: VoiceOperation.Remove);
+        await removeModel.RemoveAsync();
+        check(removeModel.HasImportResult && removeModel.NotificationSeverity == NotificationSeverity.Warning && removeModel.HasImportDiagnostic && removeModel.Voices.Count == 1 &&
+            removeModel.ImportStateText.Contains("Close WoW") && removeModel.SelectedVoice?.LibraryId == other.LibraryId && removeService.Reads == 3, "In-use removal warning reappears, refreshes, preserves selection and count.");
+        remover.Next = new(ImportPhase.Failed, other.LibraryId, new("library", "removal_conflict", "Stale"), Operation: VoiceOperation.Remove); await removeModel.RemoveAsync();
+        check(removeService.Reads == 4 && removeModel.NotificationSeverity == NotificationSeverity.Warning, "Stale removal refreshes snapshot with warning.");
+        remover.Next = new(ImportPhase.Failed, other.LibraryId, nativeError, Operation: VoiceOperation.Remove); await removeModel.RemoveAsync();
+        check(removeModel.NotificationSeverity == NotificationSeverity.Error && removeModel.HasImportDiagnostic && removeModel.ImportStateText.StartsWith("Removal failed:"), "Ordinary removal failure is Error with backend details.");
+        var removeCompletion = new TaskCompletionSource<VoiceImportResult>(); remover.Pending = removeCompletion.Task;
+        Task removing = removeModel.RemoveAsync(); int removes = remover.Calls, confirms = removeDialog.RemoveCalls;
+        check(removeModel.IsBusy && !removeModel.RemoveCommand.CanExecute(null) && !removeModel.ImportCommand.CanExecute(null) && !removeModel.RefreshCommand.CanExecute(null), "Remove disables concurrent mutations/refresh while pending.");
+        await removeModel.RemoveAsync(); await removeModel.ImportAsync(); await removeModel.RefreshAsync();
+        check(remover.Calls == removes && removeDialog.RemoveCalls == confirms, "Concurrent remove/import cannot launch another helper.");
+        removeCompletion.SetResult(new(ImportPhase.Failed, other.LibraryId, new("library", "voice_in_use", "Mapped"), Operation: VoiceOperation.Remove)); await removing; remover.Pending = null;
+        removeService.Next = new("fake", Array.Empty<VoiceRecord>()); remover.Next = new(ImportPhase.Partial, other.LibraryId, new("library", "removal_partial", "Retained trash/token"), Operation: VoiceOperation.Remove);
+        await removeModel.RemoveAsync();
+        check(removeModel.IsEmpty && removeModel.SelectedVoice == null && !removeModel.RemoveCommand.CanExecute(null) && removeModel.NotificationSeverity == NotificationSeverity.Warning &&
+            removeModel.ImportStateText.Contains("registration still needs review"), "Partial removal refreshes actual empty state and clearly reports remaining registration.");
+        removeService.Next = new("fake", new[] { other }); await removeModel.RefreshAsync(); removeModel.SelectedVoice = other;
+        removeService.Next = new("fake", Array.Empty<VoiceRecord>()); remover.Next = new(ImportPhase.Succeeded, other.LibraryId, Operation: VoiceOperation.Remove);
+        await removeModel.RemoveAsync(); check(removeModel.IsEmpty && !removeModel.HasSelection && !removeModel.RemoveCommand.CanExecute(null), "Removing last row shows normal empty state.");
+        parsed = ImportProtocol.DecodeResult(Frame(8, id, operation: VoiceOperation.Remove));
+        check(parsed.Operation == VoiceOperation.Remove && parsed.Phase == ImportPhase.Succeeded && parsed.Severity == NotificationSeverity.Success, "Protocol removed success.");
+        parsed = ImportProtocol.DecodeResult(Frame(9, id, new("library", "cleanup_pending", "Trash retained"), operation: VoiceOperation.Remove));
+        check(parsed.Phase == ImportPhase.Partial && parsed.Severity == NotificationSeverity.Warning && parsed.Message.Contains("cleanup"), "Protocol removal cleanup warning.");
+        parsed = ImportProtocol.DecodeResult(Frame(2, id, nativeError, operation: VoiceOperation.Remove));
+        check(parsed.LibraryId == id && parsed.Error == nativeError && parsed.Operation == VoiceOperation.Remove, "Failed removal preserves target ID and structured error.");
+        check(Reject(Frame(8, id)) && Reject(Frame(9, id, nativeError, operation: VoiceOperation.Replace)) && Reject(Frame(5, id, operation: VoiceOperation.Remove)), "Removal cross-operation replies rejected.");
+        encoded = ImportProtocol.EncodeRequest(new("", voice.DisplayName!, id, voice.OlvSha256, VoiceOperation.Remove, voice.Health));
+        using (var reader = new BinaryReader(new MemoryStream(encoded), Encoding.UTF8)) {
+            reader.BaseStream.Position = 16;
+            string ReadText() => Encoding.UTF8.GetString(reader.ReadBytes((int)reader.ReadUInt32()));
+            check(BitConverter.ToUInt32(encoded, 8) == 3 && ReadText() == id && ReadText() == voice.DisplayName && ReadText() == voice.OlvSha256 && ReadText() == voice.Health && reader.BaseStream.Position == encoded.Length,
+                "Remove wire schema contains only immutable ID/name/hash/health, no source/root/path/hive.");
+        }
+        var removeRequest = new VoiceImportRequest("", voice.DisplayName!, id, voice.OlvSha256, VoiceOperation.Remove, voice.Health);
+        deniedResult = await new ElevatedVoiceImportService(denied).ImportAsync(removeRequest, new IgnoreProgress());
+        check(deniedResult.Phase == ImportPhase.Cancelled && deniedResult.Operation == VoiceOperation.Remove && deniedResult.Severity == NotificationSeverity.Info, "Fake UAC cancellation retains Remove operation and Info severity.");
+        pipeLauncher = new PipeLauncher { Reply = Frame(8, id, operation: VoiceOperation.Remove) };
+        pipeResult = await new ElevatedVoiceImportService(pipeLauncher).ImportAsync(removeRequest, new IgnoreProgress());
+        check(pipeResult.Phase == ImportPhase.Succeeded && pipeResult.Operation == VoiceOperation.Remove && pipeLauncher.Request != null && BitConverter.ToUInt32(pipeLauncher.Request, 8) == 3,
+            "Remove uses actual existing secure local pipe with in-process fake peer, no UAC/registry.");
+        pipeLauncher.Reply = Frame(5, id, operation: VoiceOperation.Replace);
+        pipeResult = await new ElevatedVoiceImportService(pipeLauncher).ImportAsync(removeRequest, new IgnoreProgress());
+        check(pipeResult.Error?.Code == "outcome_unknown" && pipeResult.Operation == VoiceOperation.Remove, "Remove rejects another operation outcome and reconciles uncertainty.");
+        pipeLauncher.Reply = Frame(2, "", new("helper", "invalid_request", "Malformed request"));
+        pipeResult = await new ElevatedVoiceImportService(pipeLauncher).ImportAsync(removeRequest, new IgnoreProgress());
+        check(pipeResult.Phase == ImportPhase.Failed && pipeResult.LibraryId == id && pipeResult.Operation == VoiceOperation.Remove && pipeResult.Message.StartsWith("Removal failed:"), "Pre-dispatch generic rejection retains removal identity/presentation.");
     }
 }

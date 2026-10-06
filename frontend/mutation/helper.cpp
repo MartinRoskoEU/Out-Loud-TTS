@@ -72,7 +72,7 @@ int WINAPI wWinMain(HINSTANCE,HINSTANCE,PWSTR,int) {
             require(WaitForSingleObject(parent.value,0)==WAIT_TIMEOUT);
             result = mutation::import_and_install(request,outloud::VoiceLibrary(),outloud::windows_sapi_voice_registry(),mutation::resolve_machine_runtime);
         } catch (const std::exception&) {
-            result.error.domain = "helper"; result.error.code = "invalid_request"; result.error.message = "Import request was malformed or unsupported.";
+            result.error.domain = "helper"; result.error.code = "invalid_request"; result.error.message = "Voice mutation request was malformed or unsupported.";
         }
         auto response = mutation::encode_result(result); transfer(pipe.value,parent.value,response,true);
         return 0;

@@ -30,6 +30,7 @@ std::string_view voice_library_error_name(VoiceLibraryErrorCode code) noexcept {
     OUTLOUD_LIBRARY_CODE(destination_io); OUTLOUD_LIBRARY_CODE(remove_failed); OUTLOUD_LIBRARY_CODE(internal_failure);
     OUTLOUD_LIBRARY_CODE(library_access_denied); OUTLOUD_LIBRARY_CODE(library_security_invalid);
     OUTLOUD_LIBRARY_CODE(voice_in_use); OUTLOUD_LIBRARY_CODE(replacement_conflict); OUTLOUD_LIBRARY_CODE(replacement_pending);
+    OUTLOUD_LIBRARY_CODE(removal_conflict); OUTLOUD_LIBRARY_CODE(removal_partial);
 #undef OUTLOUD_LIBRARY_CODE
     }
     return "internal_failure";
@@ -502,20 +503,86 @@ LibraryVoice VoiceLibrary::rename_voice(std::string_view id,std::string_view nam
     });
 }
 VoiceRemovalResult VoiceLibrary::remove_voice(std::string_view id) {
+    return remove_voice(id,{});
+}
+VoiceRemovalResult VoiceLibrary::remove_voice(std::string_view id,const VoiceRemoveOptions& options) {
     return guarded(root_,[&] {
         Session session(root_,true,machine_storage_);
         if (replacement_pending(session,id)) { fs::fail(Code::replacement_pending,"Recover pending replacement before removal",root_); }
-        const auto path=entry_path(session,id); auto entry=fs::directory(path,DELETE|READ_CONTROL);
+        const auto path=entry_path(session,id);
+        LibraryVoice current;
+        if (options.expected_display_name || options.expected_olv_sha256 || options.expected_health || options.remove_registration) {
+            current=inspect(path,std::string(id),machine_storage_);
+            if (!options.expected_display_name || !options.expected_olv_sha256 || !options.expected_health || *options.expected_health!=voice_health_name(current.health) ||
+                (!options.expected_olv_sha256->empty() && !hash(*options.expected_olv_sha256)) ||
+                *options.expected_display_name!=(current.metadata ? current.metadata->display_name : "") ||
+                *options.expected_olv_sha256!=(current.metadata ? current.metadata->olv_sha256 : "")) {
+                fs::fail(Code::removal_conflict,"Voice identity or content changed since confirmation. Refresh and confirm again.",path);
+            }
+        }
+        auto entry=fs::directory(path,DELETE|READ_CONTROL);
         if (machine_storage_) { detail::library_security::validate(entry.value,path,true); }
-        std::vector<fs::Handle> files; removal_files(path,files,machine_storage_);
+        std::vector<fs::Handle> files;
+        try {
+            removal_files(path,files,machine_storage_);
+            if (options.expected_olv_sha256 && current.health==VoiceHealth::valid) {
+                const auto asset=fs::file(path/L"voice.olv",GENERIC_READ,FILE_SHARE_READ|FILE_SHARE_DELETE);
+                if (handle_hash(asset.value,path/L"voice.olv")!=*options.expected_olv_sha256) {
+                    fs::fail(Code::removal_conflict,"Voice content changed before removal",path);
+                }
+            }
+        } catch (const VoiceLibraryError& error) {
+            if (options.remove_registration && (error.system_error()==ERROR_SHARING_VIOLATION || error.system_error()==ERROR_LOCK_VIOLATION)) {
+                throw VoiceLibraryError(Code::voice_in_use,"Voice is in use. Close WoW and other active speech consumers, then retry.",error.path(),error.system_error());
+            } throw;
+        }
         const auto destination=session.trash->path/fs::wide(fs::random_id());
         // Windows can deny directory rename while child handles are open, even with delete sharing.
-        // Keep the directory identity pinned, release preflight children, and revalidate after commit.
+        // Keep directory identity pinned, release preflight children, and revalidate after detach.
         files.clear();
+        #ifdef OUTLOUD_REPLACEMENT_AUDIT
+        detail::removal_audit::point(0);
+        #endif
         fs::rename(entry.value,destination,false,Code::remove_failed);
+        if (options.remove_registration) {
+            try {
+                // Close the preflight/directory-rename gap before registry edits.
+                // Keep DELETE handles through token removal and final deletion.
+                try { removal_files(destination,files,machine_storage_); }
+                catch (const VoiceLibraryError& error) {
+                    if (error.system_error()==ERROR_SHARING_VIOLATION || error.system_error()==ERROR_LOCK_VIOLATION) {
+                        throw VoiceLibraryError(Code::voice_in_use,"Voice is in use. Close WoW and other active speech consumers, then retry.",error.path(),error.system_error());
+                    } throw;
+                }
+                #ifdef OUTLOUD_REPLACEMENT_AUDIT
+                detail::removal_audit::point(1);
+                #endif
+                options.remove_registration(current);
+            } catch (...) {
+                const auto cause=std::current_exception();
+                files.clear();
+                try {
+                    #ifdef OUTLOUD_REPLACEMENT_AUDIT
+                    detail::removal_audit::point(2);
+                    #endif
+                    fs::rename(entry.value,path,false,Code::remove_failed);
+                } catch (const VoiceLibraryError& rollback) {
+                    throw VoiceLibraryError(Code::removal_partial,std::string("Coordinated removal failed and directory restoration failed. Library entry is detached in trash; review its registration and retained files: ")+rollback.what(),destination,rollback.system_error());
+                } catch (const std::exception& rollback) {
+                    throw VoiceLibraryError(Code::removal_partial,std::string("Coordinated removal failed and directory restoration failed. Library entry is detached in trash; review its registration and retained files: ")+rollback.what(),destination);
+                }
+                throw ValidationFailure{cause};
+            }
+        }
         // Commit point: no active entry remains. Later cleanup errors are a reported pending removal.
         VoiceRemovalResult result;
-        try { removal_files(destination,files,machine_storage_); finish_removal(destination,entry,files); }
+        try {
+            #ifdef OUTLOUD_REPLACEMENT_AUDIT
+            detail::removal_audit::point(3);
+            #endif
+            if (files.empty()) { removal_files(destination,files,machine_storage_); }
+            finish_removal(destination,entry,files);
+        }
         catch (const std::exception& error) { result.cleanup_pending=true; result.detail=error.what(); }
         return result;
     });

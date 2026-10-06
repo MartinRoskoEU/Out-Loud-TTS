@@ -26,6 +26,8 @@
         </Border>
         <Button Style="{StaticResource RefreshButton}" Command="{Binding ImportCommand}" Content="_Import Voice" Margin="0,0,10,0"
                 ToolTip="Import a prepared Pocket voice; Administrator approval is requested after confirmation" AutomationProperties.Name="Import Voice" />
+        <Button x:Name="RemoveVoiceButton" Style="{StaticResource DestructiveButton}" Command="{Binding RemoveCommand}" Content="_Remove" Margin="0,0,10,0"
+                ToolTip="Remove the selected voice; Administrator approval is requested after confirmation" AutomationProperties.Name="Remove selected voice" />
         <Button Style="{StaticResource RefreshButton}" Command="{Binding RefreshCommand}" ToolTip="Refresh the voice list" AutomationProperties.Name="Refresh voices">
           <StackPanel Orientation="Horizontal">
             <TextBlock Text="&#xE72C;" FontFamily="Segoe MDL2 Assets" FontSize="14" Margin="0,0,8,0" VerticalAlignment="Center" />

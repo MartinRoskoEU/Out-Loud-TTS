@@ -6,11 +6,11 @@ using System.Collections.Generic;
 
 namespace OutLoud.VoiceManager.Models;
 
-public enum VoiceOperation { Import = 1, Replace = 2 }
+public enum VoiceOperation { Import = 1, Replace = 2, Remove = 3 }
 public enum NotificationSeverity { Success, Warning, Error, Info }
-public sealed record VoiceImportRequest(string SourcePath, string DisplayName, string? TargetId = null, string? ExpectedHash = null)
+public sealed record VoiceImportRequest(string SourcePath, string DisplayName, string? TargetId = null, string? ExpectedHash = null, VoiceOperation? Kind = null, string? ExpectedHealth = null)
 {
-    public VoiceOperation Operation => TargetId == null ? VoiceOperation.Import : VoiceOperation.Replace;
+    public VoiceOperation Operation => Kind ?? (TargetId == null ? VoiceOperation.Import : VoiceOperation.Replace);
 }
 public enum ImportPhase { None, Choosing, AwaitingElevation, Importing, Succeeded, Cancelled, Failed, Partial }
 public sealed record VoiceImportResult(ImportPhase Phase, string? LibraryId = null, BackendError? Error = null, string[]? DuplicateIds = null,
@@ -20,28 +20,38 @@ public sealed record VoiceImportResult(ImportPhase Phase, string? LibraryId = nu
         ImportPhase.Cancelled => NotificationSeverity.Info,
         ImportPhase.Partial => NotificationSeverity.Warning,
         ImportPhase.Succeeded => Unchanged ? NotificationSeverity.Info : NotificationSeverity.Success,
-        _ when Error?.Code is "voice_in_use" or "replacement_conflict" or "replacement_pending" or "voice_not_found" or "reconciliation_required" or "outcome_unknown" => NotificationSeverity.Warning,
+        _ when Error?.Code is "voice_in_use" or "replacement_conflict" or "removal_conflict" or "removal_partial" or "replacement_pending" or "voice_not_found" or "reconciliation_required" or "outcome_unknown" => NotificationSeverity.Warning,
         _ => NotificationSeverity.Error
     };
     public bool HasDiagnostic => Error != null || DuplicateIds is { Length: > 0 };
     public string Message => Phase switch
     {
+        ImportPhase.Succeeded when Operation == VoiceOperation.Remove => "Voice removed from Out Loud and Windows speech.",
+        ImportPhase.Partial when Operation == VoiceOperation.Remove && Error?.Code == "removal_partial" => "Removal is incomplete. The library entry is detached, but its Windows speech registration still needs review. See the diagnostic details.",
+        ImportPhase.Partial when Operation == VoiceOperation.Remove => "Voice removed from Out Loud and Windows speech, but file cleanup is pending. See the diagnostic details.",
+        ImportPhase.Cancelled when Operation == VoiceOperation.Remove => "Removal cancelled. No voice was removed.",
         ImportPhase.Succeeded when Unchanged => "Already using this voice data. Nothing was replaced.",
         ImportPhase.Succeeded when Operation == VoiceOperation.Replace => "Voice replaced successfully.",
         ImportPhase.Succeeded => "Voice imported and added to Windows speech.",
         ImportPhase.Partial when Operation == VoiceOperation.Replace => "Voice replaced, but staging cleanup is pending. See the diagnostic details.",
         ImportPhase.Partial => "Voice imported but SAPI registration failed. The imported voice has been kept.",
         ImportPhase.Cancelled => "Import cancelled. No voice was added or replaced.",
+        _ when Error?.Code == "voice_in_use" && Operation == VoiceOperation.Remove => "Voice could not be removed because it is in use. Close WoW and other active speech consumers, then retry.",
         _ when Error?.Code == "voice_in_use" => "Voice could not be replaced because it is in use. Close WoW and other active speech consumers, then retry.",
+        _ when Operation == VoiceOperation.Remove && Error?.Code is "removal_conflict" or "voice_not_found" => "The removal target changed or disappeared. Check the refreshed list before confirming again.",
         _ when Error?.Code is "replacement_conflict" or "voice_not_found" => "The replacement target changed. The list has been refreshed; confirm the target again.",
         _ when Error?.Code == "replacement_pending" => "Replacement recovery is pending. Original data was retained; close active consumers and recover the library before retrying.",
-        _ when Error?.Code == "outcome_unknown" => "Import outcome could not be confirmed. Check the refreshed list before retrying.",
+        _ when Error?.Code == "outcome_unknown" => "Operation outcome could not be confirmed. Check the refreshed list before retrying.",
         _ when Error?.Code == "duplicate_content" => "This voice is already in the library. No duplicate was added.",
-        _ => (Operation == VoiceOperation.Replace ? "Replacement failed: " : "Import failed: ") + (Error?.Message ?? "See the diagnostic details.")
+        _ => (Operation switch { VoiceOperation.Remove => "Removal failed: ", VoiceOperation.Replace => "Replacement failed: ", _ => "Import failed: " }) + (Error?.Message ?? "See the diagnostic details.")
     };
     public string Diagnostic => (Error?.Diagnostic ?? "") +
         (DuplicateIds is { Length: > 0 } ? "\nExisting library IDs: " + string.Join(", ", DuplicateIds) : "") +
         (LibraryId != null ? "\nLibrary ID: " + LibraryId : "");
+}
+public sealed record RemovalDialogModel(VoiceRecord Target)
+{
+    public string Prompt => $"Remove \"{Target.NameText}\"?";
 }
 public sealed class ReplacementDialogModel
 {

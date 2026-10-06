@@ -1,5 +1,9 @@
 # Step 3D.3: prepared Pocket voice import from WPF
 
+[Step 3D.3.2](VOICE_MANAGER_REMOVE.md) adds Remove Voice through the same helper
+and explicitly updates the current protocol to v3. Earlier protocol descriptions
+below and in the Replace document are historical validation records.
+
 The current workflow extends this step with [Step 3D.3.1 Import-or-Replace](VOICE_MANAGER_REPLACE.md).
 That document supersedes the protocol v1 description below with protocol v2,
 documents the additive read-only content getter, and describes replacement

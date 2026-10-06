@@ -65,6 +65,7 @@ public sealed class ElevatedVoiceImportService : IVoiceImportService
             }
             VoiceImportResult result = ImportProtocol.DecodeResult(frame);
             if (result.Operation != request.Operation && result.Error?.Code != "invalid_request") throw new InvalidDataException("Helper returned the wrong operation outcome.");
+            if (result.Error?.Code == "invalid_request") result = result with { Operation = request.Operation, LibraryId = request.TargetId };
             await process.WaitForExitAsync();
             return result;
         }

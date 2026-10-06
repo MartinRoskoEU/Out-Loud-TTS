@@ -8,6 +8,7 @@ namespace OutLoud.VoiceManager.Services;
 public interface IImportDialogService {
     Task<VoiceImportRequest?> ChooseAsync();
     Task<VoiceRecord?> ConfirmReplacementAsync(VoiceImportRequest request, IReadOnlyList<VoiceRecord> candidates);
+    Task<bool> ConfirmRemovalAsync(VoiceRecord target);
 }
 public interface IVoiceImportService
 {

@@ -7,7 +7,7 @@
 namespace outloud::frontend::mutation {
 namespace {
 namespace fs = detail::library_fs;
-[[noreturn]] void malformed() { throw std::invalid_argument("Malformed or unsupported import request."); }
+[[noreturn]] void malformed() { throw std::invalid_argument("Malformed or unsupported voice mutation request."); }
 struct Reader {
     std::span<const std::uint8_t> remaining;
     std::uint32_t number() {
@@ -49,7 +49,13 @@ Request decode_request(std::span<const std::uint8_t> bytes) {
     if (bytes.size()>limit || bytes.size()<16) { malformed(); }
     Reader reader{bytes};
     if (reader.number()!=magic || reader.number()!=version) { malformed(); }
-    const auto kind=reader.number(); if ((kind!=1 && kind!=2) || reader.number()!=bytes.size()-16) { malformed(); }
+    const auto kind=reader.number(); if ((kind<1 || kind>3) || reader.number()!=bytes.size()-16) { malformed(); }
+    if (kind==3) {
+        auto id=reader.string(), name=reader.string(), expected_hash=reader.string(), health=reader.string();
+        if (!fs::id(id) || !reader.remaining.empty() || health.empty() || health.size()>32 ||
+            (expected_hash.empty() ? !name.empty() : expected_hash.size()!=64 || expected_hash.find_first_not_of("0123456789abcdef")!=expected_hash.npos)) { malformed(); }
+        return {{},std::move(name),Operation::remove,std::move(id),std::move(expected_hash),std::move(health)};
+    }
     const auto source = reader.string(), name = reader.string();
     std::string id, expected_hash;
     if (kind==2) { id=reader.string(); expected_hash=reader.string();
@@ -116,6 +122,22 @@ Result import_and_install(const Request& request,VoiceLibrary library,std::share
     Result result;
     result.kind=request.kind;
     try {
+        if (request.kind==Operation::remove) {
+            result.library_id=request.target_id;
+            SapiVoiceManager manager(library,{},registry,policy); // Removal needs no runtime assets or engine-registration edit.
+            VoiceRemoveOptions options; options.expected_display_name=request.display_name; options.expected_olv_sha256=request.expected_hash;
+            options.expected_health=request.expected_health;
+            options.remove_registration=[&](const LibraryVoice&) {
+                try { (void)manager.remove(request.target_id,SapiVoiceScope::machine); }
+                catch (const SapiVoiceError& error) {
+                    if (error.code!=SapiVoiceErrorCode::token_not_found) { result.error=convert(error); throw; }
+                }
+            };
+            const auto removed=library.remove_voice(request.target_id,options);
+            result.outcome=removed.cleanup_pending ? Outcome::removal_warning : Outcome::removed;
+            if (removed.cleanup_pending) { result.error.domain="library"; result.error.code="cleanup_pending"; result.error.message="Voice and token removed; trash cleanup pending: "+removed.detail; }
+            return result;
+        }
         VoiceImportOptions options; options.declared_model_compatibility_id = pocket_model_compatibility_id;
         if (request.kind==Operation::replace) {
             result.library_id=request.target_id;
@@ -134,9 +156,15 @@ Result import_and_install(const Request& request,VoiceLibrary library,std::share
         SapiVoiceManager manager(std::move(library),resolve(),std::move(registry),policy);
         (void)manager.install(result.library_id,SapiVoiceScope::machine);
         result.outcome = Outcome::success;
-    } catch (const VoiceLibraryError& error) { result.error = convert(error); }
+    } catch (const VoiceLibraryError& error) {
+        if (request.kind==Operation::remove && error.code()==VoiceLibraryErrorCode::removal_partial) {
+            const auto registration_error=result.error; result.error=convert(error);
+            if (!registration_error.code.empty()) { result.error.message+=" Registration failure: "+registration_error.code+": "+registration_error.message; }
+            result.outcome=Outcome::removal_warning;
+        } else { result.error = convert(error); }
+    }
     catch (const SapiVoiceError& error) { result.error = convert(error); }
-    catch (...) { result.error.domain = "helper"; result.error.code = "internal_failure"; result.error.message = "Native import operation failed."; }
+    catch (...) { result.error.domain = "helper"; result.error.code = "internal_failure"; result.error.message = "Native voice mutation failed."; }
     return result;
 }
 }

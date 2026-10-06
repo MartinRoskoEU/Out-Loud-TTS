@@ -20,24 +20,28 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private readonly IVoiceImportService? importer;
     private ImportPhase importPhase;
     private VoiceImportResult? importResult;
+    private VoiceOperation activeOperation;
     public MainViewModel(IVoiceManagerService service, IImportDialogService? dialogs = null, IVoiceImportService? importer = null)
     {
         this.service = service;
         this.dialogs = dialogs; this.importer = importer;
         RefreshCommand = new RefreshCommand(RefreshAsync, () => !IsBusy);
         ImportCommand = new RefreshCommand(ImportAsync, () => !IsBusy && dialogs != null && importer != null);
+        RemoveCommand = new RefreshCommand(RemoveAsync, () => !IsBusy && dialogs != null && importer != null && SelectedVoice is { } target &&
+            target.LibraryId.Length == 32 && target.LibraryId.All(c => c is >= '0' and <= '9' or >= 'a' and <= 'f'));
         DismissNotificationCommand = new RefreshCommand(() => { importResult = null; StateChanged(); return Task.CompletedTask; }, () => HasImportResult);
     }
     public event PropertyChangedEventHandler? PropertyChanged;
     public RefreshCommand RefreshCommand { get; }
     public RefreshCommand ImportCommand { get; }
+    public RefreshCommand RemoveCommand { get; }
     public RefreshCommand DismissNotificationCommand { get; }
     public IReadOnlyList<VoiceRecord> Voices => snapshot.Voices;
     public string LibraryRoot => snapshot.LibraryRoot;
     public VoiceRecord? SelectedVoice
     {
         get => selectedVoice;
-        set { if (selectedVoice == value) return; selectedVoice = value; Changed(); Changed(nameof(HasSelection)); }
+        set { if (selectedVoice == value) return; selectedVoice = value; Changed(); Changed(nameof(HasSelection)); RemoveCommand.Notify(); }
     }
     public bool HasSelection => SelectedVoice != null;
     public bool IsBusy => isBusy;
@@ -52,8 +56,10 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public NotificationSeverity NotificationSeverity => importResult?.Severity ?? NotificationSeverity.Info;
     public string NotificationSeverityText => NotificationSeverity.ToString();
     public string ImportStateText => importPhase switch {
+        ImportPhase.Choosing when activeOperation == VoiceOperation.Remove => "Confirm removal of the selected voice.",
         ImportPhase.Choosing => "Choose a prepared Pocket voice and confirm its name.",
         ImportPhase.AwaitingElevation => "Waiting for Windows Administrator approval...",
+        ImportPhase.Importing when activeOperation == VoiceOperation.Remove => "Removing the selected voice and its Windows speech registration...",
         ImportPhase.Importing => "Validating and saving the prepared voice...",
         _ => importResult?.Message ?? ""
     };
@@ -69,7 +75,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         try { await ReadSnapshotAsync(); }
         finally { isBusy = false; StateChanged(); }
     }
-    private async Task ReadSnapshotAsync(string? newSelectionId = null)
+    private async Task ReadSnapshotAsync(string? newSelectionId = null, bool selectRemaining = false)
     {
         error = null;
         try
@@ -81,6 +87,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             // Replace even an equal-valued record with the new snapshot's object.
             // DataGrid can clear SelectedItem when ItemsSource changes above.
             selectedVoice = next.Voices.FirstOrDefault(voice => voice.LibraryId == selectionId);
+            if (selectedVoice == null && selectRemaining) selectedVoice = next.Voices.FirstOrDefault();
             Changed(nameof(SelectedVoice));
             Changed(nameof(HasSelection)); Changed(nameof(HasSapiErrors));
         }
@@ -108,6 +115,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public async Task ImportAsync()
     {
         if (isBusy || dialogs == null || importer == null) return;
+        activeOperation = VoiceOperation.Import;
         isBusy = true; importPhase = ImportPhase.Choosing; importResult = null; StateChanged();
         try
         {
@@ -134,12 +142,37 @@ public sealed class MainViewModel : INotifyPropertyChanged
         }
         finally { isBusy = false; StateChanged(); }
     }
+    public async Task RemoveAsync()
+    {
+        if (!RemoveCommand.CanExecute(null) || dialogs == null || importer == null || SelectedVoice is not { } target) return;
+        activeOperation = VoiceOperation.Remove;
+        isBusy = true; importPhase = ImportPhase.Choosing; importResult = null; StateChanged();
+        try
+        {
+            if (!await dialogs.ConfirmRemovalAsync(target))
+                importResult = new(ImportPhase.Cancelled, Operation: VoiceOperation.Remove);
+            else {
+                var request = new VoiceImportRequest("", target.DisplayName ?? "", target.LibraryId, target.OlvSha256 ?? "", VoiceOperation.Remove, target.Health);
+                importResult = await importer.ImportAsync(request, new ImportProgress(this));
+                importPhase = importResult.Phase; StateChanged();
+                // Refresh failures/conflicts too: the snapshot is never authority.
+                await ReadSnapshotAsync(target.LibraryId, selectRemaining: true);
+            }
+            importPhase = importResult.Phase;
+        }
+        catch (Exception failure) {
+            importResult = new(ImportPhase.Failed, target.LibraryId, new BackendError("frontend", "removal_failure", "Unable to complete the removal workflow.", LibraryCode: failure.GetType().Name), Operation: VoiceOperation.Remove);
+            importPhase = ImportPhase.Failed;
+        }
+        finally { isBusy = false; StateChanged(); }
+    }
     private void StateChanged()
     {
         Changed(nameof(IsBusy)); Changed(nameof(Error)); Changed(nameof(HasError));
         Changed(nameof(IsEmpty)); Changed(nameof(StateText)); RefreshCommand.Notify();
         Changed(nameof(ImportPhase)); Changed(nameof(ImportResult)); Changed(nameof(HasImportResult));
         Changed(nameof(ImportStateText)); Changed(nameof(ImportDiagnostic)); ImportCommand.Notify();
+        RemoveCommand.Notify();
         Changed(nameof(HasImportDiagnostic)); Changed(nameof(NotificationSeverity)); Changed(nameof(NotificationSeverityText)); DismissNotificationCommand.Notify();
     }
     private void Changed([CallerMemberName] string? name = null) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));

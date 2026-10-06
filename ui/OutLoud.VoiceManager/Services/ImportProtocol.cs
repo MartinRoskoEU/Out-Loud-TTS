@@ -10,14 +10,20 @@ namespace OutLoud.VoiceManager.Services;
 
 public static class ImportProtocol
 {
-    public const uint Magic = 0x314d4c4f, Version = 2;
+    public const uint Magic = 0x314d4c4f, Version = 3;
     public const int Limit = 65536;
     private static readonly UTF8Encoding Utf8 = new(false, true);
     public static byte[] EncodeRequest(VoiceImportRequest request)
     {
         using var stream = new MemoryStream(); using var writer = new BinaryWriter(stream, Utf8, true);
         writer.Write(Magic); writer.Write(Version); writer.Write((uint)request.Operation); writer.Write(0u);
-        WriteText(writer, request.SourcePath); WriteText(writer, request.DisplayName);
+        if (request.Operation == VoiceOperation.Remove) {
+            if (request.TargetId == null || request.ExpectedHash == null || string.IsNullOrEmpty(request.ExpectedHealth) || request.SourcePath.Length != 0) throw new InvalidDataException("Removal identity is missing or a source path was supplied.");
+            WriteText(writer, request.TargetId); WriteText(writer, request.DisplayName); WriteText(writer, request.ExpectedHash); WriteText(writer, request.ExpectedHealth);
+        } else {
+            if (request.Operation is not (VoiceOperation.Import or VoiceOperation.Replace)) throw new InvalidDataException("Unsupported voice operation.");
+            WriteText(writer, request.SourcePath); WriteText(writer, request.DisplayName);
+        }
         if (request.Operation == VoiceOperation.Replace) {
             if (request.TargetId == null || request.ExpectedHash == null) throw new InvalidDataException("Replacement identity is missing.");
             WriteText(writer, request.TargetId); WriteText(writer, request.ExpectedHash);
@@ -48,7 +54,7 @@ public static class ImportProtocol
     {
         if (bytes.Length < 16 || bytes.Length > Limit) throw new InvalidDataException("Invalid helper response size.");
         uint kind = ValidateHeader(bytes[..16]);
-        if (kind is < 1 or > 7 or 4 || BitConverter.ToUInt32(bytes, 12) != bytes.Length - 16) throw new InvalidDataException("Invalid helper response schema.");
+        if (kind is < 1 or > 9 or 4 || BitConverter.ToUInt32(bytes, 12) != bytes.Length - 16) throw new InvalidDataException("Invalid helper response schema.");
         using var reader = new BinaryReader(new MemoryStream(bytes), Utf8); reader.BaseStream.Position = 16;
         string id = ReadText(reader); uint operation = reader.ReadUInt32();
         string domain = ReadText(reader), code = ReadText(reader), message = ReadText(reader),
@@ -58,12 +64,12 @@ public static class ImportProtocol
         var ids = new string[count]; for (int i = 0; i < ids.Length; ++i) ids[i] = ReadText(reader);
         static bool ValidId(string value) => value.Length == 32 && value.All(c => c is >= '0' and <= '9' or >= 'a' and <= 'f');
         if (reader.BaseStream.Position != bytes.Length || ids.Any(value => !ValidId(value)) ||
-            (operation is not (1 or 2)) || (kind is 1 or 3 && operation != 1) || (kind >= 5 && operation != 2) ||
-            (kind != 2 || operation == 2 ? !ValidId(id) : id.Length != 0) ||
-            (kind is 1 or 5 or 6 ? domain.Length != 0 || code.Length != 0 : domain.Length == 0 || code.Length == 0))
+            (operation is not (1 or 2 or 3)) || (kind is 1 or 3 && operation != 1) || (kind is 5 or 6 or 7 && operation != 2) || (kind is 8 or 9 && operation != 3) ||
+            (kind != 2 || operation != 1 ? !ValidId(id) : id.Length != 0) ||
+            (kind is 1 or 5 or 6 or 8 ? domain.Length != 0 || code.Length != 0 : domain.Length == 0 || code.Length == 0))
             throw new InvalidDataException("Inconsistent helper outcome.");
-        return new(kind is 1 or 5 or 6 ? ImportPhase.Succeeded : kind is 3 or 7 ? ImportPhase.Partial : ImportPhase.Failed,
-            id.Length == 0 ? null : id, kind is 1 or 5 or 6 ? null : new BackendError(domain, code, message, path, library, import, tensor, system), ids, (VoiceOperation)operation, kind == 6);
+        return new(kind is 1 or 5 or 6 or 8 ? ImportPhase.Succeeded : kind is 3 or 7 or 9 ? ImportPhase.Partial : ImportPhase.Failed,
+            id.Length == 0 ? null : id, kind is 1 or 5 or 6 or 8 ? null : new BackendError(domain, code, message, path, library, import, tensor, system), ids, (VoiceOperation)operation, kind == 6);
     }
     public static async Task<byte[]> ReadFrameAsync(Stream pipe, CancellationToken cancellation)
     {

@@ -29,4 +29,10 @@ public sealed class ImportDialogService : IImportDialogService
         attachTheme?.Invoke(dialog);
         return Task.FromResult(dialog.ShowDialog() == true ? model.SelectedTarget : null);
     }
+    public Task<bool> ConfirmRemovalAsync(VoiceRecord target)
+    {
+        var dialog = new RemoveVoiceDialog(new RemovalDialogModel(target)) { Owner = Application.Current.MainWindow };
+        attachTheme?.Invoke(dialog);
+        return Task.FromResult(dialog.ShowDialog() == true);
+    }
 }
