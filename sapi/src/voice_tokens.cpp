@@ -213,6 +213,15 @@ SapiTokenChange SapiVoiceManager::install(std::string_view id,SapiVoiceScope sco
     if (old) { throw SapiVoiceError(Code::token_conflict,"Token exists with different contents; reconcile before changing it."); }
     registry_->exchange(scope,key,{},next); return SapiTokenChange::installed;
 }
+void SapiVoiceManager::validate_replacement(const LibraryVoice& current,const std::filesystem::path& staged,SapiVoiceScope scope) const {
+    scope_check(scope); validate_machine_library(scope);
+    if (!current.metadata || current.health!=VoiceHealth::valid || current.managed_olv_path!=library_.root()/L"voices"/wide(current.library_id)/L"voice.olv") {
+        throw SapiVoiceError(Code::unhealthy_voice,"Replacement target must be a healthy managed entry.");
+    }
+    auto candidate=current; candidate.managed_olv_path=staged; validate_runtime(candidate,scope);
+    const auto expected=desired(current); const auto actual=registry_->read(scope,managed_sapi_token_key(current.library_id));
+    if (actual!=std::optional(expected)) { throw SapiVoiceError(Code::reconciliation_required,"Replacement requires the existing owned machine token to be correct. Reconcile it first; no content was published."); }
+}
 SapiTokenChange SapiVoiceManager::update(std::string_view id,SapiVoiceScope scope) {
     scope_check(scope); validate_machine_library(scope); const auto v = voice(id); validate_runtime(v,scope); const auto next = desired(v);
     const auto key = managed_sapi_token_key(id); const auto old = registry_->read(scope,key);

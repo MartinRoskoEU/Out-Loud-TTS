@@ -77,6 +77,10 @@ public:
     [[nodiscard]] SapiVoiceToken inspect(std::string_view id, SapiVoiceScope scope = SapiVoiceScope::machine) const;
     [[nodiscard]] std::vector<SapiVoiceToken> reconcile(SapiVoiceScope scope = SapiVoiceScope::machine) const;
     [[nodiscard]] SapiTokenChange install(std::string_view id, SapiVoiceScope scope = SapiVoiceScope::machine);
+    // Read-only preflight under VoiceLibrary's replace lock: do not re-enter it.
+    // Requires an already-correct owned token; validates staged content/runtime.
+    void validate_replacement(const LibraryVoice& current, const std::filesystem::path& staged,
+        SapiVoiceScope scope = SapiVoiceScope::machine) const;
     [[nodiscard]] SapiTokenChange update(std::string_view id, SapiVoiceScope scope = SapiVoiceScope::machine);
     [[nodiscard]] SapiTokenChange remove(std::string_view id, SapiVoiceScope scope = SapiVoiceScope::machine);
 private:

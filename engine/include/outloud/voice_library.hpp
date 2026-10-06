@@ -3,6 +3,7 @@
 #include "outloud/voice_import.hpp"
 
 #include <optional>
+#include <functional>
 
 namespace outloud {
 
@@ -11,7 +12,8 @@ enum class VoiceLibraryErrorCode {
     invalid_id, voice_not_found, metadata_corrupt, unsupported_metadata_version,
     invalid_display_name, duplicate_content, import_failed, incompatible_voice,
     corrupt_voice, replace_required, source_io, destination_io, remove_failed,
-    internal_failure, library_access_denied, library_security_invalid
+    internal_failure, library_access_denied, library_security_invalid,
+    voice_in_use, replacement_conflict, replacement_pending
 };
 [[nodiscard]] std::string_view voice_library_error_name(VoiceLibraryErrorCode code) noexcept;
 class VoiceLibraryError : public std::runtime_error {
@@ -34,7 +36,7 @@ private:
 enum class VoiceImportKind { pocket_prepared, olv };
 enum class VoiceHealth {
     valid, missing_voice, corrupt_voice, metadata_corrupt, unsupported_metadata_version,
-    unsupported_voice_version, incompatible_model, hash_mismatch, unsafe_entry, unavailable
+    unsupported_voice_version, incompatible_model, hash_mismatch, unsafe_entry, unavailable, replacement_pending
 };
 [[nodiscard]] std::string_view voice_health_name(VoiceHealth health) noexcept;
 struct VoiceMetadata {
@@ -57,6 +59,19 @@ enum class DuplicateContentPolicy { reject, allow_separate_entry };
 struct LibraryImportResult {
     LibraryVoice voice;
     std::vector<std::string> duplicate_ids;
+};
+struct VoiceReplaceOptions {
+    VoiceImportOptions import;
+    // Required optimistic concurrency assertions from a native read snapshot.
+    std::string expected_display_name, expected_olv_sha256;
+    // Called under the library lock with validated target and staged asset.
+    // Must not re-enter VoiceLibrary. Exceptions propagate without publication.
+    std::function<void(const LibraryVoice&, const std::filesystem::path&)> validate_before_publish;
+};
+struct LibraryReplaceResult {
+    LibraryVoice voice;
+    bool changed = false, cleanup_pending = false;
+    std::string detail;
 };
 struct VoiceRemovalResult {
     // Removal commits by moving the entry out of enumeration. Cleanup can be retried.
@@ -84,12 +99,15 @@ public:
         DuplicateContentPolicy duplicates = DuplicateContentPolicy::reject);
     [[nodiscard]] LibraryImportResult import_olv(const std::filesystem::path& source,
         std::string_view display_name, DuplicateContentPolicy duplicates = DuplicateContentPolicy::reject);
+    [[nodiscard]] LibraryReplaceResult replace_pocket_voice(std::string_view id,
+        const std::filesystem::path& source, const VoiceReplaceOptions& options);
     [[nodiscard]] OlvInfo export_olv(std::string_view id, const std::filesystem::path& destination,
                                    bool replace_existing = false) const;
     [[nodiscard]] LibraryVoice rename_voice(std::string_view id, std::string_view display_name);
     [[nodiscard]] VoiceRemovalResult remove_voice(std::string_view id);
     // Explicitly discards unpublished staging work and completes already committed removals.
-    // Never cleans/deletes an active entry; unsafe/locked/unknown files are retained and reported.
+    // Also recovers journalled replacements in place; never deletes an active entry.
+    // Unsafe/locked/unknown recovery state is retained and reported.
     [[nodiscard]] LibraryCleanupResult cleanup_pending();
 private:
     std::filesystem::path root_;

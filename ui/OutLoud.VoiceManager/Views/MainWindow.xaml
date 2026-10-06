@@ -1,0 +1,213 @@
+<Window x:Class="OutLoud.VoiceManager.Views.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Out Loud" Width="1120" Height="780" MinWidth="860" MinHeight="560"
+        FontFamily="Segoe UI" FontSize="13" UseLayoutRounding="True" SnapsToDevicePixels="True"
+        Background="{DynamicResource CanvasBrush}" Foreground="{DynamicResource TextBrush}">
+  <Grid Margin="28,24,28,18" Background="{DynamicResource CanvasBrush}">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" /><RowDefinition Height="Auto" />
+      <RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" />
+    </Grid.RowDefinitions>
+    <Grid Margin="0,0,0,24">
+      <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+      <StackPanel Margin="0,0,20,0">
+        <TextBlock Text="Voices" Foreground="{DynamicResource AccentBrush}" FontWeight="SemiBold" Margin="0,0,0,8" />
+        <TextBlock Text="Out Loud Voice Manager" FontSize="26" FontWeight="SemiBold" TextWrapping="Wrap" />
+        <TextBlock Text="Installed voices and Windows speech status." Style="{StaticResource Caption}" Margin="0,6,0,0" TextWrapping="Wrap" />
+      </StackPanel>
+      <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+        <Border Background="{DynamicResource SurfaceBrush}" BorderBrush="{DynamicResource BorderBrush}"
+                BorderThickness="1" CornerRadius="8" Padding="12,9" Margin="0,0,12,0">
+          <StackPanel Orientation="Horizontal">
+            <TextBlock Text="{Binding Voices.Count}" FontWeight="SemiBold" Margin="0,0,6,0" />
+            <TextBlock Text="managed voices" Style="{StaticResource Caption}" VerticalAlignment="Center" />
+          </StackPanel>
+        </Border>
+        <Button Style="{StaticResource RefreshButton}" Command="{Binding ImportCommand}" Content="_Import Voice" Margin="0,0,10,0"
+                ToolTip="Import a prepared Pocket voice; Administrator approval is requested after confirmation" AutomationProperties.Name="Import Voice" />
+        <Button Style="{StaticResource RefreshButton}" Command="{Binding RefreshCommand}" ToolTip="Refresh the voice list" AutomationProperties.Name="Refresh voices">
+          <StackPanel Orientation="Horizontal">
+            <TextBlock Text="&#xE72C;" FontFamily="Segoe MDL2 Assets" FontSize="14" Margin="0,0,8,0" VerticalAlignment="Center" />
+            <AccessText Text="_Refresh" />
+          </StackPanel>
+        </Button>
+      </StackPanel>
+    </Grid>
+    <Border Grid.Row="1" Background="{DynamicResource ErrorBrush}" BorderBrush="{DynamicResource ErrorTextBrush}"
+            BorderThickness="1" CornerRadius="10" Padding="16" Margin="0,0,0,16"
+            Visibility="{Binding HasError, Converter={StaticResource VisibleWhenTrue}}">
+      <StackPanel>
+        <TextBlock Text="Could not refresh voices" Foreground="{DynamicResource ErrorTextBrush}" FontWeight="SemiBold" />
+        <TextBlock Text="{Binding Error.Summary}" Foreground="{DynamicResource ErrorTextBrush}" TextWrapping="Wrap" Margin="0,5,0,0" />
+        <TextBlock Text="Try Refresh again. Any previously loaded voices are kept." Foreground="{DynamicResource ErrorTextBrush}" TextWrapping="Wrap" Margin="0,5,0,0" />
+        <Expander Header="Diagnostic details" Margin="0,8,0,0" MaxHeight="180">
+          <Border Background="{DynamicResource SurfaceBrush}" CornerRadius="6" Padding="12" Margin="0,6,0,0">
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+              <TextBox Text="{Binding Error.Diagnostic, Mode=OneWay}" Style="{StaticResource DetailValue}" />
+            </ScrollViewer>
+          </Border>
+        </Expander>
+      </StackPanel>
+    </Border>
+    <StackPanel Grid.Row="2">
+      <Border x:Name="OperationNotification" Style="{StaticResource Notification}" Tag="{Binding NotificationSeverity}" Padding="14" Margin="0,0,0,14" Visibility="{Binding HasImportResult, Converter={StaticResource VisibleWhenTrue}}">
+        <Grid>
+          <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+          <StackPanel Margin="0,0,14,0">
+            <TextBlock Text="{Binding NotificationSeverityText}" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,5" />
+            <TextBlock x:Name="NotificationMessage" Text="{Binding ImportStateText}" TextWrapping="Wrap" FontWeight="SemiBold" />
+            <Expander x:Name="OperationDiagnostic" Header="Diagnostic details" Margin="0,6,0,0" MaxHeight="145"
+                      Foreground="{Binding Foreground, ElementName=NotificationMessage}" Visibility="{Binding HasImportDiagnostic, Converter={StaticResource VisibleWhenTrue}}">
+              <Border Background="{DynamicResource SurfaceBrush}" CornerRadius="6" Padding="10" Margin="0,6,0,0">
+                <ScrollViewer VerticalScrollBarVisibility="Auto"><TextBox Text="{Binding ImportDiagnostic, Mode=OneWay}" Style="{StaticResource DetailValue}" /></ScrollViewer>
+              </Border>
+            </Expander>
+          </StackPanel>
+          <Button Grid.Column="1" Content="&#x00D7;" Command="{Binding DismissNotificationCommand}" Style="{StaticResource NotificationDismiss}"
+                  Foreground="{Binding Foreground, ElementName=NotificationMessage}" VerticalAlignment="Top"
+                  ToolTip="Dismiss notification" AutomationProperties.Name="Dismiss notification" />
+        </Grid>
+      </Border>
+    <Border Background="{DynamicResource AttentionBrush}" CornerRadius="8" Padding="12" Margin="0,0,0,16"
+            Visibility="{Binding HasSapiErrors, Converter={StaticResource VisibleWhenTrue}}">
+      <TextBlock Text="Some SAPI states could not be read. Select a voice to see its diagnostic."
+                 Foreground="{DynamicResource AttentionTextBrush}" TextWrapping="Wrap" />
+    </Border>
+    </StackPanel>
+    <Grid Grid.Row="3">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="1.45*" MinWidth="390" />
+        <ColumnDefinition Width="16" />
+        <ColumnDefinition Width="*" MinWidth="300" />
+      </Grid.ColumnDefinitions>
+      <Border x:Name="VoiceCard" Style="{StaticResource Card}">
+        <Grid>
+          <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+          <DockPanel Margin="18,16">
+            <TextBlock Text="Voice library" FontSize="16" FontWeight="SemiBold" />
+            <TextBlock Text="Machine-wide" Style="{StaticResource Caption}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+          </DockPanel>
+          <Grid Grid.Row="1">
+            <DataGrid x:Name="VoiceList" ItemsSource="{Binding Voices}" SelectedItem="{Binding SelectedVoice, Mode=TwoWay}"
+                      Background="{DynamicResource SurfaceBrush}" Foreground="{DynamicResource TextBrush}" BorderThickness="0"
+                      IsReadOnly="True" AutoGenerateColumns="False" CanUserAddRows="False" CanUserDeleteRows="False"
+                      SelectionMode="Single" SelectionUnit="FullRow" HeadersVisibility="Column" GridLinesVisibility="None"
+                      MinRowHeight="50" CanUserResizeRows="False" ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                      EnableRowVirtualization="True" EnableColumnVirtualization="True">
+              <DataGrid.Columns>
+                <DataGridTemplateColumn Header="Name" SortMemberPath="NameText" Width="*" MinWidth="140">
+                  <DataGridTemplateColumn.CellTemplate><DataTemplate>
+                    <TextBlock Text="{Binding NameText}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" ToolTip="{Binding NameText}" />
+                  </DataTemplate></DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTemplateColumn Header="Library Status" SortMemberPath="Health" Width="Auto" MinWidth="128">
+                  <DataGridTemplateColumn.CellTemplate><DataTemplate>
+                    <Border Style="{StaticResource StatusBadge}" Tag="{Binding Health, Converter={StaticResource StatusTone}, ConverterParameter=library}">
+                      <TextBlock Text="{Binding Health}" />
+                    </Border>
+                  </DataTemplate></DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTemplateColumn Header="SAPI Status" SortMemberPath="SapiStatusText" Width="Auto" MinWidth="100">
+                  <DataGridTemplateColumn.CellTemplate><DataTemplate>
+                    <Border Style="{StaticResource StatusBadge}" Tag="{Binding SapiStatus, Converter={StaticResource StatusTone}, ConverterParameter=sapi}">
+                      <TextBlock Text="{Binding SapiStatusText}" />
+                    </Border>
+                  </DataTemplate></DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+              </DataGrid.Columns>
+            </DataGrid>
+            <Border Background="{DynamicResource SurfaceBrush}" Padding="28"
+                    Visibility="{Binding IsEmpty, Converter={StaticResource VisibleWhenTrue}}">
+              <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="290">
+                <TextBlock Text="No managed voices yet" FontSize="18" FontWeight="SemiBold" TextAlignment="Center" TextWrapping="Wrap" />
+                <TextBlock Text="Voices installed in the machine Voice Library will appear here." Foreground="{DynamicResource MutedTextBrush}"
+                           Margin="0,10,0,0" TextAlignment="Center" TextWrapping="Wrap" />
+              </StackPanel>
+            </Border>
+          </Grid>
+          <Border Grid.Row="2" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,0" Padding="18,12">
+            <StackPanel>
+              <ProgressBar Height="3" Margin="0,0,0,9" IsIndeterminate="{Binding IsBusy}"
+                           Foreground="{DynamicResource AccentBrush}" Background="{DynamicResource SurfaceMutedBrush}"
+                           Visibility="{Binding IsBusy, Converter={StaticResource VisibleWhenTrue}}" />
+              <TextBlock Text="{Binding StateText}" Style="{StaticResource Caption}" TextWrapping="Wrap" />
+            </StackPanel>
+          </Border>
+        </Grid>
+      </Border>
+      <GridSplitter Grid.Column="1" Width="4" HorizontalAlignment="Center" VerticalAlignment="Stretch"
+                    ResizeDirection="Columns" ResizeBehavior="PreviousAndNext"
+                    ShowsPreview="True" Focusable="True" ToolTip="Resize voice list and details" AutomationProperties.Name="Resize voice panels" />
+      <Border Grid.Column="2" Style="{StaticResource Card}" Padding="20">
+        <Grid>
+          <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+          <StackPanel Margin="0,0,0,16">
+            <TextBlock Text="Voice details" FontSize="16" FontWeight="SemiBold" />
+            <TextBlock Text="Identity, health and speech registration" Style="{StaticResource Caption}" Margin="0,5,0,0" TextWrapping="Wrap" />
+          </StackPanel>
+          <TextBlock Grid.Row="1" Text="Select a voice to view its details." Foreground="{DynamicResource MutedTextBrush}"
+                     TextWrapping="Wrap" HorizontalAlignment="Center" VerticalAlignment="Center">
+            <TextBlock.Style><Style TargetType="TextBlock">
+              <Style.Triggers><DataTrigger Binding="{Binding HasSelection}" Value="True"><Setter Property="Visibility" Value="Collapsed" /></DataTrigger></Style.Triggers>
+            </Style></TextBlock.Style>
+          </TextBlock>
+          <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                        Visibility="{Binding HasSelection, Converter={StaticResource VisibleWhenTrue}}">
+            <StackPanel Margin="0,0,10,0">
+              <TextBox Text="{Binding SelectedVoice.NameText, Mode=OneWay}" FontSize="20" FontWeight="SemiBold" Style="{StaticResource DetailValue}" />
+              <TextBlock Text="Library ID" Style="{StaticResource DetailLabel}" />
+              <TextBox Text="{Binding SelectedVoice.LibraryId, Mode=OneWay}" Style="{StaticResource IdentifierValue}" />
+              <Border Background="{DynamicResource SurfaceMutedBrush}" CornerRadius="8" Padding="12" Margin="0,18,0,0">
+                <StackPanel>
+                  <TextBlock Text="Library health" Style="{StaticResource Caption}" Margin="0,0,0,7" />
+                  <Border Style="{StaticResource StatusBadge}" Tag="{Binding SelectedVoice.Health, Converter={StaticResource StatusTone}, ConverterParameter=library}">
+                    <TextBlock Text="{Binding SelectedVoice.Health}" />
+                  </Border>
+                  <TextBox Text="{Binding SelectedVoice.LibraryDetail, Mode=OneWay}" Margin="0,8,0,0">
+                    <TextBox.Style><Style TargetType="TextBox" BasedOn="{StaticResource DetailValue}">
+                      <Style.Triggers><DataTrigger Binding="{Binding SelectedVoice.LibraryDetail}" Value=""><Setter Property="Visibility" Value="Collapsed" /></DataTrigger></Style.Triggers>
+                    </Style></TextBox.Style>
+                  </TextBox>
+                  <TextBlock Text="SAPI status · machine" Style="{StaticResource Caption}" Margin="0,16,0,7" />
+                  <Border Style="{StaticResource StatusBadge}" Tag="{Binding SelectedVoice.SapiStatus, Converter={StaticResource StatusTone}, ConverterParameter=sapi}">
+                    <TextBlock Text="{Binding SelectedVoice.SapiStatusText}" />
+                  </Border>
+                  <TextBox Text="{Binding SelectedVoice.SapiDiagnostic, Mode=OneWay}" Style="{StaticResource DetailValue}" Margin="0,8,0,0" />
+                </StackPanel>
+              </Border>
+              <TextBlock Text="Format &amp; source" FontWeight="SemiBold" Margin="0,22,0,0" />
+              <Grid>
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                <StackPanel>
+                  <TextBlock Text="OLV version" Style="{StaticResource DetailLabel}" />
+                  <TextBox Text="{Binding SelectedVoice.OlvVersionText, Mode=OneWay}" Style="{StaticResource DetailValue}" />
+                </StackPanel>
+                <StackPanel Grid.Column="1" Margin="12,0,0,0">
+                  <TextBlock Text="Import kind" Style="{StaticResource DetailLabel}" />
+                  <TextBox Text="{Binding SelectedVoice.ImportKindText, Mode=OneWay}" Style="{StaticResource DetailValue}" />
+                </StackPanel>
+              </Grid>
+              <TextBlock Text="Compatibility ID" Style="{StaticResource DetailLabel}" />
+              <TextBox Text="{Binding SelectedVoice.CompatibilityText, Mode=OneWay}" Style="{StaticResource IdentifierValue}" />
+              <TextBlock Text="Provenance verified" Style="{StaticResource DetailLabel}" />
+              <TextBox Text="{Binding SelectedVoice.ProvenanceText, Mode=OneWay}" Style="{StaticResource DetailValue}" />
+              <TextBlock Text="OLV SHA256" Style="{StaticResource DetailLabel}" />
+              <TextBox Text="{Binding SelectedVoice.OlvSha256, Mode=OneWay}" Style="{StaticResource IdentifierValue}" />
+              <TextBlock Text="Source SHA256" Style="{StaticResource DetailLabel}" />
+              <TextBox Text="{Binding SelectedVoice.SourceSha256, Mode=OneWay}" Style="{StaticResource IdentifierValue}" />
+              <TextBlock Text="Source filename" Style="{StaticResource DetailLabel}" />
+              <TextBox Text="{Binding SelectedVoice.SourceFilename, Mode=OneWay}" Style="{StaticResource DetailValue}" />
+              <TextBlock Text="Current content imported (UTC)" Style="{StaticResource DetailLabel}" />
+              <TextBox Text="{Binding SelectedVoice.ImportedUtc, Mode=OneWay}" Style="{StaticResource DetailValue}" />
+            </StackPanel>
+          </ScrollViewer>
+        </Grid>
+      </Border>
+    </Grid>
+    <DockPanel Grid.Row="4" Margin="2,16,2,0">
+      <TextBlock Text="Library root" Style="{StaticResource Caption}" FontSize="11" Margin="0,0,12,0" VerticalAlignment="Top" />
+      <TextBox Text="{Binding LibraryRoot, Mode=OneWay}" Foreground="{DynamicResource MutedTextBrush}" FontSize="11" Style="{StaticResource DetailValue}" />
+    </DockPanel>
+  </Grid>
+</Window>

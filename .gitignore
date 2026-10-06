@@ -17,6 +17,11 @@ __pycache__/
 *.user
 *.suo
 
+# .NET build/test output
+**/bin/
+**/obj/
+TestResults/
+
 # CMake / native build
 build/
 build-*/
@@ -49,6 +54,10 @@ voices/
 models/
 *.pth
 *.pt
+
+# UI data models are source, even on case-insensitive Windows filesystems.
+!ui/OutLoud.VoiceManager/Models/
+!ui/OutLoud.VoiceManager/Models/**
 
 # OS
 Thumbs.db

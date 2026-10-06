@@ -310,7 +310,34 @@ target_include_directories(outloud_sapi_voices PRIVATE sapi/src engine/src)
 target_link_libraries(outloud_sapi_voices PUBLIC outloud_voice_library PRIVATE outloud_text advapi32 ktmw32)
 target_compile_definitions(outloud_sapi_voices PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
 target_compile_options(outloud_sapi_voices PRIVATE /W4 /WX /utf-8 /permissive-)
+
+# Read-only frontend ABI, separate from the SAPI COM server. No mutation export.
+add_library(OutLoudVoiceManagerNative SHARED frontend/native/voice_manager.cpp)
+target_include_directories(OutLoudVoiceManagerNative PRIVATE frontend/native engine/src)
+target_link_libraries(OutLoudVoiceManagerNative PRIVATE outloud_sapi_voices)
+target_compile_definitions(OutLoudVoiceManagerNative PRIVATE OUTLOUD_VM_BUILD=1 NOMINMAX WIN32_LEAN_AND_MEAN)
+target_compile_options(OutLoudVoiceManagerNative PRIVATE /W4 /WX /utf-8 /permissive-)
+add_executable(outloud-voice-manager-tests frontend/native/tests.cpp frontend/native/voice_manager.cpp frontend/mutation/mutation.cpp engine/src/voice_library.cpp)
+target_include_directories(outloud-voice-manager-tests PRIVATE frontend/native engine/src sapi/tests sapi/src)
+target_link_libraries(outloud-voice-manager-tests PRIVATE outloud_sapi_voices)
+target_compile_definitions(outloud-voice-manager-tests PRIVATE OUTLOUD_VM_BUILD=1 OUTLOUD_REPLACEMENT_AUDIT=1 NOMINMAX WIN32_LEAN_AND_MEAN)
+target_compile_options(outloud-voice-manager-tests PRIVATE /W4 /WX /utf-8 /permissive-)
+if(BUILD_TESTING)
+    add_test(NAME voice-manager-bridge-regressions COMMAND outloud-voice-manager-tests
+        "$<TARGET_FILE:OutLoudVoiceManagerNative>" "$<TARGET_FILE:OutLoudPocketSAPI>"
+        "${OUTLOUD_ASSET_DIRECTORY}/pocket-english.olp" "${OUTLOUD_TOKENIZER_ASSET}"
+        "${OUTLOUD_ASSET_DIRECTORY}/gnome_male.olv" "${CMAKE_CURRENT_SOURCE_DIR}/voices/gnome_male.safetensors")
+endif()
 add_executable(outloud-sapi-voices tools/sapi-voices/main.cpp)
+
+# One-shot administrative frontend operation, statically linked project code.
+add_executable(OutLoudVoiceImportHelper WIN32 frontend/mutation/helper.cpp frontend/mutation/mutation.cpp)
+target_include_directories(OutLoudVoiceImportHelper PRIVATE frontend/mutation engine/src sapi/src)
+target_link_libraries(OutLoudVoiceImportHelper PRIVATE outloud_sapi_voices shell32)
+target_compile_definitions(OutLoudVoiceImportHelper PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+target_compile_options(OutLoudVoiceImportHelper PRIVATE /W4 /WX /utf-8 /permissive-)
+# Restrict even initial CRT imports to System32, before wWinMain executes.
+target_link_options(OutLoudVoiceImportHelper PRIVATE /DEPENDENTLOADFLAG:0x800 "/MANIFESTUAC:level='asInvoker' uiAccess='false'")
 target_include_directories(outloud-sapi-voices PRIVATE engine/src)
 target_link_libraries(outloud-sapi-voices PRIVATE outloud_sapi_voices)
 target_compile_options(outloud-sapi-voices PRIVATE /W4 /WX /utf-8 /permissive-)

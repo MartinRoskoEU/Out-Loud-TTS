@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <PlatformTarget>x64</PlatformTarget>
+    <Platforms>x64</Platforms>
+    <OutputPath>bin\$(Configuration)\</OutputPath>
+    <Nullable>enable</Nullable>
+    <LangVersion>12.0</LangVersion>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <NativeBuildDirectory Condition="'$(NativeBuildDirectory)' == ''">$(MSBuildThisFileDirectory)..\..\build</NativeBuildDirectory>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- No UI startup, native enumeration or test framework/package required. -->
+    <Compile Include="..\OutLoud.VoiceManager\Models\*.cs" Link="Models\%(Filename)%(Extension)" />
+    <Compile Include="..\OutLoud.VoiceManager\ViewModels\*.cs" Link="ViewModels\%(Filename)%(Extension)" />
+    <Compile Include="..\OutLoud.VoiceManager\Services\IVoiceManagerService.cs" Link="Services\IVoiceManagerService.cs" />
+    <Compile Include="..\OutLoud.VoiceManager\Services\IVoiceImportService.cs" Link="Services\IVoiceImportService.cs" />
+    <Compile Include="..\OutLoud.VoiceManager\Services\ImportProtocol.cs" Link="Services\ImportProtocol.cs" />
+    <Compile Include="..\OutLoud.VoiceManager\Services\ElevatedVoiceImportService.cs" Link="Services\ElevatedVoiceImportService.cs" />
+    <None Include="$(NativeBuildDirectory)\$(Configuration)\OutLoudVoiceImportHelper.exe" Link="OutLoudVoiceImportHelper.exe" CopyToOutputDirectory="PreserveNewest" />
+    <Compile Include="..\OutLoud.VoiceManager\NativeInterop\*.cs" Link="NativeInterop\%(Filename)%(Extension)" />
+  </ItemGroup>
+</Project>

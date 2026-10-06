@@ -2,11 +2,14 @@
 #include "voice_library_fs.hpp"
 #include "voice_library_security.hpp"
 #include "voice_json.hpp"
+#include "replacement_audit.hpp"
 
 #include <shlobj.h>
 #include <chrono>
 #include <iomanip>
 #include <sstream>
+#include <tuple>
+#include <cstring>
 
 namespace outloud {
 VoiceLibraryError::VoiceLibraryError(VoiceLibraryErrorCode code,std::string message,
@@ -26,6 +29,7 @@ std::string_view voice_library_error_name(VoiceLibraryErrorCode code) noexcept {
     OUTLOUD_LIBRARY_CODE(replace_required); OUTLOUD_LIBRARY_CODE(source_io);
     OUTLOUD_LIBRARY_CODE(destination_io); OUTLOUD_LIBRARY_CODE(remove_failed); OUTLOUD_LIBRARY_CODE(internal_failure);
     OUTLOUD_LIBRARY_CODE(library_access_denied); OUTLOUD_LIBRARY_CODE(library_security_invalid);
+    OUTLOUD_LIBRARY_CODE(voice_in_use); OUTLOUD_LIBRARY_CODE(replacement_conflict); OUTLOUD_LIBRARY_CODE(replacement_pending);
 #undef OUTLOUD_LIBRARY_CODE
     }
     return "internal_failure";
@@ -37,6 +41,7 @@ std::string_view voice_health_name(VoiceHealth health) noexcept {
     OUTLOUD_HEALTH(metadata_corrupt); OUTLOUD_HEALTH(unsupported_metadata_version);
     OUTLOUD_HEALTH(unsupported_voice_version); OUTLOUD_HEALTH(incompatible_model);
     OUTLOUD_HEALTH(hash_mismatch); OUTLOUD_HEALTH(unsafe_entry); OUTLOUD_HEALTH(unavailable);
+    OUTLOUD_HEALTH(replacement_pending);
 #undef OUTLOUD_HEALTH
     }
     return "unavailable";
@@ -47,9 +52,11 @@ using Code=VoiceLibraryErrorCode;
 using detail::Bytes;
 using Json=detail::voice_json::Value;
 constexpr std::uint64_t maximum_voice=1024ULL*1024*1024+256;
+struct ValidationFailure { std::exception_ptr error; };
 template<class Function> auto guarded(const std::filesystem::path& path,Function function) {
     try { return function(); }
     catch (const VoiceLibraryError&) { throw; }
+    catch (const ValidationFailure& error) { std::rethrow_exception(error.error); }
     catch (const VoiceImportError& error) {
         throw VoiceLibraryError(error.system_error()==ERROR_ACCESS_DENIED ? Code::library_access_denied : Code::import_failed,
             error.what(),error.path(),error.system_error(),error);
@@ -188,6 +195,7 @@ struct Session {
         child(staging,L".staging"); child(trash,L".trash");
     }
 };
+bool replacement_pending(Session&, std::string_view);
 LibraryVoice inspect(const std::filesystem::path& entry,const std::string& id,bool machine) {
     LibraryVoice result; result.library_id=id;
     try {
@@ -235,7 +243,11 @@ std::vector<LibraryVoice> list(Session& session) {
         try { id=fs::utf8(name); } catch (...) {}
         if (!fs::id(id)) {
             result.push_back({id,{}, {},VoiceHealth::unsafe_entry,"Unexpected entry name; no path inferred from metadata"});
-        } else { result.push_back(inspect(session.voices->path/name,id,session.machine)); }
+        } else {
+            auto voice = inspect(session.voices->path/name,id,session.machine);
+            if (replacement_pending(session,id)) { voice.health=VoiceHealth::replacement_pending; voice.detail="Interrupted replacement needs cleanup_pending recovery; close active consumers first."; }
+            result.push_back(std::move(voice));
+        }
     }
     return result;
 }
@@ -247,6 +259,7 @@ std::filesystem::path entry_path(Session& session,std::string_view id) {
     return path;
 }
 LibraryVoice healthy(Session& session,std::string_view id) {
+    if (replacement_pending(session,id)) { fs::fail(Code::replacement_pending,"Recover the interrupted replacement before mutating this voice",session.root.path); }
     auto result=inspect(entry_path(session,id),std::string(id),session.machine);
     if (result.health!=VoiceHealth::valid) {
         auto code=Code::corrupt_voice;
@@ -277,6 +290,7 @@ void finish_removal(const std::filesystem::path& path,fs::Handle& directory,std:
     for (auto& file : files) { fs::discard(file.value,path); file.close(); }
     fs::discard(directory.value,path); directory.close();
 }
+void discard_replacement(const std::filesystem::path&,fs::Handle&,bool);
 struct Stage {
     std::filesystem::path path;
     std::string id;
@@ -299,7 +313,12 @@ struct Stage {
     }
     ~Stage() {
         if (!published && directory.value!=INVALID_HANDLE_VALUE) {
-            try { std::vector<fs::Handle> files; removal_files(path,files,machine); finish_removal(path,directory,files); } catch (...) {}
+            try {
+                if (fs::exists(path/L"old.olv") || fs::exists(path/L"old.json")) {
+                    if (!fs::exists(path/L"replace.json")) { discard_replacement(path,directory,machine); } return;
+                }
+                std::vector<fs::Handle> files; removal_files(path,files,machine); finish_removal(path,directory,files);
+            } catch (...) {}
         }
     }
 };
@@ -348,6 +367,7 @@ void copy_voice(const std::filesystem::path& source,const std::filesystem::path&
     auto file=fs::file(target,GENERIC_WRITE,0,CREATE_NEW,Code::destination_io,security.get());
     fs::write(file.value,mapping.bytes(),target);
 }
+#include "voice_library_replace.inc"
 } // namespace
 
 std::filesystem::path default_voice_library_root() {
@@ -389,7 +409,11 @@ std::vector<LibraryVoice> VoiceLibrary::list_voices() const {
     return guarded(root_,[&] { Session session(root_,false,machine_storage_); return list(session); });
 }
 LibraryVoice VoiceLibrary::inspect_voice(std::string_view id) const {
-    return guarded(root_,[&] { Session session(root_,false,machine_storage_); return inspect(entry_path(session,id),std::string(id),session.machine); });
+    return guarded(root_,[&] { Session session(root_,false,machine_storage_); auto voice=inspect(entry_path(session,id),std::string(id),session.machine);
+        if (replacement_pending(session,id)) { voice.health=VoiceHealth::replacement_pending; voice.detail="Interrupted replacement needs cleanup_pending recovery; close active consumers first."; } return voice; });
+}
+LibraryReplaceResult VoiceLibrary::replace_pocket_voice(std::string_view id,const std::filesystem::path& input,const VoiceReplaceOptions& options) {
+    return guarded(input,[&] { Session session(root_,true,machine_storage_); return replace_prepared(session,id,input,options); });
 }
 LibraryImportResult VoiceLibrary::import_pocket_voice(const std::filesystem::path& input,std::string_view name,
     const VoiceImportOptions& options,DuplicateContentPolicy policy) {
@@ -479,7 +503,9 @@ LibraryVoice VoiceLibrary::rename_voice(std::string_view id,std::string_view nam
 }
 VoiceRemovalResult VoiceLibrary::remove_voice(std::string_view id) {
     return guarded(root_,[&] {
-        Session session(root_,true,machine_storage_); const auto path=entry_path(session,id); auto entry=fs::directory(path,DELETE|READ_CONTROL);
+        Session session(root_,true,machine_storage_);
+        if (replacement_pending(session,id)) { fs::fail(Code::replacement_pending,"Recover pending replacement before removal",root_); }
+        const auto path=entry_path(session,id); auto entry=fs::directory(path,DELETE|READ_CONTROL);
         if (machine_storage_) { detail::library_security::validate(entry.value,path,true); }
         std::vector<fs::Handle> files; removal_files(path,files,machine_storage_);
         const auto destination=session.trash->path/fs::wide(fs::random_id());
@@ -506,6 +532,12 @@ LibraryCleanupResult VoiceLibrary::cleanup_pending() {
                     if (!fs::id(fs::utf8(name))) { result.pending.push_back(path); continue; }
                     auto directory=fs::directory(path,DELETE|READ_CONTROL);
                     if (machine_storage_) { detail::library_security::validate(directory.value,path,true); }
+                    if (folder==std::wstring_view(L".staging") && fs::exists(path/L"replace.json")) {
+                        recover_replacement(session,path,directory); ++result.cleaned; continue;
+                    }
+                    if (folder==std::wstring_view(L".staging") && fs::exists(path/L"commit")) {
+                        discard_replacement(path,directory,machine_storage_); ++result.cleaned; continue;
+                    }
                     std::vector<fs::Handle> files; removal_files(path,files,machine_storage_);
                     finish_removal(path,directory,files); ++result.cleaned;
                 } catch (const std::exception&) { result.pending.push_back(path); }
