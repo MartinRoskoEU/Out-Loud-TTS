@@ -1,5 +1,8 @@
 # Step 3D.1: read-only WPF Voice Manager
 
+The current frontend also includes [Step 3D.4 Voice Tester](VOICE_MANAGER_TESTER.md),
+with exact installed machine-token SAPI playback, cooperative Stop and WAV export.
+
 The current frontend also supports [Step 3D.3.2 Remove Voice](VOICE_MANAGER_REMOVE.md),
 with confirmation, helper-only elevation and the existing severity notifications.
 

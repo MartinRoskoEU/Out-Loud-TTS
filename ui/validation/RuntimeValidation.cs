@@ -51,6 +51,15 @@ internal static class RuntimeValidation
         public System.Threading.Tasks.Task<VoiceImportResult> ImportAsync(VoiceImportRequest request, IProgress<ImportPhase> progress)
             => System.Threading.Tasks.Task.FromResult(Next);
     }
+    private sealed class FakePlayback : IVoiceTestBackend
+    {
+        public string Name => "Current SAPI Engine / Baseline (fake)";
+        public System.Threading.Tasks.TaskCompletionSource<VoiceTestOutcome>? Pending;
+        public IProgress<VoiceTestState>? Progress;
+        public System.Threading.CancellationToken Stop;
+        public System.Threading.Tasks.Task<VoiceTestOutcome> RunAsync(VoiceTestRequest request, IProgress<VoiceTestState> progress, System.Threading.CancellationToken cancellation)
+        { Progress = progress; Stop = cancellation; return Pending?.Task ?? System.Threading.Tasks.Task.FromResult(new VoiceTestOutcome(false)); }
+    }
     private static void Layout(Window window, int width = 1120, int height = 780)
     {
         window.Width = width; window.Height = height;
@@ -79,7 +88,7 @@ internal static class RuntimeValidation
     private static void CheckContrast(ResourceDictionary palette)
     {
         foreach (var pair in new[] { ("TextBrush", "CanvasBrush"), ("TextBrush", "SurfaceBrush"), ("MutedTextBrush", "CanvasBrush"),
-            ("MutedTextBrush", "SurfaceMutedBrush"), ("SelectionTextBrush", "SelectionBrush"), ("AccentTextBrush", "AccentBrush"),
+            ("MutedTextBrush", "SurfaceMutedBrush"), ("TextBrush", "HoverBrush"), ("SelectionTextBrush", "SelectionBrush"), ("AccentTextBrush", "AccentBrush"),
             ("NeutralTextBrush", "NeutralBrush"), ("SuccessTextBrush", "SuccessBrush"), ("AttentionTextBrush", "AttentionBrush"), ("ErrorTextBrush", "ErrorBrush") })
         {
             double a = Luminance(((SolidColorBrush)palette[pair.Item1]).Color), b = Luminance(((SolidColorBrush)palette[pair.Item2]).Color);
@@ -240,9 +249,61 @@ internal static class RuntimeValidation
                 if (!removalModel.IsEmpty || removeAction.IsEnabled) throw new Exception("Last-row removal did not restore empty/disabled state.");
             }
             removeDialog.Close();
+            var playback = new FakePlayback(); var tester = new VoiceTesterViewModel(playback);
+            var testerService = new FakeService { Next = new("C:\\fake-library", new[] { voice, voice with { LibraryId = "fedcba9876543210fedcba9876543210" } }) };
+            var testerMain = new MainViewModel(testerService, tester: tester); window.DataContext = testerMain;
+            testerMain.RefreshAsync().GetAwaiter().GetResult(); testerMain.SelectedVoice = testerMain.Voices[1]; testerMain.ShowTesterCommand.Execute(null); Layout(window);
+            var testerView = (VoiceTesterView)window.FindName("TesterPage");
+            var selector = (ComboBox)testerView.FindName("TestVoiceSelector"); var editor = (TextBox)testerView.FindName("TestTextEditor");
+            var playButton = (Button)testerView.FindName("TestPlayButton"); var stopButton = (Button)testerView.FindName("TestStopButton");
+            if (!ReferenceEquals(selector.SelectedItem, testerMain.Voices[1]) || !editor.AcceptsReturn || editor.MaxLength != 0 || !playButton.IsEnabled || stopButton.IsEnabled)
+                throw new Exception("Tester selection/editor/idle controls failed.");
+            editor.Text = "Wait, traveler! <plain> & return.\nNext line?"; Layout(window);
+            if (tester.Text != editor.Text) throw new Exception("Tester editor did not preserve plain text.");
+            foreach (AppTheme theme in new[] { AppTheme.Light, AppTheme.Dark, AppTheme.HighContrast }) {
+                palette.Apply(theme); Layout(window, 860, 560); Layout(window, 1440, 900);
+                if (!ReferenceEquals(editor.Foreground, app.Resources["TextBrush"]) || !ReferenceEquals(editor.Background, app.Resources["CanvasBrush"]) ||
+                    !ReferenceEquals(selector.Foreground, app.Resources["TextBrush"]) || !ReferenceEquals(selector.Background, app.Resources["CanvasBrush"]) ||
+                    !ReferenceEquals(selector.SelectedItem, testerMain.Voices[1])) throw new Exception("Tester themed controls/resize/identity failed.");
+                playback.Pending = new System.Threading.Tasks.TaskCompletionSource<VoiceTestOutcome>();
+                var playing = tester.PlayAsync(); Layout(window, 860, 560);
+                if (playButton.IsEnabled || !stopButton.IsEnabled || !editor.IsReadOnly) throw new Exception("Tester busy controls failed.");
+                playback.Progress!.Report(VoiceTestState.Speaking); Layout(window);
+                var stopping = tester.StopAsync(); Layout(window);
+                if (!playback.Stop.IsCancellationRequested || !tester.IsBusy || stopButton.IsEnabled) throw new Exception("Tester stopping controls failed.");
+                playback.Pending.SetResult(new(true)); Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.SystemIdle);
+                playing.GetAwaiter().GetResult(); stopping.GetAwaiter().GetResult(); Layout(window, 860, 560);
+                if (playButton.TranslatePoint(new Point(), (FrameworkElement)window.Content).Y + playButton.ActualHeight > window.Height)
+                    throw new Exception("Tester playback controls scroll out of the small window.");
+                var banner = (Border)testerView.FindName("TestNotification");
+                if (banner.Visibility != Visibility.Visible || !ReferenceEquals(banner.Background, app.Resources["NeutralBrush"]) || !playButton.IsEnabled)
+                    throw new Exception("Tester stopped banner/controls failed.");
+                playback.Pending = new System.Threading.Tasks.TaskCompletionSource<VoiceTestOutcome>();
+                playing = tester.PlayAsync(); playback.Pending.SetException(new VoiceTestException(new("fake_sapi_failure", "Fake unavailable voice", unchecked((int)0x80004005), "completion")));
+                Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.SystemIdle); playing.GetAwaiter().GetResult(); Layout(window, 860, 560);
+                if (!ReferenceEquals(banner.Background, app.Resources["ErrorBrush"]) || !tester.HasDiagnostic) throw new Exception("Tester error severity failed.");
+                if (args.Length == 1) Capture(window, Path.Combine(args[0], $"tester-{theme}.png"));
+                tester.DismissCommand.Execute(null); Layout(window);
+                if (banner.Visibility != Visibility.Collapsed) throw new Exception("Tester notification dismissal failed.");
+            }
+            string preservedText = tester.Text; testerMain.ShowLibraryCommand.Execute(null); Layout(window);
+            if (!testerMain.IsLibraryPage || testerView.Visibility != Visibility.Collapsed || voiceGrid.Visibility != Visibility.Visible)
+                throw new Exception("Tester-to-library navigation failed.");
+            testerMain.RefreshAsync().GetAwaiter().GetResult(); testerMain.ShowTesterCommand.Execute(null); Layout(window);
+            if (tester.Text != preservedText || !ReferenceEquals(selector.SelectedItem, testerMain.SelectedVoice)) throw new Exception("Tester navigation/refresh preservation failed.");
+            if (PresentationSource.FromVisual(window) != null) throw new Exception("Tester validation created a real window.");
             if (errors.Errors != 0) throw new Exception("Notification/dialog binding errors.");
+            var idleWindow = new MainWindow { DataContext = new MainViewModel(new FakeService(), tester: new VoiceTesterViewModel(new FakePlayback())) };
+            bool idleClosed = false; idleWindow.Closed += (_, _) => idleClosed = true; idleWindow.Close();
+            if (!idleClosed) throw new Exception("Idle window close was cancelled or reentered.");
+            playback.Pending = new System.Threading.Tasks.TaskCompletionSource<VoiceTestOutcome>();
+            var closingTest = tester.PlayAsync(); bool busyClosed = false; window.Closed += (_, _) => busyClosed = true;
             window.Close();
-            Console.WriteLine("PASS: SDK-built WPF view, themes/contrast/status tones, full-row selection, replace/remove confirmations and removal selection/empty state, severity/dismissal/diagnostics in light/dark/high contrast, fake refresh states and resized layout; no window shown.");
+            if (busyClosed || !playback.Stop.IsCancellationRequested) throw new Exception("Busy window did not wait for tester shutdown.");
+            playback.Pending.SetResult(new(true)); Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.SystemIdle);
+            closingTest.GetAwaiter().GetResult();
+            if (!busyClosed) throw new Exception("Busy window did not close after cleanup.");
+            Console.WriteLine("PASS: SDK-built WPF library and tester views; navigation, exact-ID selection, multiline text, fake Play/Stop/errors, themes/contrast, severity/dismissal, import/replace/remove, refresh and resize; no window shown or production playback.");
             return 0;
         }
         catch (Exception failure) { Console.Error.WriteLine(failure); return 1; }

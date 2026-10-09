@@ -21,21 +21,32 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private ImportPhase importPhase;
     private VoiceImportResult? importResult;
     private VoiceOperation activeOperation;
-    public MainViewModel(IVoiceManagerService service, IImportDialogService? dialogs = null, IVoiceImportService? importer = null)
+    private bool testerPage, closing;
+    public MainViewModel(IVoiceManagerService service, IImportDialogService? dialogs = null, IVoiceImportService? importer = null, VoiceTesterViewModel? tester = null)
     {
         this.service = service;
         this.dialogs = dialogs; this.importer = importer;
-        RefreshCommand = new RefreshCommand(RefreshAsync, () => !IsBusy);
-        ImportCommand = new RefreshCommand(ImportAsync, () => !IsBusy && dialogs != null && importer != null);
-        RemoveCommand = new RefreshCommand(RemoveAsync, () => !IsBusy && dialogs != null && importer != null && SelectedVoice is { } target &&
+        Tester = tester;
+        if (Tester != null) Tester.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(VoiceTesterViewModel.IsBusy)) { ImportCommand?.Notify(); RemoveCommand?.Notify(); } };
+        RefreshCommand = new RefreshCommand(RefreshAsync, () => !IsBusy && !closing);
+        ImportCommand = new RefreshCommand(ImportAsync, () => !IsBusy && !closing && Tester?.IsBusy != true && dialogs != null && importer != null);
+        RemoveCommand = new RefreshCommand(RemoveAsync, () => !IsBusy && !closing && Tester?.IsBusy != true && dialogs != null && importer != null && SelectedVoice is { } target &&
             target.LibraryId.Length == 32 && target.LibraryId.All(c => c is >= '0' and <= '9' or >= 'a' and <= 'f'));
         DismissNotificationCommand = new RefreshCommand(() => { importResult = null; StateChanged(); return Task.CompletedTask; }, () => HasImportResult);
+        ShowTesterCommand = new RefreshCommand(() => { if (!testerPage) Tester!.UpdateVoices(snapshot, SelectedVoice?.LibraryId); testerPage = true; StateChanged(); return Task.CompletedTask; }, () => Tester != null && !IsBusy && !closing);
+        ShowLibraryCommand = new RefreshCommand(async () => { if (Tester != null) await Tester.StopAsync(); testerPage = false; StateChanged(); }, () => !IsBusy && !closing);
     }
     public event PropertyChangedEventHandler? PropertyChanged;
     public RefreshCommand RefreshCommand { get; }
     public RefreshCommand ImportCommand { get; }
     public RefreshCommand RemoveCommand { get; }
     public RefreshCommand DismissNotificationCommand { get; }
+    public RefreshCommand ShowTesterCommand { get; }
+    public RefreshCommand ShowLibraryCommand { get; }
+    public VoiceTesterViewModel? Tester { get; }
+    public bool IsTesterPage => testerPage;
+    public bool IsLibraryPage => !testerPage;
+    public async Task ShutdownAsync() { closing = true; StateChanged(); if (Tester != null) await Tester.CloseAsync(); }
     public IReadOnlyList<VoiceRecord> Voices => snapshot.Voices;
     public string LibraryRoot => snapshot.LibraryRoot;
     public VoiceRecord? SelectedVoice
@@ -70,7 +81,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public async Task RefreshAsync()
     {
         // Called on the UI context. Set the guard before the first await.
-        if (isBusy) return;
+        if (isBusy || closing) return;
         isBusy = true; error = null; StateChanged();
         try { await ReadSnapshotAsync(); }
         finally { isBusy = false; StateChanged(); }
@@ -90,6 +101,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             if (selectedVoice == null && selectRemaining) selectedVoice = next.Voices.FirstOrDefault();
             Changed(nameof(SelectedVoice));
             Changed(nameof(HasSelection)); Changed(nameof(HasSapiErrors));
+            Tester?.UpdateVoices(next);
         }
         catch (BackendException failure) { error = failure.Error; }
         catch (Exception failure)
@@ -114,7 +126,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     }
     public async Task ImportAsync()
     {
-        if (isBusy || dialogs == null || importer == null) return;
+        if (isBusy || closing || Tester?.IsBusy == true || dialogs == null || importer == null) return;
         activeOperation = VoiceOperation.Import;
         isBusy = true; importPhase = ImportPhase.Choosing; importResult = null; StateChanged();
         try
@@ -174,6 +186,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         Changed(nameof(ImportStateText)); Changed(nameof(ImportDiagnostic)); ImportCommand.Notify();
         RemoveCommand.Notify();
         Changed(nameof(HasImportDiagnostic)); Changed(nameof(NotificationSeverity)); Changed(nameof(NotificationSeverityText)); DismissNotificationCommand.Notify();
+        Changed(nameof(IsTesterPage)); Changed(nameof(IsLibraryPage)); ShowTesterCommand.Notify(); ShowLibraryCommand.Notify();
     }
     private void Changed([CallerMemberName] string? name = null) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 }
