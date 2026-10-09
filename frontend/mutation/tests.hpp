@@ -14,7 +14,7 @@ void mutation_checks(const std::filesystem::path& prepared,const std::filesystem
     const auto source = scratch/L"hlas-\u017e-\U0001f3b5.safetensors";
     std::filesystem::copy_file(prepared,source);
     std::vector<std::uint8_t> request;
-    number(request,m::magic); number(request,m::version); number(request,m::operation); number(request,0);
+    number(request,m::magic); number(request,m::version); number(request,static_cast<std::uint32_t>(m::Operation::import)); number(request,0);
     text_value(request,outloud::detail::library_fs::utf8(source.wstring())); text_value(request,"Hlas \xc5\xbe \xf0\x9f\x8e\xb5");
     const auto size = static_cast<std::uint32_t>(request.size()-16); std::memcpy(request.data()+12,&size,4);
     const auto decoded = m::decode_request(request);

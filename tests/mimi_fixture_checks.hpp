@@ -48,7 +48,7 @@ inline void enforce_mimi_errors(const std::map<std::string, SamplerError>& error
 }
 inline std::map<std::string, SamplerError> check_mimi_convolutions(const PocketModelAsset& model,
         const MimiFixture& fixture, cpu::KernelPath path) {
-    cpu::MimiConvolutionKernels kernels(path);
+    cpu::MimiConvolutionKernels kernels(model,path);
     std::map<std::string, SamplerError> errors;
     for (std::size_t i = 0; i < cpu::mimi_convolutions.size(); ++i) {
         const auto& n = cpu::mimi_convolutions[i];
@@ -65,7 +65,7 @@ inline std::map<std::string, SamplerError> check_mimi_convolutions(const PocketM
             const auto p = mimi_frame(frame) + std::string(cpu::mimi_convolutions[i].name);
             const auto input = fixture.values(p + ".input"), before = fixture.values(p + ".state_before");
             std::vector<float> carry(before.begin(), before.end()), output(fixture.values(p + ".output").size());
-            kernels.run(model, i, input, carry, output);
+            kernels.run(i, input, carry, output);
             errors["primitive." + p + ".output"] = sampler_error(output, fixture.values(p + ".output"));
             if (!carry.empty()) { errors["primitive." + p + ".state_after"] = sampler_error(carry, fixture.values(p + ".state_after")); }
         }

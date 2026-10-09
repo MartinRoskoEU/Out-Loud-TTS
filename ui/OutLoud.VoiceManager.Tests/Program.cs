@@ -76,6 +76,11 @@ internal static class Program
             Check(damaged.NameText == "(Metadata unavailable)" && damaged.OlvVersionText == "Unavailable" && damaged.ProvenanceText == "Unavailable",
                 "Missing metadata is not invented.");
             Check(damaged.SapiDiagnostic.Contains("RegistryAccessDenied"), "Row diagnostic.");
+            var stale = Voice("stale", "Undead Male", "stale_name") with {
+                SapiDetail = "SAPI display names differ from the Voice Library name. Voice data is intact; exact names are required. Manually reconcile the owned machine token before replacement." };
+            fake.Ready(stale); await model.RefreshAsync(); model.SelectedVoice = stale;
+            Check(model.SelectedVoice.SapiStatusText == "stale_name" && model.SelectedVoice.SapiDiagnostic.Contains("Voice data is intact") &&
+                model.SelectedVoice.NameText == "Undead Male" && !model.HasError, "Stale-name explanation remains distinct from missing voice data.");
             fake.Replies.Enqueue(Task.FromException<VoiceSnapshot>(new InvalidOperationException("private exception details")));
             await model.RefreshAsync();
             Check(model.Error?.Code == "unexpected_failure" && !model.Error.Message.Contains("private exception"), "Unexpected failure safe UI state.");

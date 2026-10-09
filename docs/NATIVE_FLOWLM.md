@@ -1,5 +1,13 @@
 # Native deterministic FlowLM backbone (Step 2D)
 
+> Current runtime composition and API/lifetime overview: [ARCHITECTURE.md](ARCHITECTURE.md). Build/checker instructions below are historical; use [A11/A12](BUILD_AND_VALIDATION_IMPROVEMENTS.md) for current selections.
+
+This records the original Step 2D implementation and measurements.
+[A09](PERFORMANCE_OPTIMIZATION_A09.md) adds `prefill_into`, reusing normalization
+scratch for embeddings and caller-owned normalized-result storage. The resident
+generator/worker use that path; owning `embed`/`prefill` results remain supported.
+Original arithmetic and reference gates below remain unchanged.
+
 `outloud_flowlm` implements Pocket TTS 3.3.0's fixed English, batch-1 FlowLM
 text embedding, six transformer layers, final LayerNorm and deterministic EOS
 projection. It uses the existing `.olp` and `.olv` loaders. It has no sampler,

@@ -1,13 +1,21 @@
 [CmdletBinding()]
 param([ValidateSet('Debug','Release')][string]$Configuration = 'Release',
-      [string]$NativeBuildDirectory = (Join-Path $PSScriptRoot '..\build'))
+      [string]$NativeBuildDirectory)
 $ErrorActionPreference = 'Stop'
+if (-not $PSBoundParameters.ContainsKey('NativeBuildDirectory')) {
+    $NativeBuildDirectory = Join-Path $PSScriptRoot '..\build-production'
+}
 $repository = Split-Path $PSScriptRoot -Parent
 $nativeDirectory = [IO.Path]::GetFullPath($NativeBuildDirectory)
 if (-not (Get-Command dotnet -ErrorAction SilentlyContinue) -or -not (dotnet --list-sdks)) {
     throw 'The net10.0-windows projects require an installed .NET 10 SDK; this script does not install an SDK.'
 }
-& cmake -S $repository -B $nativeDirectory -A x64
+# A supplied existing build retains its cached development options.
+$configureArguments = @('-S', $repository, '-B', $nativeDirectory, '-A', 'x64')
+if (-not (Test-Path -LiteralPath (Join-Path $nativeDirectory 'CMakeCache.txt'))) {
+    $configureArguments += @('-DBUILD_TESTING=OFF', '-DOUTLOUD_BUILD_DEVELOPMENT_TOOLS=OFF')
+}
+& cmake @configureArguments
 if ($LASTEXITCODE -ne 0) { throw 'CMake configure failed.' }
 & cmake --build $nativeDirectory --config $Configuration --target OutLoudVoiceManagerNative OutLoudVoiceImportHelper
 if ($LASTEXITCODE -ne 0) { throw 'Native bridge build failed.' }

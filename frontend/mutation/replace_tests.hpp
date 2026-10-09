@@ -20,7 +20,12 @@ void replacement_checks(const std::filesystem::path& prepared,const outloud::Sap
     const auto directory=fs::directory(original.managed_olv_path.parent_path()); FILE_ID_INFO before{};
     check(GetFileInformationByHandleEx(directory.value,FileIdInfo,&before,sizeof(before))!=0,"Cannot identify original directory.");
     auto registry=std::make_shared<FakeRegistry>(); registry->fixture_setup=true; SapiVoiceManager manager(library,runtime,registry,MachineVoiceLibraryPolicy::development_override);
-    (void)manager.install(original.library_id); const auto tokens=registry->tokens; const auto writes=registry->writes;
+    (void)manager.install(original.library_id);
+    const auto& registered=registry->tokens.at(managed_sapi_token_key(original.library_id));
+    check(sapi_registry_text(registered.values.at(L""))==L"Undead Female" && sapi_registry_text(registered.values.at(L"409"))==L"Undead Female" &&
+        sapi_registry_text(registered.children.at(L"Attributes").values.at(L"Name"))==L"Undead Female" &&
+        sapi_registry_text(registered.children.at(L"Attributes").values.at(L"Vendor"))==L"Out Loud","Replacement fixture exact SAPI names/vendor differ.");
+    const auto tokens=registry->tokens; const auto writes=registry->writes;
     const auto pair_before=inventory(library.root()/L"voices");
     VoiceReplaceOptions options; options.import=import; options.expected_display_name=original.metadata->display_name; options.expected_olv_sha256=original.metadata->olv_sha256;
     options.validate_before_publish=[&](const LibraryVoice& target,const std::filesystem::path& staged) { manager.validate_replacement(target,staged); };

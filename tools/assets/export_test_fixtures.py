@@ -1,8 +1,6 @@
 """Offline original-byte and PyTorch widening references; no native runtime dependencies."""
 import hashlib
 import json
-from pathlib import Path
-import struct
 
 import numpy as np
 import torch

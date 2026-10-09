@@ -6,12 +6,16 @@ never registers a Windows voice.
 
 `outloud_voice_import` is the reusable, offline C++20 Windows x64 boundary for
 importing a **prepared Pocket voice state** into an Out Loud Voice (`.olv`).
-The CLI is `outloud-voice-import.exe`. No GUI, voice library, registration or
-deployment feature is introduced. The SAPI engine does not link the importer
+The CLI is `outloud-voice-import.exe`. This conversion API writes an OLV but does
+not install a library entry or register a token; current coordinated import is
+described in [VOICE_MANAGER_GUIDE.md](VOICE_MANAGER_GUIDE.md). The SAPI engine does not link the importer
 or its source-header parser; its loader and synthesis behavior are unchanged.
 
-Step 3B adds a separate [managed voice library backend](VOICE_LIBRARY.md) that
+The separate [managed voice library backend](VOICE_LIBRARY.md)
 calls this API and stores human-facing metadata outside the unchanged `.olv`.
+This document retains the importer contract and historical Step 3A evidence.
+Current production/development build commands are in
+[A11/A12](BUILD_AND_VALIDATION_IMPROVEMENTS.md).
 
 ## Audited source and established conversion
 
@@ -200,17 +204,15 @@ cache bytes stream directly from the source mapping.
 
 ## CLI, validation and evidence
 
-Run from the repository root. `pinned` is an explicit compatibility assertion,
-not automatic compatibility discovery:
+The production-only build supplies this CLI without reference fixtures.
+Run from the repository root after the [documented build](BUILD_AND_VALIDATION_IMPROVEMENTS.md).
+`pinned` is an explicit assertion that the source was prepared with this project's
+model, not automatic provenance/compatibility discovery:
 
 ```powershell
-cmake --build build --config Release --parallel
-.\build\Release\outloud-voice-import.exe inspect voices\gnome_male.safetensors
-.\build\Release\outloud-voice-import.exe voices\gnome_male.safetensors generated\assets\3a-gnome-imported.olv --model-compatibility pinned --expected-source-sha256 2118ea60dfe87bd515b27e051e1d677a7fe15663875740599147bde37a9c4cea
-.\build\Release\outloud-voice-import.exe validate-olv generated\assets\3a-gnome-imported.olv
-ctest --test-dir build -C Release --output-on-failure
-.\build\Release\outloud-voice-import-tests.exe voices\gnome_male.safetensors generated\assets\gnome_male.olv generated\assets\pocket-english.olp generated\tokenizer\pocket-english-tokenizer.bin generated\orchestration\native-full-canonical-avx2.f32
-git diff --check
+.\build-production\Release\outloud-voice-import.exe inspect '<prepared-source.safetensors>'
+.\build-production\Release\outloud-voice-import.exe '<prepared-source.safetensors>' '<new-output.olv>' --model-compatibility pinned
+.\build-production\Release\outloud-voice-import.exe validate-olv '<new-output.olv>'
 ```
 
 For repeated CLI import, either choose a new destination or deliberately add
@@ -218,6 +220,12 @@ For repeated CLI import, either choose a new destination or deliberately add
 CLI status is 0 on success, 1 for backend failures, 2 for CLI usage errors.
 API output/errors are structured; CLI output is developer-readable key/value
 text, not a GUI integration protocol.
+
+### Historical Step 3A execution evidence
+
+The following results and closing decisions belong to Step 3A, before the later
+Voice Manager workflows. They are not a new build, test run or pending frontend
+implementation requirement.
 
 Release x64 `/W4 /WX` build passed. All **12 original CTests plus one focused
 importer CTest (13/13)** passed, 31.65 seconds. No performance CTest, benchmark

@@ -73,7 +73,8 @@ GenerationResult FlowLMGenerator::generate_segment(std::span<const std::uint32_t
         const auto prefill_begin = std::chrono::steady_clock::now();
         {
             const auto before = state_->offset();
-            const auto prefill = backbone_.prefill(tokens, *state_);
+            backbone_.prefill_into(tokens,*state_,candidate_.backbone);
+            const auto& prefill=candidate_.backbone; // consumed before the next candidate overwrites this result
             const auto row = noise.next(); valid_noise(row); ++result.noise_draw_count;
             const auto sample = sampler_.sample(prefill.last_hidden(), row); // real call, discarded
             result.prefill_offset = state_->offset();

@@ -1,5 +1,13 @@
 # Native supplied-noise flow sampler (Step 2E)
 
+> Current runtime composition: [ARCHITECTURE.md](ARCHITECTURE.md). Build/checker instructions below are historical; use [A11/A12](BUILD_AND_VALIDATION_IMPROVEMENTS.md).
+
+This records the original Step 2E implementation and measurements.
+[A09](PERFORMANCE_OPTIMIZATION_A09.md) adds a **4 KiB** sampler-owned cache for
+normalized `s=0`/`t=1` embeddings and evaluates combined-condition SiLU once per
+sample. The normal activation-array payload falls from 23,552 to 18,432 bytes.
+Historical measurements below predate those additions; numerical gates remain.
+
 `outloud_flow_sampler` implements the fixed English Pocket TTS 3.3.0
 `SimpleMLPAdaLN` and one-step LSD arithmetic. Its public boundary takes one
 FP32 hidden row `[1024]` and an externally supplied FP32 noise row `[32]`, and

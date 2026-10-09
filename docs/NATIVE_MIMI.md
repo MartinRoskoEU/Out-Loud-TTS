@@ -1,5 +1,14 @@
 # Native Pocket Mimi decoder (Step 2G)
 
+> Current runtime composition: [ARCHITECTURE.md](ARCHITECTURE.md). Build/checker instructions below are historical; use [A11/A12](BUILD_AND_VALIDATION_IMPROVEMENTS.md).
+
+This document records the original Step 2G implementation and measurements.
+[A08](PERFORMANCE_OPTIMIZATION_A08.md) adds a decoder-owned **7.5 MiB immutable
+FP32 phase-weight cache** for the three dense transposed convolutions. Those
+weights are now widened once during construction; the original mapped BF16
+weights, arithmetic, mutable scratch and reset semantics remain unchanged.
+The memory and timing tables below describe Step 2G, before that addition.
+
 `outloud_mimi` converts one normalized Pocket English latent `[32]` into
 **1920 unclamped float32 mono samples at 24000 Hz**, immediately after each
 call. The complete canonical Segment 1 is **46 calls / 88320 samples /

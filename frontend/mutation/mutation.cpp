@@ -1,5 +1,5 @@
 #include "mutation.hpp"
-#include "voice_library_fs.hpp"
+#include "../error_conversion.hpp"
 #include "engine_registration.hpp"
 #include "identity.hpp"
 #include <cstring>
@@ -26,23 +26,6 @@ void number(std::vector<std::uint8_t>& bytes,std::uint32_t value) {
 void string(std::vector<std::uint8_t>& bytes,const std::string& value) {
     if (value.size()>32768) { throw std::length_error("Result string exceeds protocol bound."); }
     number(bytes,static_cast<std::uint32_t>(value.size())); bytes.insert(bytes.end(),value.begin(),value.end());
-}
-void library_cause(Error& error,const VoiceLibraryError& cause) {
-    error.library_code = voice_library_error_name(cause.code()); error.path = fs::utf8(cause.path().wstring());
-    error.duplicate_ids = cause.duplicate_ids();
-    if (cause.import_error()) { error.import_code = voice_import_error_name(cause.import_error()->code()); error.tensor = cause.import_error()->tensor(); }
-}
-Error convert(const VoiceLibraryError& cause) {
-    Error error; error.domain = "library"; error.code = voice_library_error_name(cause.code());
-    error.message = cause.what(); error.system_error = cause.system_error(); library_cause(error,cause); return error;
-}
-Error convert(const SapiVoiceError& cause) {
-    Error error; error.domain = "sapi"; error.code = sapi_voice_error_name(cause.code); error.message = cause.what(); error.system_error = cause.system_error;
-    if (cause.library_error) { library_cause(error,*cause.library_error); }
-    if (cause.validation_error) {
-        error.import_code = voice_import_error_name(cause.validation_error->code()); error.tensor = cause.validation_error->tensor();
-        if (error.path.empty()) { error.path = fs::utf8(cause.validation_error->path().wstring()); }
-    } return error;
 }
 }
 Request decode_request(std::span<const std::uint8_t> bytes) {
@@ -89,7 +72,7 @@ SapiVoiceRuntime runtime_from_registration(const std::optional<SapiRegistryValue
     }
     detail::validate_engine_registration(registered,dll);
     const auto root = dll.parent_path().parent_path();
-    return {root,dll,root/L"runtime/pocket-english.olp",root/L"runtime/pocket-english-tokenizer.bin"};
+    return {root,dll,(root/L"runtime/pocket-english.olp").lexically_normal(),(root/L"runtime/pocket-english-tokenizer.bin").lexically_normal()};
 }
 SapiVoiceRuntime resolve_machine_runtime() {
     // Read-only, fixed machine Registry64 registration. Never HKCR/HKCU or UI paths.
@@ -125,12 +108,23 @@ Result import_and_install(const Request& request,VoiceLibrary library,std::share
         if (request.kind==Operation::remove) {
             result.library_id=request.target_id;
             SapiVoiceManager manager(library,{},registry,policy); // Removal needs no runtime assets or engine-registration edit.
+            const RemovalRegistrationIdentity query=[&](std::string_view id) {
+                try { return manager.removal_registration_identity(id); }
+                catch (const SapiVoiceError& error) { result.error=frontend::error_from<Error>(error); throw; }
+            };
+            const auto recovery=library.recover_removal(request.target_id,query);
+            if (recovery.state==RemovalRecoveryState::removed) {
+                result.outcome=recovery.cleanup_pending ? Outcome::removal_warning : Outcome::removed;
+                if (recovery.cleanup_pending) { result.error.domain="library"; result.error.code="cleanup_pending"; result.error.message=recovery.detail; }
+                return result;
+            }
             VoiceRemoveOptions options; options.expected_display_name=request.display_name; options.expected_olv_sha256=request.expected_hash;
             options.expected_health=request.expected_health;
-            options.remove_registration=[&](const LibraryVoice&) {
-                try { (void)manager.remove(request.target_id,SapiVoiceScope::machine); }
+            options.registration_identity=query;
+            options.remove_registration=[&](const LibraryVoice&,std::string_view identity) {
+                try { (void)manager.remove(request.target_id,identity); }
                 catch (const SapiVoiceError& error) {
-                    if (error.code!=SapiVoiceErrorCode::token_not_found) { result.error=convert(error); throw; }
+                    if (error.code!=SapiVoiceErrorCode::token_not_found) { result.error=frontend::error_from<Error>(error); throw; }
                 }
             };
             const auto removed=library.remove_voice(request.target_id,options);
@@ -154,16 +148,16 @@ Result import_and_install(const Request& request,VoiceLibrary library,std::share
         result.library_id = imported.voice.library_id;
         result.outcome = Outcome::partial;
         SapiVoiceManager manager(std::move(library),resolve(),std::move(registry),policy);
-        (void)manager.install(result.library_id,SapiVoiceScope::machine);
+        (void)manager.install(result.library_id);
         result.outcome = Outcome::success;
     } catch (const VoiceLibraryError& error) {
-        if (request.kind==Operation::remove && error.code()==VoiceLibraryErrorCode::removal_partial) {
-            const auto registration_error=result.error; result.error=convert(error);
+        if (request.kind==Operation::remove && (error.code()==VoiceLibraryErrorCode::removal_partial || error.code()==VoiceLibraryErrorCode::removal_pending)) {
+            const auto registration_error=result.error; result.error=frontend::error_from<Error>(error);
             if (!registration_error.code.empty()) { result.error.message+=" Registration failure: "+registration_error.code+": "+registration_error.message; }
             result.outcome=Outcome::removal_warning;
-        } else { result.error = convert(error); }
+        } else { result.error = frontend::error_from<Error>(error); }
     }
-    catch (const SapiVoiceError& error) { result.error = convert(error); }
+    catch (const SapiVoiceError& error) { result.error = frontend::error_from<Error>(error); }
     catch (...) { result.error.domain = "helper"; result.error.code = "internal_failure"; result.error.message = "Native voice mutation failed."; }
     return result;
 }

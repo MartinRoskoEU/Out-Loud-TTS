@@ -25,11 +25,15 @@ public:
     void frame_candidate_into(FlowLMBackbone& backbone, FlowLMPrefillState& state, std::span<const float> previous,
                               std::span<const float> noise, DeterministicCandidate& result);
     [[nodiscard]] cpu::KernelPath selected_path() const { return kernels_.selected_path(); }
-    [[nodiscard]] static constexpr std::size_t activation_scratch_bytes() { return (8 * 512 + 1536 + 256) * sizeof(float); }
+    [[nodiscard]] static constexpr std::size_t activation_scratch_bytes() { return (6 * 512 + 1536) * sizeof(float); }
+    [[nodiscard]] static constexpr std::size_t time_embedding_bytes() { return 2 * 512 * sizeof(float); }
 private:
+    friend struct FlowSamplerTestAccess;
+    void time_embedding(std::uint32_t index, std::span<float> output, const SamplerObserver& observer = {});
     void candidate_into(FlowLMBackbone& backbone, FlowLMPrefillState& state, std::span<const float> input,
                         std::span<const float> noise, DeterministicCandidate& result, const SamplerObserver& observer);
     PocketModelAsset model_;
     cpu::Kernels kernels_; // reuses its one-row widening buffer for all sampler linears
+    std::array<std::array<float,512>,2> time_; // immutable s=0/t=1, model/ISA-bound, prepared at construction
 };
 } // namespace outloud

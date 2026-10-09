@@ -3,6 +3,7 @@
 #include "voice_library_security.hpp"
 #include "voice_json.hpp"
 #include "replacement_audit.hpp"
+#include "voice_refresh_audit.hpp"
 
 #include <shlobj.h>
 #include <chrono>
@@ -10,6 +11,7 @@
 #include <sstream>
 #include <tuple>
 #include <cstring>
+#include <set>
 
 namespace outloud {
 VoiceLibraryError::VoiceLibraryError(VoiceLibraryErrorCode code,std::string message,
@@ -30,7 +32,7 @@ std::string_view voice_library_error_name(VoiceLibraryErrorCode code) noexcept {
     OUTLOUD_LIBRARY_CODE(destination_io); OUTLOUD_LIBRARY_CODE(remove_failed); OUTLOUD_LIBRARY_CODE(internal_failure);
     OUTLOUD_LIBRARY_CODE(library_access_denied); OUTLOUD_LIBRARY_CODE(library_security_invalid);
     OUTLOUD_LIBRARY_CODE(voice_in_use); OUTLOUD_LIBRARY_CODE(replacement_conflict); OUTLOUD_LIBRARY_CODE(replacement_pending);
-    OUTLOUD_LIBRARY_CODE(removal_conflict); OUTLOUD_LIBRARY_CODE(removal_partial);
+    OUTLOUD_LIBRARY_CODE(removal_conflict); OUTLOUD_LIBRARY_CODE(removal_partial); OUTLOUD_LIBRARY_CODE(removal_pending);
 #undef OUTLOUD_LIBRARY_CODE
     }
     return "internal_failure";
@@ -42,7 +44,7 @@ std::string_view voice_health_name(VoiceHealth health) noexcept {
     OUTLOUD_HEALTH(metadata_corrupt); OUTLOUD_HEALTH(unsupported_metadata_version);
     OUTLOUD_HEALTH(unsupported_voice_version); OUTLOUD_HEALTH(incompatible_model);
     OUTLOUD_HEALTH(hash_mismatch); OUTLOUD_HEALTH(unsafe_entry); OUTLOUD_HEALTH(unavailable);
-    OUTLOUD_HEALTH(replacement_pending);
+    OUTLOUD_HEALTH(replacement_pending); OUTLOUD_HEALTH(removal_pending);
 #undef OUTLOUD_HEALTH
     }
     return "unavailable";
@@ -121,6 +123,7 @@ std::string serialize(const VoiceMetadata& m) {
         ",\n  \"model_provenance_verified\":false\n}\n";
 }
 VoiceMetadata metadata(const std::filesystem::path& path,std::string_view expected_id) {
+    detail::refresh_audit::event(detail::refresh_audit::Event::metadata);
     auto file=fs::file(path); const auto bytes=fs::read(file.value,path,16*1024);
     Json root;
     try { root=detail::voice_json::Parser({reinterpret_cast<const char*>(bytes.data()),bytes.size()}).parse(); }
@@ -197,6 +200,7 @@ struct Session {
     }
 };
 bool replacement_pending(Session&, std::string_view);
+bool removal_pending(Session&, std::string_view);
 LibraryVoice inspect(const std::filesystem::path& entry,const std::string& id,bool machine) {
     LibraryVoice result; result.library_id=id;
     try {
@@ -209,11 +213,14 @@ LibraryVoice inspect(const std::filesystem::path& entry,const std::string& id,bo
         result.metadata=metadata(entry/L"metadata.json",id);
         const auto path=entry/L"voice.olv";
         if (!fs::exists(path)) { result.health=VoiceHealth::missing_voice; result.detail="Managed voice.olv is missing"; return result; }
-        const auto file=fs::file(path); const detail::MappedFile mapping(path,maximum_voice); const auto bytes=mapping.bytes();
+        const auto file=fs::file(path);
+        detail::refresh_audit::event(detail::refresh_audit::Event::olv_mapping);
+        const detail::MappedFile mapping(path,maximum_voice); const auto bytes=mapping.bytes();
         if (machine) { detail::library_security::validate(file.value,path,false); }
         if (bytes.size()>=12 && std::string_view(reinterpret_cast<const char*>(bytes.data()),8)=="OLVPKT01" && detail::u32(bytes,8)!=1) {
             result.health=VoiceHealth::unsupported_voice_version; result.detail="Unsupported .olv format version"; return result;
         }
+        detail::refresh_audit::event(detail::refresh_audit::Event::olv_validation);
         const auto validated=validate_olv(path);
         const auto& m=*result.metadata;
         if (m.compatibility_id!=pocket_model_compatibility_id) { result.health=VoiceHealth::incompatible_model; result.detail="Metadata declares an incompatible model"; }
@@ -236,22 +243,6 @@ LibraryVoice inspect(const std::filesystem::path& entry,const std::string& id,bo
     } catch (const std::exception& error) { result.health=result.metadata?VoiceHealth::corrupt_voice:VoiceHealth::metadata_corrupt; result.detail=error.what(); }
     return result;
 }
-std::vector<LibraryVoice> list(Session& session) {
-    std::vector<LibraryVoice> result;
-    if (!session.root.exists || !session.voices->exists) { return result; }
-    for (const auto& name : fs::children(session.voices->path)) {
-        std::string id;
-        try { id=fs::utf8(name); } catch (...) {}
-        if (!fs::id(id)) {
-            result.push_back({id,{}, {},VoiceHealth::unsafe_entry,"Unexpected entry name; no path inferred from metadata"});
-        } else {
-            auto voice = inspect(session.voices->path/name,id,session.machine);
-            if (replacement_pending(session,id)) { voice.health=VoiceHealth::replacement_pending; voice.detail="Interrupted replacement needs cleanup_pending recovery; close active consumers first."; }
-            result.push_back(std::move(voice));
-        }
-    }
-    return result;
-}
 std::filesystem::path entry_path(Session& session,std::string_view id) {
     if (!fs::id(id)) { fs::fail(Code::invalid_id,"Expected 32 lowercase hexadecimal ID characters",session.root.path); }
     if (!session.root.exists || !session.voices->exists) { fs::fail(Code::voice_not_found,"Voice is not in this library",session.root.path); }
@@ -261,6 +252,7 @@ std::filesystem::path entry_path(Session& session,std::string_view id) {
 }
 LibraryVoice healthy(Session& session,std::string_view id) {
     if (replacement_pending(session,id)) { fs::fail(Code::replacement_pending,"Recover the interrupted replacement before mutating this voice",session.root.path); }
+    if (removal_pending(session,id)) { fs::fail(Code::removal_pending,"Recover interrupted removal before mutating this voice",session.root.path); }
     auto result=inspect(entry_path(session,id),std::string(id),session.machine);
     if (result.health!=VoiceHealth::valid) {
         auto code=Code::corrupt_voice;
@@ -369,6 +361,8 @@ void copy_voice(const std::filesystem::path& source,const std::filesystem::path&
     fs::write(file.value,mapping.bytes(),target);
 }
 #include "voice_library_replace.inc"
+#include "voice_library_remove.inc"
+#include "voice_library_snapshot.inc"
 } // namespace
 
 std::filesystem::path default_voice_library_root() {
@@ -387,7 +381,7 @@ VoiceLibrary::VoiceLibrary(std::filesystem::path root) : root_(guarded(root,[&] 
         if (component++>=pinned.handles.size()-1) { canonical/=part; }
     }
     root_=std::move(canonical);
-    // Canonicalize only the known-folder base. Explicit legacy/development
+    // Canonicalize only the known-folder base. Explicit isolated-test
     // libraries must not depend on access to installed production entries.
     const auto production=default_voice_library_root();
     const fs::Pins production_base(production.parent_path().parent_path());
@@ -409,9 +403,17 @@ VoiceLibrary::VoiceLibrary(std::filesystem::path root) : root_(guarded(root,[&] 
 std::vector<LibraryVoice> VoiceLibrary::list_voices() const {
     return guarded(root_,[&] { Session session(root_,false,machine_storage_); return list(session); });
 }
+void VoiceLibrary::with_read_snapshot(const std::function<void(std::vector<LibraryVoice>&&)>& consume) const {
+    guarded(root_,[&] {
+        Session session(root_,false,machine_storage_); auto voices=list(session);
+        try { consume(std::move(voices)); }
+        catch (...) { throw ValidationFailure{std::current_exception()}; }
+    });
+}
 LibraryVoice VoiceLibrary::inspect_voice(std::string_view id) const {
     return guarded(root_,[&] { Session session(root_,false,machine_storage_); auto voice=inspect(entry_path(session,id),std::string(id),session.machine);
-        if (replacement_pending(session,id)) { voice.health=VoiceHealth::replacement_pending; voice.detail="Interrupted replacement needs cleanup_pending recovery; close active consumers first."; } return voice; });
+        if (replacement_pending(session,id)) { voice.health=VoiceHealth::replacement_pending; voice.detail="Interrupted replacement needs cleanup_pending recovery; close active consumers first."; }
+        if (removal_pending(session,id)) { voice.health=VoiceHealth::removal_pending; voice.detail="Interrupted removal requires authorized token-aware recovery; data retained."; } return voice; });
 }
 LibraryReplaceResult VoiceLibrary::replace_pocket_voice(std::string_view id,const std::filesystem::path& input,const VoiceReplaceOptions& options) {
     return guarded(input,[&] { Session session(root_,true,machine_storage_); return replace_prepared(session,id,input,options); });
@@ -506,88 +508,18 @@ VoiceRemovalResult VoiceLibrary::remove_voice(std::string_view id) {
     return remove_voice(id,{});
 }
 VoiceRemovalResult VoiceLibrary::remove_voice(std::string_view id,const VoiceRemoveOptions& options) {
+    return guarded(root_,[&] { Session session(root_,true,machine_storage_); return remove_prepared(session,id,options); });
+}
+RemovalRecoveryResult VoiceLibrary::recover_removal(std::string_view id,const RemovalRegistrationIdentity& query) {
     return guarded(root_,[&] {
-        Session session(root_,true,machine_storage_);
-        if (replacement_pending(session,id)) { fs::fail(Code::replacement_pending,"Recover pending replacement before removal",root_); }
-        const auto path=entry_path(session,id);
-        LibraryVoice current;
-        if (options.expected_display_name || options.expected_olv_sha256 || options.expected_health || options.remove_registration) {
-            current=inspect(path,std::string(id),machine_storage_);
-            if (!options.expected_display_name || !options.expected_olv_sha256 || !options.expected_health || *options.expected_health!=voice_health_name(current.health) ||
-                (!options.expected_olv_sha256->empty() && !hash(*options.expected_olv_sha256)) ||
-                *options.expected_display_name!=(current.metadata ? current.metadata->display_name : "") ||
-                *options.expected_olv_sha256!=(current.metadata ? current.metadata->olv_sha256 : "")) {
-                fs::fail(Code::removal_conflict,"Voice identity or content changed since confirmation. Refresh and confirm again.",path);
-            }
-        }
-        auto entry=fs::directory(path,DELETE|READ_CONTROL);
-        if (machine_storage_) { detail::library_security::validate(entry.value,path,true); }
-        std::vector<fs::Handle> files;
-        try {
-            removal_files(path,files,machine_storage_);
-            if (options.expected_olv_sha256 && current.health==VoiceHealth::valid) {
-                const auto asset=fs::file(path/L"voice.olv",GENERIC_READ,FILE_SHARE_READ|FILE_SHARE_DELETE);
-                if (handle_hash(asset.value,path/L"voice.olv")!=*options.expected_olv_sha256) {
-                    fs::fail(Code::removal_conflict,"Voice content changed before removal",path);
-                }
-            }
-        } catch (const VoiceLibraryError& error) {
-            if (options.remove_registration && (error.system_error()==ERROR_SHARING_VIOLATION || error.system_error()==ERROR_LOCK_VIOLATION)) {
-                throw VoiceLibraryError(Code::voice_in_use,"Voice is in use. Close WoW and other active speech consumers, then retry.",error.path(),error.system_error());
-            } throw;
-        }
-        const auto destination=session.trash->path/fs::wide(fs::random_id());
-        // Windows can deny directory rename while child handles are open, even with delete sharing.
-        // Keep directory identity pinned, release preflight children, and revalidate after detach.
-        files.clear();
-        #ifdef OUTLOUD_REPLACEMENT_AUDIT
-        detail::removal_audit::point(0);
-        #endif
-        fs::rename(entry.value,destination,false,Code::remove_failed);
-        if (options.remove_registration) {
-            try {
-                // Close the preflight/directory-rename gap before registry edits.
-                // Keep DELETE handles through token removal and final deletion.
-                try { removal_files(destination,files,machine_storage_); }
-                catch (const VoiceLibraryError& error) {
-                    if (error.system_error()==ERROR_SHARING_VIOLATION || error.system_error()==ERROR_LOCK_VIOLATION) {
-                        throw VoiceLibraryError(Code::voice_in_use,"Voice is in use. Close WoW and other active speech consumers, then retry.",error.path(),error.system_error());
-                    } throw;
-                }
-                #ifdef OUTLOUD_REPLACEMENT_AUDIT
-                detail::removal_audit::point(1);
-                #endif
-                options.remove_registration(current);
-            } catch (...) {
-                const auto cause=std::current_exception();
-                files.clear();
-                try {
-                    #ifdef OUTLOUD_REPLACEMENT_AUDIT
-                    detail::removal_audit::point(2);
-                    #endif
-                    fs::rename(entry.value,path,false,Code::remove_failed);
-                } catch (const VoiceLibraryError& rollback) {
-                    throw VoiceLibraryError(Code::removal_partial,std::string("Coordinated removal failed and directory restoration failed. Library entry is detached in trash; review its registration and retained files: ")+rollback.what(),destination,rollback.system_error());
-                } catch (const std::exception& rollback) {
-                    throw VoiceLibraryError(Code::removal_partial,std::string("Coordinated removal failed and directory restoration failed. Library entry is detached in trash; review its registration and retained files: ")+rollback.what(),destination);
-                }
-                throw ValidationFailure{cause};
-            }
-        }
-        // Commit point: no active entry remains. Later cleanup errors are a reported pending removal.
-        VoiceRemovalResult result;
-        try {
-            #ifdef OUTLOUD_REPLACEMENT_AUDIT
-            detail::removal_audit::point(3);
-            #endif
-            if (files.empty()) { removal_files(destination,files,machine_storage_); }
-            finish_removal(destination,entry,files);
-        }
-        catch (const std::exception& error) { result.cleanup_pending=true; result.detail=error.what(); }
-        return result;
+        if (!fs::id(id)) { fs::fail(Code::invalid_id,"Invalid recovery library ID",root_); }
+        Session session(root_,true,machine_storage_,false); const auto journals=removal_transactions(session,id);
+        if (journals.empty()) { return RemovalRecoveryResult{}; }
+        auto directory=fs::directory(journals[0],DELETE|READ_CONTROL);
+        return recover_remove(session,journals[0],directory,query);
     });
 }
-LibraryCleanupResult VoiceLibrary::cleanup_pending() {
+LibraryCleanupResult VoiceLibrary::cleanup_pending(const RemovalRegistrationIdentity& query) {
     return guarded(root_,[&] {
         Session session(root_,true,machine_storage_,false); LibraryCleanupResult result;
         if (!session.root.exists) { return result; }
@@ -596,18 +528,33 @@ LibraryCleanupResult VoiceLibrary::cleanup_pending() {
             for (const auto& name : fs::children(parent.path)) {
                 const auto path=parent.path/name;
                 try {
-                    if (!fs::id(fs::utf8(name))) { result.pending.push_back(path); continue; }
+                    if (!fs::id(fs::utf8(name))) { fs::fail(Code::removal_pending,"Unknown pending directory name retained",path); }
                     auto directory=fs::directory(path,DELETE|READ_CONTROL);
                     if (machine_storage_) { detail::library_security::validate(directory.value,path,true); }
-                    if (folder==std::wstring_view(L".staging") && fs::exists(path/L"replace.json")) {
+                    if (folder==std::wstring_view(L".trash")) {
+                        if (fs::exists(path/L"remove.json")) {
+                            const auto journal=load_remove(path/L"remove.json",machine_storage_);
+                            if (!removal_transactions(session,journal.id,path).empty()) { fs::fail(Code::removal_pending,"Multiple removal journals for one ID; retained",path); }
+                            const auto recovered=recover_remove(session,path,directory,query);
+                            if (recovered.cleanup_pending) { fs::fail(Code::removal_pending,recovered.detail.c_str(),path); }
+                        } else if (fs::children(path).empty()) { fs::discard(directory.value,path); directory.close(); }
+                        else { fs::fail(Code::removal_pending,"Unjournaled trash outcome is unknown; files retained",path); }
+                        ++result.cleaned; continue;
+                    }
+                    if (fs::exists(path/L"replace.json")) {
                         recover_replacement(session,path,directory); ++result.cleaned; continue;
                     }
-                    if (folder==std::wstring_view(L".staging") && fs::exists(path/L"commit")) {
+                    if (fs::exists(path/L"commit")) {
                         discard_replacement(path,directory,machine_storage_); ++result.cleaned; continue;
                     }
                     std::vector<fs::Handle> files; removal_files(path,files,machine_storage_);
                     finish_removal(path,directory,files); ++result.cleaned;
-                } catch (const std::exception&) { result.pending.push_back(path); }
+                } catch (const VoiceLibraryError& error) { result.pending.push_back(path); result.problems.push_back(error); }
+                catch (const ValidationFailure&) {
+                    result.pending.push_back(path); result.problems.emplace_back(Code::removal_pending,"Registration inspection failed; retained for authorized reconciliation",path);
+                } catch (const std::exception& error) {
+                    result.pending.push_back(path); result.problems.emplace_back(Code::removal_pending,error.what(),path);
+                }
             }
         }
         return result;

@@ -27,6 +27,7 @@ void save_control(const std::filesystem::path& path,std::string_view text,bool m
     auto file=fs::file(path,GENERIC_WRITE,0,CREATE_NEW,Code::destination_io,security.get()); fs::write(file.value,{reinterpret_cast<const unsigned char*>(text.data()),text.size()},path);
 }
 ReplaceJournal load_journal(const std::filesystem::path& path,bool machine) {
+    detail::refresh_audit::event(detail::refresh_audit::Event::replacement_journal);
     auto file=fs::file(path); if (machine) { detail::library_security::validate(file.value,path,false); }
     const auto bytes=fs::read(file.value,path,4096); const auto json=detail::voice_json::Parser({reinterpret_cast<const char*>(bytes.data()),bytes.size()}).parse();
     auto invalid=[&] { fs::fail(Code::replacement_pending,"Invalid replacement journal; retained for manual recovery",path); };
@@ -45,6 +46,7 @@ bool committed(const std::filesystem::path& path,const ReplaceJournal& journal,b
 }
 bool replacement_pending(Session& session,std::string_view id) {
     if (!session.root.exists || !session.staging->exists) { return false; }
+    detail::refresh_audit::event(detail::refresh_audit::Event::replacement_scan);
     for (const auto& name : fs::children(session.staging->path)) {
         if (!fs::id(fs::utf8(name))) { continue; }
         const auto path=session.staging->path/name; const auto pin=fs::directory(path,session.machine ? READ_CONTROL : 0);

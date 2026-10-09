@@ -37,7 +37,7 @@ function Read-BundleInventory([string]$Root) {
         'bin/vcruntime140.dll' = 'preserve-microsoft'
         'bin/vcruntime140_1.dll' = 'preserve-microsoft'
     }
-    if ($inventory.schema -ne 1 -or $inventory.engine_clsid -ne '{F38C3398-3552-43B9-8350-7DD301327D70}' -or @($inventory.binaries).Count -ne 6) {
+    if ($inventory.schema -ne 2 -or $inventory.engine_clsid -ne '{F38C3398-3552-43B9-8350-7DD301327D70}' -or @($inventory.binaries).Count -ne 6) {
         throw 'Unrecognized deployment inventory.'
     }
     $seen = @{}
@@ -46,8 +46,8 @@ function Read-BundleInventory([string]$Root) {
             $entry.signing -ne $policies[$entry.path] -or $entry.machine -ne '8664') { throw 'Invalid binary inventory.' }
         $seen[$entry.path] = $true
     }
-    if ((@($inventory.assets) -join '|') -ne 'runtime/pocket-english.olp|runtime/pocket-english-tokenizer.bin|voices/gnome_male.olv') {
-        throw 'Unexpected development asset inventory.'
+    if ((@($inventory.assets) -join '|') -ne 'runtime/pocket-english.olp|runtime/pocket-english-tokenizer.bin') {
+        throw 'Unexpected shared-runtime asset inventory.'
     }
     return $inventory
 }
@@ -73,7 +73,7 @@ function Assert-Bundle([string]$Root, [bool]$RequireSignatures) {
     }
     foreach ($name in @($inventory.assets) + @('deployment-inventory.json', 'scripts/deployment-common.ps1', 'scripts/register.ps1',
         'scripts/unregister.ps1', 'scripts/registry-common.ps1', 'scripts/sign-deployment.ps1', 'scripts/verify-deployment.ps1',
-        'docs/SAPI_ADAPTER.md', 'docs/SAPI_CANCELLATION.md', 'RNG_NOTICES.md')) {
+        'docs/SAPI_ADAPTER.md', 'docs/MULTI_VOICE_SAPI.md', 'docs/SAPI_CANCELLATION.md', 'RNG_NOTICES.md')) {
         if (-not $records.ContainsKey($name)) { throw "Missing required manifest record: $name" }
     }
     foreach ($entry in $inventory.binaries) {

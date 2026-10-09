@@ -1,5 +1,7 @@
 # Step 2N: native cancellation and SAPI StopSpeaking
 
+> Historical Step 2N design/validation record. Current runtime and input/diagnostic boundaries are summarized in [ARCHITECTURE.md](ARCHITECTURE.md); current build/test selections are in [A11/A12](BUILD_AND_VALIDATION_IMPROVEMENTS.md). The original deployment allowlist/memory/timing evidence below is not a current installer contract.
+
 Step 2M was committed as `bda8858` (Implement native Pocket SAPI adapter), and
 the tree was clean at entry. This step adds cooperative request cancellation
 without changing model math/kernels, tokenizer/splitting, RNG arithmetic,

@@ -136,7 +136,8 @@ struct WorkerPipeline::Impl {
         TRACE(prefill_begin = now());
         const auto before = flow.offset();
         {
-            const auto prefill = backbone.prefill(tokens, flow);
+            backbone.prefill_into(tokens,flow,candidate.backbone);
+            const auto& prefill=candidate.backbone; // borrowed views expire before the candidate loop reuses it
             OUTLOUD_CANCEL_POINT(after_prefill,true);
             if (cancellation.stop_requested()) { return; }
             const auto row = noise->next(); ++result.draws;

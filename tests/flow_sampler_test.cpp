@@ -3,6 +3,12 @@
 #include <iostream>
 #include <limits>
 
+namespace outloud {
+struct FlowSamplerTestAccess {
+    static std::span<const float> time(const FlowSampler& sampler,unsigned index) { return sampler.time_.at(index); }
+};
+}
+
 namespace {
 using outloud::test::neural_require;
 template<class Function> void rejected(Function function, std::string_view reason) {
@@ -148,6 +154,38 @@ void invalid_states(const outloud::PocketModelAsset& model, const outloud::OutLo
     failures["bos.latent"] = {{0, 0, 0, 0}, 1};
     rejected([&] { outloud::test::enforce_sampler_errors(failures); }, "numerical gate");
 }
+void cached_conditioning(const outloud::PocketModelAsset& model,const outloud::test::SamplerFixture& fixture,outloud::cpu::KernelPath path) {
+    using namespace outloud;
+    FlowSampler sampler(model,path); cpu::Kernels kernels(path);
+    for (unsigned index=0;index<2;++index) {
+        // Only the original tiny time-MLP primitive, independently recomputed for exact cache verification.
+        const auto base=60+6*index; auto tensor=[&](unsigned id) { return model.tensor(static_cast<PocketTensorId>(id)); };
+        std::array<float,256> features; std::array<float,512> norm,output;
+        cpu::time_features(static_cast<float>(index),tensor(base).bf16_values,features);
+        kernels.linear({features,1,256},tensor(base+2),{norm,1,512},tensor(base+1).bf16_values);
+        cpu::silu(norm); kernels.linear({norm,1,512},tensor(base+4),{output,1,512},tensor(base+3).bf16_values);
+        cpu::sample_variance_norm(output,tensor(base+5).bf16_values,output);
+        neural_require(test::same_float_bits(output,FlowSamplerTestAccess::time(sampler,index)),"Cached time embedding differs bitwise");
+    }
+    std::array<float,512> expected_condition;
+    for (const auto* label:{"prefill","bos","prefill"}) {
+        unsigned sites=0; const std::string prefix=std::string(label)+'.';
+        const auto hidden=fixture.values(prefix+"input.hidden"), noise=fixture.values(prefix+"input.noise");
+        const auto sampled=sampler.sample(hidden,noise,[&](std::string_view name,std::span<const float> values) {
+            if (name=="condition.combined") { std::copy(values.begin(),values.end(),expected_condition.begin()); cpu::silu(expected_condition); }
+            if (name.ends_with("condition_silu")) {
+                neural_require(test::same_float_bits(values,expected_condition),"Reused condition SiLU differs"); ++sites;
+            }
+        });
+        const auto plain=sampler.sample(hidden,noise);
+        neural_require(sites==7 && test::same_float_bits(plain.latent,sampled.latent),"Condition site coverage/observed result differs");
+        rejected([&] { (void)sampler.sample(hidden,noise,[](auto name,auto) {
+            if (name=="condition.combined") { throw std::runtime_error("Condition observer failure"); }
+        }); },"observer failure");
+        neural_require(test::same_float_bits(sampler.sample(hidden,noise).latent,plain.latent),"Sampler failed-request recovery differs");
+    }
+    std::cout << cpu::path_name(path) << ": both cached time embeddings bitwise, 7 condition sites/sample, alternating hidden/failure reuse PASS\n";
+}
 } // namespace
 int wmain(int argc, wchar_t** argv) {
     try {
@@ -157,6 +195,8 @@ int wmain(int argc, wchar_t** argv) {
         const outloud::OutLoudVoice voice(assets / "gnome_male.olv");
         const outloud::test::SamplerFixture fixture(argv[2]);
         schema(model); primitive_edges(model); invalid_states(model, voice, fixture);
+        cached_conditioning(model,fixture,outloud::cpu::KernelPath::portable);
+        if (outloud::cpu::optimized_available()) { cached_conditioning(model,fixture,outloud::cpu::KernelPath::avx2_fma); }
         std::cout << "68 BF16 tensor IDs/names/shapes: PASS\nSiLU / sample-variance norm / population LayerNorm: PASS\n"
                      "Stored frequency usage / COS-SIN order: PASS\nInvalid dimensions/state / gate rejection: PASS\nRESULT: PASS\n";
         return 0;

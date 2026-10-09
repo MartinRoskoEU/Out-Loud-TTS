@@ -675,7 +675,7 @@ is not an automatic consistency repair.
 | [voice_library.cpp](../engine/src/voice_library.cpp) | `Session`, 172; `inspect`, 200; `Stage`, 295; metadata/publish, 338–367; `list_voices`, 409; `import_pocket_voice`, 419; coordinated `remove_voice`, 508–588: health, IDs, staging and rollback/cleanup. |
 | [voice_library_fs.hpp](../engine/src/voice_library_fs.hpp) | `random_id`, 164: BCrypt-generated 128-bit ID; safe local paths/handles. |
 | [voice_tokens.cpp](../sapi/src/voice_tokens.cpp) | `owned`, 25; `shape`, 29; `desired`, 111; `validate_runtime`, 123; `inspect`, 142; runtime-unspecified branch, 163–165; `list/reconcile`, 183/200; `install`, 209; `remove`, 235. |
-| [voice_registry_location.hpp](../sapi/src/voice_registry_location.hpp) | Explicit HKLM/HKCU and Registry64 scope, no fallback. |
+| `voice_registry_location.hpp` (audit-time source; removed on retirement) | Explicit HKLM/HKCU and Registry64 scope, no fallback. |
 | [voice_registry.cpp](../sapi/src/voice_registry.cpp) | `open`, 29 onward; `WindowsRegistry::verify_engine`, 141; `exchange`, 160–176; transaction commit, 27: real view, transactional deletion and propagated errors. |
 | [identity.hpp](../sapi/src/identity.hpp) | Fixed Pocket CLSID and separate development token identity. |
 | [tools/sapi-voices/main.cpp](../tools/sapi-voices/main.cpp) | Read-only list/reconcile/inspect and engine verification; normalized runtime path construction causing diagnostic discrepancy. |
@@ -686,7 +686,7 @@ is not an automatic consistency repair.
 | [test-managed-voices.ps1](../sapi/scripts/test-managed-voices.ps1) | Actual default/explicit category enumeration and exact managed ID checks; run without `-Speak`. |
 | [frontend/native/tests.cpp](../frontend/native/tests.cpp) | Existing fake registry, production coordination/bridge regression entry point and read-only bridge assertions. |
 | [remove_tests.hpp](../frontend/mutation/remove_tests.hpp), [tests.hpp](../frontend/mutation/tests.hpp) | Injected remove rollback/partial/cleanup and import partial/transport cases. |
-| [scratch.hpp](../sapi/tests/scratch.hpp) | Existing unique temporary-library containment and cleanup, used only for test-owned scratch. |
+| [scratch.hpp](../tests/scratch.hpp) | At audit time: `sapi/tests/scratch.hpp`; subsequently consolidated into `tests/scratch.hpp`. Unique temporary-library containment and cleanup, used only for test-owned scratch. |
 | [voice_tokens_test.cpp](../sapi/tests/voice_tokens_test.cpp) | Machine/user separation, legacy preservation, malformed/ownership/registry failures. |
 | [ImportTests.cs](../ui/OutLoud.VoiceManager.Tests/ImportTests.cs) | Selected immutable-ID removal, helper transport, partial/error notification and refresh tests with fake peers. |
 

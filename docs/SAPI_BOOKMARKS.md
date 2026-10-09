@@ -1,5 +1,7 @@
 # Step 2O: leading SAPI bookmarks
 
+> Historical Step 2O design/validation record. Leading-event ordering remains as described below; current aggregate input/diagnostic limits and runtime are in [ARCHITECTURE.md](ARCHITECTURE.md). Use [A11/A12](BUILD_AND_VALIDATION_IMPROVEMENTS.md) for current validation selections.
+
 Previously, `Speak` concatenated `SPVA_Speak` fragments and silently discarded
 all `SPVA_Bookmark` fragments. It now collects leading bookmark names separately
 from speech. Each name is copied from exactly `pTextStart[0..ulTextLen)`; input

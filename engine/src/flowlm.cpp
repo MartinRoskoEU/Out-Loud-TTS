@@ -64,23 +64,42 @@ ModelTensorView FlowLMBackbone::layer_weight(std::uint32_t layer, std::uint32_t 
     return model_.tensor(static_cast<PocketTensorId>(77 + layer * 8 + field));
 }
 std::vector<float> FlowLMBackbone::embed(std::span<const std::uint32_t> tokens) const {
+    require(!tokens.empty() && tokens.size() <= 4096, "Invalid prefill token count");
+    std::vector<float> result(tokens.size() * 1024);
+    embed_into(tokens,result);
+    return result;
+}
+void FlowLMBackbone::embed_into(std::span<const std::uint32_t> tokens, std::span<float> output) const {
     OUTLOUD_PERF_DOMAIN(flowlm); OUTLOUD_PERF_SCOPE(::outloud::perf::Stage::embedding);
     require(!tokens.empty() && tokens.size() <= 4096, "Invalid prefill token count");
     const auto table = model_.tensor(PocketTensorId::flow_lm_conditioner_embed_weight);
-    std::vector<float> result(tokens.size() * 1024);
+    require(output.size()==tokens.size()*1024,"Invalid embedding output dimensions");
     for (std::size_t i = 0; i < tokens.size(); ++i) {
         require(tokens[i] < 4001, "Embedding token ID outside table");
-        widen_bf16(table.bf16_values.subspan(std::size_t(tokens[i]) * 1024, 1024), std::span(result).subspan(i * 1024, 1024));
+        widen_bf16(table.bf16_values.subspan(std::size_t(tokens[i]) * 1024, 1024), output.subspan(i * 1024, 1024));
     }
-    return result;
 }
 FlowLMResult FlowLMBackbone::prefill(std::span<const std::uint32_t> tokens, FlowLMPrefillState& state,
                                     const FlowLMObserver& observer) {
+    FlowLMResult result;
+    prefill_into(tokens,state,result,observer);
+    return result;
+}
+void FlowLMBackbone::prefill_into(std::span<const std::uint32_t> tokens, FlowLMPrefillState& state,
+                                 FlowLMResult& result, const FlowLMObserver& observer) {
     OUTLOUD_PERF_DOMAIN(flowlm); OUTLOUD_PERF_SCOPE(::outloud::perf::Stage::prefill);
     require(state.offset() == voice_.prefix_length(), "Text prefill requires fresh voice state");
-    const auto embeddings = embed(tokens);
-    observe(observer, "text.embedding", embeddings, {static_cast<std::uint32_t>(tokens.size()), 1024});
-    return backbone(embeddings, state, observer);
+    require(!tokens.empty() && tokens.size() <= 4096, "Invalid prefill token count");
+    const auto size=tokens.size()*1024;
+    // Exact reserve avoids vector's geometric growth retaining more than the token limit.
+    // Norm is unused until backbone_into copies embeddings into hidden, before its
+    // first layer normalization. Reuse that storage without retaining another vector.
+    if (work_.norm.capacity()<size) { work_.norm.reserve(size); }
+    work_.norm.resize(size);
+    embed_into(tokens,work_.norm);
+    observe(observer, "text.embedding", work_.norm, {static_cast<std::uint32_t>(tokens.size()), 1024});
+    if (result.normalized.capacity()<size) { result.normalized.reserve(size); }
+    backbone_into(work_.norm, state, result, observer);
 }
 FlowLMResult FlowLMBackbone::backbone(std::span<const float> embeddings, FlowLMPrefillState& state,
                                      const FlowLMObserver& observer) {

@@ -242,14 +242,16 @@ int wmain(int argc, wchar_t** argv) {
 #else
         const std::wstring_view mode = argc >= 2 ? argv[1] : L"check";
         if ((mode == L"check" || mode == L"rng-check") && argc <= 3) {
-            const bool portable = argc == 3 && std::wstring_view(argv[2]) == L"portable";
-            if (argc == 3 && !portable && std::wstring_view(argv[2]) != L"avx2") { throw std::invalid_argument("Unknown path"); }
+            const bool automatic = argc == 3 && std::wstring_view(argv[2]) == L"auto";
+            const bool portable = (argc == 3 && std::wstring_view(argv[2]) == L"portable") ||
+                                  (automatic && !cpu::optimized_available());
+            if (argc == 3 && !automatic && !portable && std::wstring_view(argv[2]) != L"avx2") { throw std::invalid_argument("Unknown path"); }
             correctness(model, voice, portable ? cpu::KernelPath::portable : cpu::KernelPath::avx2_fma, rows, directory, mode == L"rng-check");
         } else if (mode == L"bench" && argc <= 3) {
             const std::wstring_view count = argc == 3 ? argv[2] : L"5";
             if (count != L"2" && count != L"5") { throw std::invalid_argument("Use two intermediate or five final runs"); }
             benchmark(model, voice, rows, directory, count == L"2" ? 2 : 5);
-        } else { throw std::invalid_argument("Usage: outloud-worker-check check|rng-check [avx2|portable] | bench [2|5]"); }
+        } else { throw std::invalid_argument("Usage: outloud-worker-check check|rng-check [auto|avx2|portable] | bench [2|5]"); }
 #endif
         return 0;
     } catch (const std::exception& e) { audit = false; std::cerr << e.what() << '\n'; return 1; }

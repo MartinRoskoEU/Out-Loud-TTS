@@ -5,7 +5,9 @@ English, CPU, batch-1, 24 kHz mono synthesis asset contract. `.olp` holds the
 shared model; `.olv` holds one ready-to-synthesize Out Loud Voice. The native
 library uses local read-only file mappings and Windows BCrypt SHA256. It has
 no Python, PyTorch, Hugging Face, safetensors, JSON/YAML or network dependency.
-No neural backend or inference is implemented in this step.
+This document specifies the asset boundary. The complete current inference
+engine is described in [ARCHITECTURE.md](ARCHITECTURE.md); Step 2C validation
+observations below remain historical evidence.
 
 Step 3A adds a separate native production importer for prepared Pocket voice
 states; see [VOICE_IMPORT.md](VOICE_IMPORT.md) for its API, CLI, validation and
@@ -134,7 +136,7 @@ The converter requires the complete six-layer source schema: caches of that
 shape and dtype, six I64 `[1]` offsets equal to N, and six I64 `[1]` pads equal
 to zero. All layers must have the same positive prefix and finite caches with
 no unused positions. It then copies the K/V bytes without conversion. The
-duplicate offsets and zero pads are omitted: a future inference state can
+duplicate offsets and zero pads are omitted: native inference state can
 reconstruct offset=N and pad=0 for every layer. No neural mutable state is
 allocated by the current loader.
 
@@ -219,7 +221,7 @@ require another 398,877,320 bytes (380.399 MiB), in addition to mappings and
 future mutable state. This is not the current loader's allocation policy. The
 development checker widens one tensor at a time for reference comparisons.
 
-## Offline conversion and build
+## Offline reference preparation
 
 Run from the repository root using the existing local environment. No package
 installation, download or model execution is needed. Tools force
@@ -238,12 +240,6 @@ All generated binaries and fixture headers remain Git-ignored.
 # If this optional reference voice is present:
 .venv\Scripts\python.exe -B tools\assets\export_voice.py --input voices\undead_male.safetensors
 .venv\Scripts\python.exe -B tools\assets\export_test_fixtures.py
-cmake -S . -B build -G "Visual Studio 17 2022" -A x64
-cmake --build build --config Release --parallel
-.\build\Release\outloud-asset-check.exe
-ctest --test-dir build -C Release --output-on-failure
-git diff --check
-git status
 ```
 
 Schema regeneration writes the two tracked schema files; review any change.
@@ -251,13 +247,16 @@ Fixture generation uses the existing NumPy/PyTorch installation only to
 compute original source byte hashes and exact widening references. It writes
 the tracked asset baseline and ignored `asset_test_fixtures.hpp` /
 `bf16-f32-fixture.bin`. Those references are development inputs, not library
-runtime requirements. CMake never invokes Python and requires the exported
-fixture header to build the check/test executables. `OUTLOUD_ASSET_DIRECTORY`
+runtime requirements. Production builds need no generated reference headers.
+CMake never invokes Python; the development configuration requires the exported
+fixture headers for its check/test executables. Build and validation procedures
+are centralized in [A11/A12](BUILD_AND_VALIDATION_IMPROVEMENTS.md).
+`OUTLOUD_ASSET_DIRECTORY`
 can override their asset/fixture directory. The checker accepts an optional
 directory argument; otherwise it uses `generated/assets` relative to the
 current directory. The large model is not copied into the build directory.
 
-Observed Release x64 validation with MSVC 19.44.35229 and `/W4 /WX`:
+Historical Step 2C Release x64 validation with MSVC 19.44.35229 and `/W4 /WX`:
 
 - Checker: PASS, including exact original model and canonical voice bytes,
   full-model PyTorch widening and all 65,536 BF16 patterns.

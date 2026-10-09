@@ -1,5 +1,7 @@
 # Step 2K: native production noise
 
+> Historical Step 2K parity/measurements for its pinned reference. Current native composition is in [ARCHITECTURE.md](ARCHITECTURE.md); A12 correctness invokes the checker with `--check-only`, without its timing probe. Use [A11/A12](BUILD_AND_VALIDATION_IMPROVEMENTS.md) for current build/validation.
+
 **EXACT PYTORCH RNG PARITY ACHIEVED** for the pinned PyTorch 2.14.1+cpu
 AVX2 contiguous float32 `[1,32]` Pocket noise path. The native implementation
 emulates that path with scalar integer/FP32 operations, including its numerical

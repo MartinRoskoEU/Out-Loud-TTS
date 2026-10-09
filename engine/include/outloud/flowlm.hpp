@@ -47,6 +47,10 @@ public:
     [[nodiscard]] std::vector<float> embed(std::span<const std::uint32_t> tokens) const;
     [[nodiscard]] FlowLMResult prefill(std::span<const std::uint32_t> tokens, FlowLMPrefillState& state,
                                        const FlowLMObserver& observer = {});
+    // Owner-local embeddings and caller-owned result storage are reused. Observer views
+    // are borrowed for the callback only; the next computation may overwrite them.
+    void prefill_into(std::span<const std::uint32_t> tokens, FlowLMPrefillState& state, FlowLMResult& result,
+                      const FlowLMObserver& observer = {});
     // Also permits one supplied deterministic position for a standalone backbone timing probe.
     [[nodiscard]] FlowLMResult backbone(std::span<const float> embeddings, FlowLMPrefillState& state,
                                         const FlowLMObserver& observer = {});
@@ -56,6 +60,7 @@ public:
     [[nodiscard]] std::size_t workspace_storage_bytes() const;
     [[nodiscard]] cpu::KernelPath selected_path() const { return kernels_.selected_path(); }
 private:
+    void embed_into(std::span<const std::uint32_t> tokens, std::span<float> output) const;
     [[nodiscard]] ModelTensorView layer_weight(std::uint32_t layer, std::uint32_t field) const;
     PocketModelAsset model_;
     OutLoudVoice voice_;

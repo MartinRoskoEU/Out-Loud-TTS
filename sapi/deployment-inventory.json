@@ -1,7 +1,6 @@
 {
-  "schema": 1,
+  "schema": 2,
   "engine_clsid": "{F38C3398-3552-43B9-8350-7DD301327D70}",
-  "default_token": "OutLoud_Pocket_GnomeMale_Development",
   "binaries": [
     { "path": "bin/OutLoudPocketSAPI.dll", "kind": "project", "signing": "project-sign", "machine": "8664" },
     { "path": "bin/outloud-sapi-check.exe", "kind": "project", "signing": "project-sign", "machine": "8664" },
@@ -10,7 +9,7 @@
     { "path": "bin/vcruntime140.dll", "kind": "microsoft-runtime", "signing": "preserve-microsoft", "machine": "8664" },
     { "path": "bin/vcruntime140_1.dll", "kind": "microsoft-runtime", "signing": "preserve-microsoft", "machine": "8664" }
   ],
-  "assets": ["runtime/pocket-english.olp", "runtime/pocket-english-tokenizer.bin", "voices/gnome_male.olv"],
+  "assets": ["runtime/pocket-english.olp", "runtime/pocket-english-tokenizer.bin"],
   "system_not_shipped": ["ole32.dll", "bcrypt.dll", "KERNEL32.dll", "ADVAPI32.dll", "api-ms-win-core-synch-l1-2-0.dll", "api-ms-win-crt-*.dll", "ucrtbase.dll"],
   "static_internal": ["outloud_orchestration", "outloud_workers", "outloud_text", "outloud_noise", "outloud_generation", "outloud_flow_sampler", "outloud_flowlm", "outloud_mimi", "outloud_cpu", "outloud_cpu_avx2", "outloud_assets", "outloud_asset_io"],
   "discovery": "Step 2N Release x64 dumpbin /dependents on both project images and all four System32 VC runtime images. MSVC stop-token callback synchronization adds msvcp140_atomic_wait.dll; its closure adds only already listed VC images and Windows ADVAPI32/synch API set. Windows 10/11 UCRT/API sets remain OS prerequisites. No external neural runtime."

@@ -6,6 +6,14 @@
 #include <bit>
 #include <cmath>
 #include <fstream>
+#include <cerrno>
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
 #include <limits>
 #include <stdexcept>
 
@@ -19,7 +27,7 @@ class Reader {
 public:
     explicit Reader(std::span<const unsigned char> bytes) : bytes_(bytes) {}
     std::span<const unsigned char> take(std::size_t count) {
-        if (count > bytes_.size() - cursor_) { throw std::runtime_error("Truncated tokenizer asset"); }
+        if (count > bytes_.size() - cursor_) { throw AssetError(AssetErrorCode::invalid_data,"Truncated tokenizer asset"); }
         const auto result = bytes_.subspan(cursor_, count);
         cursor_ += count;
         return result;
@@ -38,10 +46,10 @@ public:
     }
     std::string string(std::uint32_t maximum) {
         const auto length = u32();
-        if (length > maximum) { throw std::runtime_error("Oversized tokenizer string"); }
+        if (length > maximum) { throw AssetError(AssetErrorCode::invalid_data,"Oversized tokenizer string"); }
         const auto b = take(length);
         std::string result(reinterpret_cast<const char*>(b.data()), b.size());
-        if (!detail::valid_utf8(result)) { throw std::runtime_error("Invalid asset UTF-8"); }
+        if (!detail::valid_utf8(result)) { throw AssetError(AssetErrorCode::invalid_data,"Invalid asset UTF-8"); }
         return result;
     }
     bool finished() const { return cursor_ == bytes_.size(); }
@@ -60,27 +68,28 @@ bool in_ranges(const std::vector<std::pair<std::uint32_t, std::uint32_t>>& range
 
 Tokenizer::Tokenizer(const std::filesystem::path& asset) {
     std::ifstream file(asset, std::ios::binary | std::ios::ate);
-    if (!file) { throw std::runtime_error("Cannot open local tokenizer asset"); }
+    if (!file) { throw AssetError(AssetErrorCode::io,"Cannot open local tokenizer asset",
+        errno==ENOENT ? ERROR_FILE_NOT_FOUND : errno==EACCES ? ERROR_ACCESS_DENIED : ERROR_READ_FAULT); }
     const auto length = file.tellg();
-    if (length < 88 || length > 1024 * 1024) { throw std::runtime_error("Invalid tokenizer asset size"); }
+    if (length < 88 || length > 1024 * 1024) { throw AssetError(AssetErrorCode::invalid_data,"Invalid tokenizer asset size"); }
     std::vector<unsigned char> bytes(static_cast<std::size_t>(length));
     file.seekg(0);
     file.read(reinterpret_cast<char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
-    if (!file) { throw std::runtime_error("Cannot read tokenizer asset"); }
+    if (!file) { throw AssetError(AssetErrorCode::io,"Cannot read tokenizer asset",ERROR_READ_FAULT); }
     Reader header(bytes);
     const auto magic = header.take(8);
     if (std::string_view(reinterpret_cast<const char*>(magic.data()), magic.size()) != "OLPTOK01" ||
         header.u32() != 1 || header.u32() != 4000 || header.u32() != 0) {
-        throw std::runtime_error("Unsupported Pocket tokenizer header");
+        throw AssetError(AssetErrorCode::invalid_data,"Unsupported Pocket tokenizer header");
     }
     if (header.u32() != bytes.size() - 88 || detail::hex(header.take(32)) != source_sha256) {
-        throw std::runtime_error("Tokenizer asset identity mismatch");
+        throw AssetError(AssetErrorCode::invalid_data,"Tokenizer asset identity mismatch");
     }
     const auto expected_digest = header.take(32);
     const auto payload = header.take(bytes.size() - 88);
     const auto digest = detail::sha256(payload);
     if (!std::equal(digest.begin(), digest.end(), expected_digest.begin())) {
-        throw std::runtime_error("Tokenizer asset payload SHA256 mismatch");
+        throw AssetError(AssetErrorCode::invalid_data,"Tokenizer asset payload SHA256 mismatch");
     }
     Reader reader(payload);
     pieces_.reserve(4000);
@@ -88,47 +97,47 @@ Tokenizer::Tokenizer(const std::filesystem::path& asset) {
     for (std::uint32_t i = 0; i < 4000; ++i) {
         auto text = reader.string(64);
         const auto score = reader.f64();
-        if (text.empty() || !std::isfinite(score)) { throw std::runtime_error("Invalid vocabulary entry"); }
+        if (text.empty() || !std::isfinite(score)) { throw AssetError(AssetErrorCode::invalid_data,"Invalid vocabulary entry"); }
         min_score = std::min(min_score, score);
         pieces_.push_back({std::move(text), score});
     }
     unknown_score_ = min_score - 10.0;
     const std::array<std::string_view, 4> specials = {"<unk>", "<s>", "</s>", "<pad>"};
     for (std::size_t i = 0; i < specials.size(); ++i) {
-        if (pieces_[i].text != specials[i]) { throw std::runtime_error("Invalid special token map"); }
+        if (pieces_[i].text != specials[i]) { throw AssetError(AssetErrorCode::invalid_data,"Invalid special token map"); }
     }
     constexpr char upper_hex[] = "0123456789ABCDEF";
     for (std::uint32_t b = 0; b < 256; ++b) {
         std::string name = "<0x";
         name += upper_hex[b >> 4]; name += upper_hex[b & 15]; name += '>';
-        if (pieces_[b + 4].text != name) { throw std::runtime_error("Missing byte fallback token"); }
+        if (pieces_[b + 4].text != name) { throw AssetError(AssetErrorCode::invalid_data,"Missing byte fallback token"); }
         byte_ids_[b] = b + 4;
     }
-    if (reader.string(16) != "15.0.0") { throw std::runtime_error("Unsupported preparation Unicode version"); }
+    if (reader.string(16) != "15.0.0") { throw AssetError(AssetErrorCode::invalid_data,"Unsupported preparation Unicode version"); }
     auto read_ranges = [&reader](Ranges& ranges) {
         const auto count = reader.u32();
-        if (count > 10000) { throw std::runtime_error("Oversized Unicode property table"); }
+        if (count > 10000) { throw AssetError(AssetErrorCode::invalid_data,"Oversized Unicode property table"); }
         for (std::uint32_t i = 0; i < count; ++i) {
             const auto first = reader.u32(), last = reader.u32();
             if (first > last || last > 0x10ffff || (!ranges.empty() && first <= ranges.back().second)) {
-                throw std::runtime_error("Invalid Unicode property ranges");
+                throw AssetError(AssetErrorCode::invalid_data,"Invalid Unicode property ranges");
             }
             ranges.emplace_back(first, last);
         }
     };
     read_ranges(spaces_); read_ranges(uppercase_chars_); read_ranges(digits_);
     const auto upper_count = reader.u32();
-    if (upper_count > 5000) { throw std::runtime_error("Oversized uppercase table"); }
+    if (upper_count > 5000) { throw AssetError(AssetErrorCode::invalid_data,"Oversized uppercase table"); }
     for (std::uint32_t i = 0; i < upper_count; ++i) {
         const auto cp = reader.u32();
         auto replacement = reader.string(12);
         if (cp > 0x10ffff || (cp >= 0xd800 && cp <= 0xdfff) || replacement.empty() ||
             (!uppercase_map_.empty() && cp <= uppercase_map_.back().first)) {
-            throw std::runtime_error("Invalid uppercase mapping");
+            throw AssetError(AssetErrorCode::invalid_data,"Invalid uppercase mapping");
         }
         uppercase_map_.emplace_back(cp, std::move(replacement));
     }
-    if (!reader.finished()) { throw std::runtime_error("Trailing tokenizer asset data"); }
+    if (!reader.finished()) { throw AssetError(AssetErrorCode::invalid_data,"Trailing tokenizer asset data"); }
 
     trie_.emplace_back();
     for (std::uint32_t id = 0; id < pieces_.size(); ++id) {
@@ -145,7 +154,7 @@ Tokenizer::Tokenizer(const std::filesystem::path& asset) {
                 index = child;
             }
         }
-        if (trie_[index].id != missing) { throw std::runtime_error("Duplicate vocabulary piece"); }
+        if (trie_[index].id != missing) { throw AssetError(AssetErrorCode::invalid_data,"Duplicate vocabulary piece"); }
         trie_[index].id = id;
     }
 }

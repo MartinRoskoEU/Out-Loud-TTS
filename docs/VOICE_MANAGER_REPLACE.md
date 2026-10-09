@@ -1,5 +1,7 @@
 # Step 3D.3.1: Import-or-Replace and dismissible notifications
 
+> Historical Step 3D.3.1 implementation/validation record. Current Import-or-Replace, protocol v3 and result handling are in [VOICE_MANAGER_GUIDE.md](VOICE_MANAGER_GUIDE.md). Use [A11/A12](BUILD_AND_VALIDATION_IMPROVEMENTS.md) for current build/validation.
+
 The current helper uses [Step 3D.3.2 protocol v3 and Remove Voice](VOICE_MANAGER_REMOVE.md).
 The protocol v2 description below records this step's original implementation;
 Import/Replace payloads and behavior are retained in v3.

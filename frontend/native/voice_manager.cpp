@@ -1,5 +1,5 @@
 #include "voice_manager_internal.hpp"
-#include "voice_library_fs.hpp"
+#include "../error_conversion.hpp"
 #include <memory>
 #include <optional>
 #include <tuple>
@@ -15,29 +15,6 @@ struct Error {
             import_code.c_str(),tensor.c_str(),system_error,0};
     }
 };
-void library_cause(Error& error,const VoiceLibraryError& cause) {
-    error.library_code = voice_library_error_name(cause.code());
-    error.path = detail::library_fs::utf8(cause.path().wstring());
-    if (cause.import_error()) {
-        error.import_code = voice_import_error_name(cause.import_error()->code());
-        error.tensor = cause.import_error()->tensor();
-    }
-}
-Error convert(const VoiceLibraryError& cause) {
-    Error error; error.domain = "library"; error.code = voice_library_error_name(cause.code());
-    error.message = cause.what(); error.system_error = cause.system_error(); library_cause(error,cause); return error;
-}
-Error convert(const SapiVoiceError& cause) {
-    Error error; error.domain = "sapi"; error.code = sapi_voice_error_name(cause.code);
-    error.message = cause.what(); error.system_error = cause.system_error;
-    if (cause.library_error) { library_cause(error,*cause.library_error); }
-    if (cause.validation_error) {
-        error.import_code = voice_import_error_name(cause.validation_error->code());
-        error.tensor = cause.validation_error->tensor();
-        if (error.path.empty()) { error.path = detail::library_fs::utf8(cause.validation_error->path().wstring()); }
-    }
-    return error;
-}
 Error internal_error() {
     Error error; error.domain = "bridge"; error.code = "internal_failure";
     error.message = "Unable to read native voice state."; return error;
@@ -93,15 +70,14 @@ template<class Factory> int32_t read(Factory factory,outloud_vm_result** output)
             // No intended runtime supplied: preserve the backend's documented
             // identity/path/name-only SAPI diagnostic, including its detail.
             SapiVoiceManager manager(library,{},std::move(registry),policy);
-            auto voices = library.list_voices(); result->rows.reserve(voices.size());
+            auto voices = manager.read_snapshot(); result->rows.reserve(voices.size());
             for (auto& voice : voices) {
-                Row row; row.voice = std::move(voice);
-                try { row.token = manager.inspect(row.voice.library_id,SapiVoiceScope::machine); }
-                catch (const SapiVoiceError& e) { row.error = convert(e); }
+                Row row; row.voice = std::move(voice.voice); row.token=std::move(voice.token);
+                if (voice.error) { row.error = frontend::error_from<Error>(*voice.error); }
                 result->rows.push_back(std::move(row));
             }
-        } catch (const VoiceLibraryError& e) { result->error = convert(e); }
-        catch (const SapiVoiceError& e) { result->error = convert(e); }
+        } catch (const VoiceLibraryError& e) { result->error = frontend::error_from<Error>(e); }
+        catch (const SapiVoiceError& e) { result->error = frontend::error_from<Error>(e); }
         catch (const std::bad_alloc&) { throw; }
         catch (...) { result->error = internal_error(); }
         result->bind(); const auto status = result->error ? OUTLOUD_VM_ERROR : OUTLOUD_VM_OK;

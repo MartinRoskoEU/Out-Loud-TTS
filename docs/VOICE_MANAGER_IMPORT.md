@@ -1,5 +1,7 @@
 # Step 3D.3: prepared Pocket voice import from WPF
 
+> Historical Step 3D.3 implementation/validation record. Current operations and protocol v3 are in [VOICE_MANAGER_GUIDE.md](VOICE_MANAGER_GUIDE.md); build/validation is in [A11/A12](BUILD_AND_VALIDATION_IMPROVEMENTS.md). Earlier protocol/scope/test commands below are evidence, not current procedures.
+
 [Step 3D.3.2](VOICE_MANAGER_REMOVE.md) adds Remove Voice through the same helper
 and explicitly updates the current protocol to v3. Earlier protocol descriptions
 below and in the Replace document are historical validation records.
@@ -222,7 +224,7 @@ the library; reusing existing Gnome/Undead content should reject a duplicate.
 9. Refresh/resize; verify selection remains. Test light/dark/high contrast and
    live theme changes with the confirmation dialog open.
 10. Repeat the same file: duplicate explanation/ID, no additional entry.
-11. Restart WoW manually, enumerate TTS voices, find `Out Loud - <name>` and speak
+11. Restart WoW manually, enumerate TTS voices, find the exact imported `<name>` and speak
     a short test with it. Fixtures do not prove live enumeration/playback.
 
 Stop after Step 3D.3 automated validation. No real import, elevation, production

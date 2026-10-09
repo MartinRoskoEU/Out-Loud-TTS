@@ -2,6 +2,7 @@
 #include "support.hpp"
 #include "token.hpp"
 #include "residency.hpp"
+#include "scratch.hpp"
 #include "outloud/pcm16.hpp"
 #include "outloud/cancellation.hpp"
 #include <array>
@@ -319,9 +320,12 @@ void real_host_checks(IClassFactory* factory,const TestToken& configuration,std:
     std::cout << "PASS: real Windows SAPI parser/site/queued bookmarks, trailing metadata, exact canonical PCM.\n";
 }
 }
+#include "stabilization_checks.hpp"
 int wmain(int argc,wchar_t** argv) {
     HMODULE module = nullptr; WAVEFORMATEX* wave = nullptr;
     try {
+        if (argc==2 && std::wstring_view(argv[1])==L"--input-check") { collection_checks(); return 0; }
+        if (argc==3 && std::wstring_view(argv[1])==L"--diagnostics-check") { diagnostic_checks(argv[2]); return 0; }
         check(argc==6 || argc==7,"Usage: outloud-sapi-check DLL model.olp tokenizer.bin voice.olv native-reference.f32 [bench|observe]");
         const bool benchmark = argc==7 && std::wstring_view(argv[6])==L"bench";
         const bool observation = argc==7 && std::wstring_view(argv[6])==L"observe";

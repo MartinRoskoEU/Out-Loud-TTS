@@ -4,11 +4,11 @@
 
 namespace {
 namespace fs = outloud::detail::library_fs;
-void show(const outloud::SapiVoiceToken& token,outloud::SapiVoiceScope scope) {
+void show(const outloud::SapiVoiceToken& token) {
     std::cout << "id=" << token.library_id << "\nstatus=" << outloud::sapi_token_status_name(token.status)
         << "\ndetail=" << token.detail << "\nsuggested_action=" << token.suggested_action << '\n';
     std::cout << "token_key=" << fs::utf8(token.token_key) << '\n';
-    if (!token.library_id.empty()) { std::cout << "token_id=" << fs::utf8(outloud::managed_sapi_token_id(token.library_id,scope)) << '\n'; }
+    if (!token.library_id.empty()) { std::cout << "token_id=" << fs::utf8(outloud::managed_sapi_token_id(token.library_id)) << '\n'; }
     if (token.tree) {
         for (const auto& [key,value] : token.tree->values) {
             const auto text = outloud::sapi_registry_text(value);
@@ -22,43 +22,30 @@ int wmain(int argc,wchar_t** argv) {
     try {
         if (argc<2) {
             std::cerr << "Usage: outloud-sapi-voices list|reconcile|inspect ID|install ID|update ID|remove ID\n"
+                "       outloud-sapi-voices recover-removals (explicit administrative maintenance)\n"
                 "       outloud-sapi-voices verify-engine --runtime-root DEPLOYMENT (read-only)\n"
-                "       [--root LIBRARY] [--runtime-root DEPLOYMENT] [--scope machine|user]\n"
+                "       [--runtime-root DEPLOYMENT]\n"
                 "Default: ProgramData library + machine Registry64 scope. Mutations require manual elevation.\n"
                 "Install/update require --runtime-root containing bin/OutLoudPocketSAPI.dll and runtime assets.\n"
-                "--allow-development-library-root explicitly permits --root overrides for machine install/update.\n";
+                "Voice Library is fixed to ProgramData/OutLoud/VoiceLibrary.\n";
             return 2;
         }
         const std::wstring command(argv[1]); int at = 2; std::string id;
-        if (command!=L"list" && command!=L"reconcile" && command!=L"verify-engine") {
+        if (command!=L"list" && command!=L"reconcile" && command!=L"verify-engine" && command!=L"recover-removals") {
             if (at>=argc) { throw std::invalid_argument("Missing library ID."); } id = fs::utf8(argv[at++]);
         }
-        std::filesystem::path root = outloud::default_voice_library_root(), deployment;
-        bool seen_root = false, seen_runtime = false, seen_scope = false;
-        auto scope = outloud::SapiVoiceScope::machine;
-        auto machine_policy = outloud::MachineVoiceLibraryPolicy::production;
+        std::filesystem::path deployment;
+        bool seen_runtime = false;
         while (at<argc) {
             const std::wstring flag(argv[at++]);
-            if (flag==L"--allow-development-library-root" && machine_policy==outloud::MachineVoiceLibraryPolicy::production) {
-                machine_policy = outloud::MachineVoiceLibraryPolicy::development_override; continue;
-            }
             if (at>=argc) { throw std::invalid_argument("Incomplete option."); }
             const std::wstring value(argv[at++]);
-            if (flag==L"--root" && !seen_root) { root = value; seen_root = true; }
-            else if (flag==L"--runtime-root" && !seen_runtime) {
+            if (flag==L"--runtime-root" && !seen_runtime) {
                 deployment = std::filesystem::absolute(value).lexically_normal();
                 if (deployment!=deployment.root_path() && !deployment.has_filename()) { deployment = deployment.parent_path(); }
                 seen_runtime = true;
             }
-            else if (flag==L"--scope" && !seen_scope) {
-                seen_scope = true;
-                if (value==L"machine") { scope = outloud::SapiVoiceScope::machine; }
-                else if (value==L"user") { scope = outloud::SapiVoiceScope::user; }
-                else { throw outloud::SapiVoiceError(outloud::SapiVoiceErrorCode::unsupported_scope,"Use --scope machine or user; no fallback."); }
-            } else { throw std::invalid_argument("Unknown or duplicate option."); }
-        }
-        if (machine_policy==outloud::MachineVoiceLibraryPolicy::development_override && (!seen_root || scope!=outloud::SapiVoiceScope::machine)) {
-            throw std::invalid_argument("--allow-development-library-root requires explicit --root and --scope machine.");
+            else { throw std::invalid_argument("Unknown or duplicate option."); }
         }
         if ((command==L"install" || command==L"update" || command==L"verify-engine") && deployment.empty()) { throw std::invalid_argument("Install/update/verify-engine require --runtime-root."); }
         // Read operations can report ownership/orphans without a runtime. A full
@@ -67,18 +54,24 @@ int wmain(int argc,wchar_t** argv) {
         if (!deployment.empty()) { runtime = {deployment,(deployment/L"bin/OutLoudPocketSAPI.dll").lexically_normal(),
             (deployment/L"runtime/pocket-english.olp").lexically_normal(),(deployment/L"runtime/pocket-english-tokenizer.bin").lexically_normal()}; }
         if (command==L"verify-engine") {
-            outloud::windows_sapi_voice_registry()->verify_engine(runtime.engine_dll,scope);
+            outloud::windows_sapi_voice_registry()->verify_engine(runtime.engine_dll);
             std::cout << "result=engine_verified\nselected_dll=" << fs::utf8(runtime.engine_dll.wstring()) << '\n'; return 0;
         }
-        outloud::SapiVoiceManager manager(outloud::VoiceLibrary(root),runtime,outloud::windows_sapi_voice_registry(),machine_policy);
-        if (command==L"list" || command==L"reconcile") {
-            for (const auto& token : command==L"list" ? manager.list(scope) : manager.reconcile(scope)) { show(token,scope); } return 0;
+        outloud::VoiceLibrary library; outloud::SapiVoiceManager manager(library,runtime);
+        if (command==L"recover-removals") {
+            const auto recovery=library.cleanup_pending([&](std::string_view voice_id) { return manager.removal_registration_identity(voice_id); });
+            std::cout << "recovered=" << recovery.cleaned << "\npending=" << recovery.pending.size() << '\n';
+            for (const auto& error:recovery.problems) { std::cout << "error=" << outloud::voice_library_error_name(error.code()) << "\nmessage=" << error.what() << '\n'; std::wcerr << L"path=" << error.path().native() << L'\n'; }
+            return recovery.pending.empty() ? 0 : 1;
         }
-        if (command==L"inspect") { show(manager.inspect(id,scope),scope); return 0; }
+        if (command==L"list" || command==L"reconcile") {
+            for (const auto& token : command==L"list" ? manager.list() : manager.reconcile()) { show(token); } return 0;
+        }
+        if (command==L"inspect") { show(manager.inspect(id)); return 0; }
         outloud::SapiTokenChange result;
-        if (command==L"install") { result = manager.install(id,scope); }
-        else if (command==L"update") { result = manager.update(id,scope); }
-        else if (command==L"remove") { result = manager.remove(id,scope); }
+        if (command==L"install") { result = manager.install(id); }
+        else if (command==L"update") { result = manager.update(id); }
+        else if (command==L"remove") { result = manager.remove(id); }
         else { throw std::invalid_argument("Unknown command."); }
         static constexpr const char* changes[]{"installed","already_installed","updated","unchanged","removed"};
         std::cout << "result=" << changes[static_cast<std::size_t>(result)] << '\n'; return 0;

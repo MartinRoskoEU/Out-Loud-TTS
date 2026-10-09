@@ -1,5 +1,7 @@
 # Step 3D.1: read-only WPF Voice Manager
 
+> Historical Step 3D.1 implementation/validation record. Current operations, ABI/protocol, recovery and installed-vs-workspace behavior are in [VOICE_MANAGER_GUIDE.md](VOICE_MANAGER_GUIDE.md). Current build procedures are in [A11/A12](BUILD_AND_VALIDATION_IMPROVEMENTS.md).
+
 The current frontend also includes [Step 3D.4 Voice Tester](VOICE_MANAGER_TESTER.md),
 with exact installed machine-token SAPI playback, cooperative Stop and WAV export.
 
@@ -37,29 +39,11 @@ of the solution and real WPF/XAML/BAML generation pass with zero warnings or
 errors. Existing native business logic, API/ABI and security behavior are
 unchanged by the retarget.
 
-From the repository root with the installed Windows .NET 10 SDK:
-
-```powershell
-cmake -S . -B build -A x64
-cmake --build build --config Release --parallel
-ctest --test-dir build -C Release --output-on-failure
-$env:DOTNET_GENERATE_ASPNET_CERTIFICATE = 'false'
-dotnet build ui/OutLoud.VoiceManager.sln -c Release -p:Platform=x64
-dotnet run --project ui/OutLoud.VoiceManager.Tests/OutLoud.VoiceManager.Tests.csproj -c Release -p:Platform=x64
-.\ui\build.ps1
-.\ui\validation\validate-with-runtime.ps1
-git diff --check
-```
-
-`ui/build.ps1` configures/builds the bridge, builds the x64 WPF solution and runs
-its already-built fake-service tests. It never starts the app. Both build/check
-scripts temporarily disable the SDK's first-run ASP.NET certificate generation
-and restore the previous process setting afterward. `NativeBuildDirectory` defaults to
-repository `build/`; override it for another CMake tree. The project requires
-`<NativeBuildDirectory>/<Configuration>/OutLoudVoiceManagerNative.dll` and
-copies that exact file beside the executable. No deployed runtime or personal
-path is used by the build. Normal Microsoft VC runtime dependencies must be
-available. This step does not package/sign/deploy those dependencies.
+Current build commands, native output-copy policy and property overrides are
+centralized in [A11/A12](BUILD_AND_VALIDATION_IMPROVEMENTS.md). `ui/build.ps1`
+now defaults to `build-production`; direct project and supplementary validation
+script defaults remain `build` for compatibility. Historical validation tables
+below retain the commands/results actually used at this milestone.
 
 Both main projects explicitly use `bin/<Configuration>/` before the target
 framework suffix, so `-p:Platform=x64` does not add an extra x64 directory to
@@ -84,6 +68,13 @@ the frontend configuration. Real-machine loader/enumeration behavior remains
 for the manual launch.
 
 ## Structure and UI
+
+The private native field conversion is shared in `frontend/error_conversion.hpp`.
+The bridge keeps its ABI view and exception boundary; the elevated helper keeps
+its separate DTO, protocol framing and authentication. Native library, importer,
+SAPI-token, multi-voice and bridge tests use the test-only `tests/scratch.hpp`,
+which owns a unique temporary root and does not traverse junction targets.
+
 
 ```text
 frontend/native/                  dedicated C ABI bridge and isolated tests

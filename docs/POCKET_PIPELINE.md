@@ -1,5 +1,7 @@
 # Pocket TTS 3.3.0 pipeline for Out Loud
 
+> Historical upstream investigation and native-port proposal, not a current production architecture or runtime dependency guide. See [ARCHITECTURE.md](ARCHITECTURE.md) for the implemented engine; original source observations and proposed work below are preserved.
+
 This is an inspection of the installed implementation used by
 [the unchanged oracle](../reference/pocket_oracle.py), before any native inference
 implementation or backend decision. It describes English, CPU, batch 1,

@@ -42,6 +42,8 @@ private:
 enum class GenerationInput { text, bos, previous_normalized_latent };
 enum class GenerationTermination { eos_tail, maximum_length };
 struct GenerationCall {
+    // Spans and sample reference are borrowed only for the observer invocation.
+    // Copy any data needed later; resident buffers can be overwritten on the next call.
     GenerationInput input_kind;
     std::uint32_t index, offset_before, offset_after;
     std::span<const float> input_latent, hidden, noise;

@@ -4,38 +4,21 @@
 [CmdletBinding()]
 param(
     [ValidatePattern('^[0-9a-f]{32}$')][string[]]$LibraryId = @(),
-    [switch]$Speak,
-    [switch]$ExplicitUserCategory,
-    [ValidateSet('machine','user')][string]$Scope = 'machine'
+    [switch]$Speak
 )
 $ErrorActionPreference = 'Stop'
 if (-not [Environment]::Is64BitProcess) { throw 'Use x64 PowerShell.' }
 if ($Speak -and $LibraryId.Count -eq 0) { throw '-Speak requires exact managed LibraryId values.' }
-if ($ExplicitUserCategory.IsPresent -and $PSBoundParameters.ContainsKey('Scope') -and $Scope -ne 'user') {
-    throw '-ExplicitUserCategory requires user scope; it cannot select a machine token.'
-}
-if ($ExplicitUserCategory.IsPresent) { $Scope = 'user' }
 $voice = New-Object -ComObject SAPI.SpVoice
-$category = $null
 try {
-    # Assign directly inside each branch: an if-expression's output pipeline
-    # enumerates the COM collection, losing its Count/Item interface.
-    if ($ExplicitUserCategory.IsPresent) {
-        $category = New-Object -ComObject SAPI.SpObjectTokenCategory
-        $category.SetId('HKEY_CURRENT_USER\SOFTWARE\Microsoft\Speech\Voices', $false)
-        $tokens = $category.EnumerateTokens('', '')
-        Write-Output 'Explicit HKCU SAPI category enumeration:'
-    } else {
-        $tokens = $voice.GetVoices()
-        Write-Output 'Default SAPI.SpVoice.GetVoices() enumeration:'
-    }
+    $tokens = $voice.GetVoices()
+    Write-Output 'Default SAPI.SpVoice.GetVoices() enumeration:'
     for ($i = 0; $i -lt $tokens.Count; $i++) {
         $token = $tokens.Item($i)
         Write-Output ([pscustomobject]@{ Id = $token.Id; Description = $token.GetDescription() })
     }
     foreach ($id in $LibraryId) {
-        $hive = if ($Scope -eq 'machine') { 'HKEY_LOCAL_MACHINE' } else { 'HKEY_CURRENT_USER' }
-        $expectedId = "$hive\SOFTWARE\Microsoft\Speech\Voices\Tokens\OutLoud_Pocket_$id"
+        $expectedId = "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Speech\Voices\Tokens\OutLoud_Pocket_$id"
         $selected = $null
         for ($i = 0; $i -lt $tokens.Count; $i++) {
             $candidate = $tokens.Item($i)
@@ -64,9 +47,6 @@ try {
         }
     }
 } finally {
-    if ($null -ne $category -and [Runtime.InteropServices.Marshal]::IsComObject($category)) {
-        $null = [Runtime.InteropServices.Marshal]::FinalReleaseComObject($category)
-    }
     if ([Runtime.InteropServices.Marshal]::IsComObject($voice)) {
         $null = [Runtime.InteropServices.Marshal]::FinalReleaseComObject($voice)
     }

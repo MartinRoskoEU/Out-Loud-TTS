@@ -1,6 +1,5 @@
 #include "outloud/sapi_voices.hpp"
 #include "engine_registration.hpp"
-#include "voice_registry_location.hpp"
 #include "voice_library_fs.hpp"
 #include "identity.hpp"
 #include <KtmW32.h>
@@ -48,10 +47,10 @@ bool open(HKEY parent,const wchar_t* name,Key& out,REGSAM access,HANDLE tx = nul
 }
 // Walk every known ancestor without following registry links. No configurable
 // registry root is accepted by the production implementation.
-bool root(SapiVoiceScope scope,Key& result,HANDLE tx = nullptr,bool create = false) {
+bool root(Key& result,HANDLE tx = nullptr,bool create = false) {
     constexpr std::array names{L"SOFTWARE",L"Microsoft",L"Speech",L"Voices",L"Tokens"};
     std::array<Key,5> ancestors;
-    HKEY parent = detail::voice_registry_location(scope).hive;
+    HKEY parent = HKEY_LOCAL_MACHINE;
     for (std::size_t i = 0; i < names.size(); ++i) {
         auto& next = i==names.size()-1 ? result : ancestors[i];
         if (!open(parent,names[i],next,create ? KEY_READ|KEY_WRITE : KEY_READ,tx)) {
@@ -90,9 +89,6 @@ SapiTokenTree snapshot(HKEY key,HANDLE tx = nullptr,bool attributes = false) {
         } else { tree.children.emplace(name,SapiTokenTree{}); }
     } return tree;
 }
-void scope(SapiVoiceScope value) {
-    (void)detail::voice_registry_location(value);
-}
 void key_check(std::wstring_view key) {
     if (key.size()!=47 || !key.starts_with(L"OutLoud_Pocket_")) { throw SapiVoiceError(Code::invalid_id,"Unexpected managed token key."); }
     for (const auto c : key.substr(15)) { if (!((c>=L'0' && c<=L'9') || (c>=L'a' && c<=L'f'))) { throw SapiVoiceError(Code::invalid_id,"Unexpected managed token key."); } }
@@ -128,25 +124,23 @@ void write(HKEY key,const SapiTokenTree& tree,HANDLE tx) {
 }
 class WindowsRegistry final : public SapiVoiceRegistry {
 public:
-    std::vector<std::wstring> keys(SapiVoiceScope s) override {
-        scope(s); Key parent; if (!root(s,parent)) { return {}; } return names(parent.value,false);
+    std::vector<std::wstring> keys() override {
+        Key parent; if (!root(parent)) { return {}; } return names(parent.value,false);
     }
-    std::optional<SapiTokenTree> read(SapiVoiceScope s,std::wstring_view name) override {
-        scope(s);
+    std::optional<SapiTokenTree> read(std::wstring_view name) override {
         if (name.find_first_of(L"\\/\0",0,3)!=name.npos || name.empty()) { throw SapiVoiceError(Code::invalid_id,"Invalid registry key."); }
-        Key parent; if (!root(s,parent)) { return {}; }
+        Key parent; if (!root(parent)) { return {}; }
         Key token; const std::wstring key(name); if (!open(parent.value,key.c_str(),token,KEY_READ)) { return {}; }
         return snapshot(token.value);
     }
-    void verify_engine(const std::filesystem::path& dll,SapiVoiceScope s) override {
-        scope(s);
-        // Machine voices require the shared machine COM registration. Legacy
-        // user diagnostics retain effective HKCR lookup. Neither writes CLSID.
+    void verify_engine(const std::filesystem::path& dll) override {
+        // Machine voices require the shared HKLM Registry64 COM registration.
+        // No effective HKCR lookup or CLSID writes.
         try {
             Key server;
-            const auto path = std::wstring(s==SapiVoiceScope::machine ? L"SOFTWARE\\Classes\\CLSID\\" : L"CLSID\\")+
+            const auto path = std::wstring(L"SOFTWARE\\Classes\\CLSID\\")+
                 sapi::clsid_text+L"\\InprocServer32";
-            if (!open(s==SapiVoiceScope::machine ? HKEY_LOCAL_MACHINE : HKEY_CLASSES_ROOT,path.c_str(),server,KEY_READ)) {
+            if (!open(HKEY_LOCAL_MACHINE,path.c_str(),server,KEY_READ)) {
                 throw SapiVoiceError(Code::engine_registration_missing,"Register the engine manually before installing managed tokens.");
             }
             const auto tree = snapshot(server.value);
@@ -157,11 +151,11 @@ public:
             throw SapiVoiceError(Code::engine_registration_malformed,e.what(),e.system_error);
         }
     }
-    void exchange(SapiVoiceScope s,std::wstring_view name,const std::optional<SapiTokenTree>& expected,
+    void exchange(std::wstring_view name,const std::optional<SapiTokenTree>& expected,
         const std::optional<SapiTokenTree>& replacement) override {
-        scope(s); key_check(name); if (expected) { writable(*expected,name); } if (replacement) { writable(*replacement,name); }
+        key_check(name); if (expected) { writable(*expected,name); } if (replacement) { writable(*replacement,name); }
         Transaction tx; Key parent;
-        if (!root(s,parent,tx.value,true)) { throw SapiVoiceError(Code::registry_io,"Cannot open token root."); }
+        if (!root(parent,tx.value,true)) { throw SapiVoiceError(Code::registry_io,"Cannot open token root."); }
         const std::wstring key(name); Key token;
         const bool present = open(parent.value,key.c_str(),token,KEY_READ|KEY_WRITE,tx.value);
         const auto actual = present ? std::optional(snapshot(token.value,tx.value)) : std::nullopt;

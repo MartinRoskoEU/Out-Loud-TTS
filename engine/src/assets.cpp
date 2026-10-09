@@ -13,7 +13,7 @@ constexpr std::uint64_t model_payload_offset = 256 + 169 * 64;
 constexpr std::uint64_t model_file_size = model_payload_offset + pocket_model_payload_bytes;
 
 void require(bool condition, const char* message) {
-    if (!condition) { throw std::runtime_error(message); }
+    if (!condition) { throw AssetError(AssetErrorCode::invalid_data,message); }
 }
 bool zero(Bytes bytes) { return std::all_of(bytes.begin(), bytes.end(), [](auto b) { return b == 0; }); }
 std::uint64_t align(std::uint64_t value) { return (value + 63) & ~std::uint64_t(63); }
@@ -116,7 +116,9 @@ void OutLoudVoice::validate() const {
     }
 }
 void OutLoudVoice::validate_against(const PocketModelAsset& model) const {
-    require(compatibility_id() == model.compatibility_id(), "Voice/model compatibility mismatch");
+    if (compatibility_id()!=model.compatibility_id()) {
+        throw AssetError(AssetErrorCode::compatibility,"Voice/model compatibility mismatch");
+    }
 }
 std::uint32_t OutLoudVoice::prefix_length() const { return detail::u32(file_->bytes(), 196); }
 std::uint64_t OutLoudVoice::payload_bytes() const { return detail::u64(file_->bytes(), 184); }

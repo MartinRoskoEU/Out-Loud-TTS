@@ -1,5 +1,7 @@
 # Native Pocket English text pipeline (Step 2B)
 
+> Historical Step 2B implementation/export evidence. The text component remains current; production/build prerequisites and ordinary validation are in [A11/A12](BUILD_AND_VALIDATION_IMPROVEMENTS.md), and current runtime composition is in [ARCHITECTURE.md](ARCHITECTURE.md).
+
 The C++20 `outloud_text` library implements the fixed Pocket TTS 3.3.0 English
 text path described in [POCKET_PIPELINE.md](POCKET_PIPELINE.md). It has no neural
 inference, model/voice loading, PCM, .olv, COM or SAPI code. Runtime execution

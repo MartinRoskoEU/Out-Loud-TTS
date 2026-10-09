@@ -1,0 +1,7 @@
+if(NOT EXISTS "${ASSEMBLY}")
+    message(FATAL_ERROR "Frontend validation assembly unavailable: ${ASSEMBLY}. Build the documented Release/Debug x64 project first; validation does not build it.")
+endif()
+execute_process(COMMAND dotnet "${ASSEMBLY}" RESULT_VARIABLE result)
+if(NOT result STREQUAL "0")
+    message(FATAL_ERROR "Frontend validation failed: ${result}")
+endif()

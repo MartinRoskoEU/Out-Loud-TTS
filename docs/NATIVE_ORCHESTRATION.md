@@ -1,5 +1,7 @@
 # Step 2L: native full-text streaming orchestration
 
+> Historical Step 2L implementation/measurements. Current cancellation, reusable storage and API lifetimes are summarized in [ARCHITECTURE.md](ARCHITECTURE.md). Build and explicit correctness selection are in [A11/A12](BUILD_AND_VALIDATION_IMPROVEMENTS.md).
+
 `outloud_orchestration` connects the unchanged native text pipeline, production
 RNG and resident worker pipeline. It accepts UTF-8 English text and an explicit
 seed, and exposes each 1920-sample FP32 PCM frame immediately. It has no Python,

@@ -63,7 +63,7 @@ void removal_checks(const std::filesystem::path& prepared,const outloud::SapiVoi
     result=run(request); audit::probe=nullptr;
     check(result.outcome==m::Outcome::removal_warning && result.error.code=="cleanup_pending" && library.list_voices().size()==1 &&
         library.list_voices()[0].library_id==peer.library_id && !registry->tokens.contains(token_key) && registry->tokens.at(managed_sapi_token_key(peer.library_id))==tokens.at(managed_sapi_token_key(peer.library_id)),"Cleanup warning does not represent actual removal state.");
-    check(library.cleanup_pending().pending.empty(),"Removal trash cleanup failed.");
+    check(library.cleanup_pending([&](std::string_view id) { return manager.removal_registration_identity(id); }).pending.empty(),"Removal trash cleanup failed.");
     // Fresh target exercises restoration failure after a registry failure.
     const auto rollback_target=library.import_pocket_voice(prepared,"Rollback test",import,DuplicateContentPolicy::allow_separate_entry).voice;
     (void)manager.install(rollback_target.library_id);
@@ -74,9 +74,9 @@ void removal_checks(const std::filesystem::path& prepared,const outloud::SapiVoi
     result=run(rollback_request); audit::probe=nullptr; registry->deny_exchange=false;
     check(result.outcome==m::Outcome::removal_warning && result.error.code=="removal_partial" && result.error.message.find("registry_io")!=std::string::npos &&
         library.list_voices().size()==1 && registry->tokens.at(managed_sapi_token_key(rollback_target.library_id))==rollback_token &&
-        std::filesystem::exists(std::filesystem::path(fs::wide(result.error.path))/L"voice.olv"),"Failed restoration did not report retained trash and remaining token.");
+        std::filesystem::exists(std::filesystem::path(fs::wide(result.error.path))/L"retained"/L"voice.olv"),"Failed restoration did not report retained trash and remaining token.");
     // Explicit existing reconciliation/cleanup, on the fake library only.
-    (void)manager.remove(rollback_target.library_id); check(library.cleanup_pending().pending.empty(),"Partial removal reconciliation failed.");
+    (void)manager.remove(rollback_target.library_id); check(library.cleanup_pending([&](std::string_view id) { return manager.removal_registration_identity(id); }).pending.empty(),"Partial removal reconciliation failed.");
     const m::Request peer_request{{},peer.metadata->display_name,m::Operation::remove,peer.library_id,peer.metadata->olv_sha256,"valid"};
     result=run(peer_request);
     check(result.outcome==m::Outcome::removed && library.list_voices().empty() && registry->tokens.size()==1 && registry->tokens.contains(L"Microsoft_Unrelated") &&

@@ -32,6 +32,7 @@ public:
     [[nodiscard]] std::span<const float> decode_frame(std::span<const float> normalized_latent,
                                                     MimiDecoderState& state, const MimiObserver& observer = {});
     [[nodiscard]] std::size_t scratch_bytes() const;
+    [[nodiscard]] std::size_t prepared_weight_bytes() const { return convolutions_.prepared_weight_bytes(); }
     [[nodiscard]] cpu::KernelPath selected_path() const { return kernels_.selected_path(); }
 private:
     void transformer(MimiDecoderState& state, const MimiObserver& observer);

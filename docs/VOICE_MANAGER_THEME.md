@@ -1,5 +1,7 @@
 # Step 3D.2: WPF design and Windows themes
 
+> Historical Step 3D.2 presentation/validation evidence. Current app features and theme behavior are summarized in [VOICE_MANAGER_GUIDE.md](VOICE_MANAGER_GUIDE.md).
+
 The [Step 3D.3 import workflow](VOICE_MANAGER_IMPORT.md) reuses these resources
 for its confirmation dialog, including live theme and native caption updates.
 The [Step 3D.3.1 replacement dialog and severity notifications](VOICE_MANAGER_REPLACE.md)

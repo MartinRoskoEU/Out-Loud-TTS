@@ -1,13 +1,8 @@
 #include "outloud/voice_import.hpp"
 #include "outloud/orchestration.hpp"
-#include "asset_io.hpp"
-
-#define WIN32_LEAN_AND_MEAN
-#define NOMINMAX
-#include <windows.h>
+#include "scratch.hpp"
 
 #include <bit>
-#include <chrono>
 #include <cstring>
 #include <fstream>
 #include <iostream>
@@ -41,23 +36,7 @@ std::vector<unsigned char> read(const std::filesystem::path& path) {
     const detail::MappedFile file(path,1024ULL*1024*1024+65536+256);
     return {file.bytes().begin(),file.bytes().end()};
 }
-struct Scratch {
-    std::filesystem::path directory;
-    Scratch() {
-        directory = std::filesystem::current_path()/
-            ("voice-import-tests-"+std::to_string(GetCurrentProcessId())+"-"+
-             std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
-        require(std::filesystem::create_directory(directory),"Cannot create private test directory");
-    }
-    ~Scratch() {
-        // Only remove the flat fixtures in the uniquely created, owned directory.
-        std::error_code error;
-        for (std::filesystem::directory_iterator at(directory,error),end; !error && at != end; at.increment(error)) {
-            std::filesystem::remove(at->path(),error);
-        }
-        std::filesystem::remove(directory,error);
-    }
-};
+using test::Scratch;
 struct Fixture {
     std::string header;
     std::vector<unsigned char> payload;
@@ -128,8 +107,8 @@ int wmain(int argc,wchar_t** argv) {
     try {
         require(argc==3 || argc==6,"Usage: outloud-voice-import-tests source.safetensors known-good.olv [model.olp tokenizer.bin canonical.f32]");
         Scratch scratch;
-        const auto source=scratch.directory/L"source.safetensors", output=scratch.directory/L"imported.olv";
-        const auto repeat=scratch.directory/L"repeat.olv", bad=scratch.directory/L"bad.olv";
+        const auto source=scratch.path/L"source.safetensors", output=scratch.path/L"imported.olv";
+        const auto repeat=scratch.path/L"repeat.olv", bad=scratch.path/L"bad.olv";
         VoiceImportOptions options; options.declared_model_compatibility_id=std::string(pocket_model_compatibility_id);
         options.expected_source_sha256="2118ea60dfe87bd515b27e051e1d677a7fe15663875740599147bde37a9c4cea";
         const auto inspection=inspect_pocket_voice(argv[1]);
@@ -158,10 +137,10 @@ int wmain(int argc,wchar_t** argv) {
         changed_options=options; changed_options.expected_source_sha256=std::string(64,'0');
         rejects(Code::source_identity_mismatch,[&] { (void)convert_pocket_voice_to_olv(argv[1],output,changed_options); });
         rejects(Code::invalid_destination,[&] { (void)convert_pocket_voice_to_olv(argv[1],output,options); });
-        rejects(Code::invalid_destination,[&] { (void)convert_pocket_voice_to_olv(argv[1],scratch.directory/"absent"/"voice.olv",options); });
-        rejects(Code::invalid_destination,[&] { (void)convert_pocket_voice_to_olv(argv[1],scratch.directory/"voice.txt",options); });
-        rejects(Code::file_not_found,[&] { (void)inspect_pocket_voice(scratch.directory/"missing"); });
-        rejects(Code::source_io,[&] { (void)inspect_pocket_voice(scratch.directory); });
+        rejects(Code::invalid_destination,[&] { (void)convert_pocket_voice_to_olv(argv[1],scratch.path/"absent"/"voice.olv",options); });
+        rejects(Code::invalid_destination,[&] { (void)convert_pocket_voice_to_olv(argv[1],scratch.path/"voice.txt",options); });
+        rejects(Code::file_not_found,[&] { (void)inspect_pocket_voice(scratch.path/"missing"); });
+        rejects(Code::source_io,[&] { (void)inspect_pocket_voice(scratch.path); });
         rejects(Code::source_io,[&] { (void)inspect_pocket_voice(L"\\\\server\\share\\voice.safetensors"); });
         options.expected_source_sha256.clear(); options.replace_existing=true;
         auto invalid=[&](Fixture fixture,Code code,bool tensor=false) {
@@ -219,13 +198,13 @@ int wmain(int argc,wchar_t** argv) {
             CloseHandle(locked);
         }
         require(read(output)==unchanged,"Finalization failure changed existing destination");
-        require(std::distance(std::filesystem::directory_iterator(scratch.directory),std::filesystem::directory_iterator())==3,
+        require(std::distance(std::filesystem::directory_iterator(scratch.path),std::filesystem::directory_iterator())==3,
                 "Failed import left a temporary file");
         // Source alias through a hard link must also be rejected with replacement requested.
         std::filesystem::create_hard_link(source,bad);
         rejects(Code::invalid_destination,[&] { (void)convert_pocket_voice_to_olv(source,bad,options); });
         std::filesystem::remove(bad);
-        const auto unicode=scratch.directory/L"hlas-\u017e\u00e1ba.olv";
+        const auto unicode=scratch.path/L"hlas-\u017e\u00e1ba.olv";
         const auto small=convert_pocket_voice_to_olv(source,unicode,options);
         require(small.voice.prefix_length==1 && small.source.metadata==metadata.metadata,"Unicode destination or metadata handling failed");
         const auto small_bytes=read(unicode);

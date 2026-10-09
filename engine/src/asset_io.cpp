@@ -14,16 +14,21 @@ namespace outloud::detail {
 MappedFile::MappedFile(const std::filesystem::path& path, std::uint64_t maximum_size) {
     const auto file = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING,
                                   FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN, nullptr);
-    if (file == INVALID_HANDLE_VALUE) { throw std::runtime_error("Cannot open local asset read-only"); }
+    if (file == INVALID_HANDLE_VALUE) { const auto error=GetLastError(); throw AssetError(AssetErrorCode::io,"Cannot open local asset read-only",error); }
     LARGE_INTEGER length{};
-    if (!GetFileSizeEx(file, &length) || length.QuadPart <= 0 || static_cast<std::uint64_t>(length.QuadPart) > maximum_size) {
+    if (!GetFileSizeEx(file,&length)) {
+        const auto error=GetLastError(); CloseHandle(file);
+        throw AssetError(AssetErrorCode::io,"Cannot query asset size",error);
+    }
+    if (length.QuadPart <= 0 || static_cast<std::uint64_t>(length.QuadPart) > maximum_size ||
+        static_cast<std::uint64_t>(length.QuadPart)>SIZE_MAX) {
         CloseHandle(file);
-        throw std::runtime_error("Invalid or oversized asset file");
+        throw AssetError(AssetErrorCode::invalid_data,"Invalid or oversized asset file");
     }
     const auto mapping = CreateFileMappingW(file, nullptr, PAGE_READONLY, 0, 0, nullptr);
-    if (!mapping) { CloseHandle(file); throw std::runtime_error("Cannot map local asset"); }
+    if (!mapping) { const auto error=GetLastError(); CloseHandle(file); throw AssetError(AssetErrorCode::io,"Cannot map local asset",error); }
     const auto data = static_cast<const unsigned char*>(MapViewOfFile(mapping, FILE_MAP_READ, 0, 0, 0));
-    if (!data) { CloseHandle(mapping); CloseHandle(file); throw std::runtime_error("Cannot view local asset"); }
+    if (!data) { const auto error=GetLastError(); CloseHandle(mapping); CloseHandle(file); throw AssetError(AssetErrorCode::io,"Cannot view local asset",error); }
     file_ = file; mapping_ = mapping; data_ = data; size_ = static_cast<std::size_t>(length.QuadPart);
 }
 MappedFile::~MappedFile() {

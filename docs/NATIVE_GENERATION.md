@@ -1,5 +1,7 @@
 # Native one-segment supplied-noise generation (Step 2F)
 
+> Historical Step 2F report. Supplied-noise APIs remain independent references; production RNG, A09 reusable prefill and streaming are described in [ARCHITECTURE.md](ARCHITECTURE.md). Use [A11/A12](BUILD_AND_VALIDATION_IMPROVEMENTS.md) for current build/validation.
+
 `outloud_generation` executes Pocket TTS 3.3.0's complete FlowLM/sampler
 lifecycle for one English segment, batch one, single-threaded, using local
 resident `.olp`/`.olv` assets and externally supplied noise. The portable CPU

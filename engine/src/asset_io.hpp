@@ -1,5 +1,6 @@
 #pragma once
 
+#include "../include/outloud/asset_error.hpp"
 #include <array>
 #include <cstdint>
 #include <filesystem>

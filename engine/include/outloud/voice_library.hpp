@@ -13,7 +13,7 @@ enum class VoiceLibraryErrorCode {
     invalid_display_name, duplicate_content, import_failed, incompatible_voice,
     corrupt_voice, replace_required, source_io, destination_io, remove_failed,
     internal_failure, library_access_denied, library_security_invalid,
-    voice_in_use, replacement_conflict, replacement_pending, removal_conflict, removal_partial
+    voice_in_use, replacement_conflict, replacement_pending, removal_conflict, removal_partial, removal_pending
 };
 [[nodiscard]] std::string_view voice_library_error_name(VoiceLibraryErrorCode code) noexcept;
 class VoiceLibraryError : public std::runtime_error {
@@ -36,7 +36,7 @@ private:
 enum class VoiceImportKind { pocket_prepared, olv };
 enum class VoiceHealth {
     valid, missing_voice, corrupt_voice, metadata_corrupt, unsupported_metadata_version,
-    unsupported_voice_version, incompatible_model, hash_mismatch, unsafe_entry, unavailable, replacement_pending
+    unsupported_voice_version, incompatible_model, hash_mismatch, unsafe_entry, unavailable, replacement_pending, removal_pending
 };
 [[nodiscard]] std::string_view voice_health_name(VoiceHealth health) noexcept;
 struct VoiceMetadata {
@@ -78,17 +78,28 @@ struct VoiceRemovalResult {
     bool cleanup_pending = false;
     std::string detail;
 };
+// Returns "absent" or a strict owned-token SHA-256 identity; errors must throw.
+// Called under the library lock: implementations must not re-enter VoiceLibrary.
+using RemovalRegistrationIdentity = std::function<std::string(std::string_view)>;
+enum class RemovalRecoveryState { none, restored, removed };
+struct RemovalRecoveryResult {
+    RemovalRecoveryState state = RemovalRecoveryState::none;
+    bool cleanup_pending = false;
+    std::string detail;
+};
 struct VoiceRemoveOptions {
     // Name/hash/health assertions are required for coordinated removal. Empty
     // name/hash assert absent metadata; standalone removal remains available.
     std::optional<std::string> expected_display_name, expected_olv_sha256, expected_health;
     // Runs under the library lock AFTER reversible detach, BEFORE file deletion.
     // Must not re-enter VoiceLibrary. Failure attempts to restore the directory.
-    std::function<void(const LibraryVoice&)> remove_registration;
+    RemovalRegistrationIdentity registration_identity;
+    std::function<void(const LibraryVoice&, std::string_view)> remove_registration;
 };
 struct LibraryCleanupResult {
     std::size_t cleaned = 0;
     std::vector<std::filesystem::path> pending;
+    std::vector<VoiceLibraryError> problems;
 };
 
 // SHGetKnownFolderPath(FOLDERID_ProgramData), never creates the real library.
@@ -98,7 +109,7 @@ public:
     explicit VoiceLibrary(std::filesystem::path root = default_voice_library_root());
     [[nodiscard]] const std::filesystem::path& root() const noexcept { return root_; }
     // True only for the canonical production root. Explicit other roots are
-    // development/legacy storage; they do not grant machine-token eligibility.
+    // isolated test storage; they do not grant machine-token eligibility.
     [[nodiscard]] bool is_machine_storage() const noexcept { return machine_storage_; }
     [[nodiscard]] std::vector<LibraryVoice> list_voices() const;
     [[nodiscard]] LibraryVoice inspect_voice(std::string_view id) const;
@@ -117,8 +128,15 @@ public:
     // Explicitly discards unpublished staging work and completes already committed removals.
     // Also recovers journalled replacements in place; never deletes an active entry.
     // Unsafe/locked/unknown recovery state is retained and reported.
-    [[nodiscard]] LibraryCleanupResult cleanup_pending();
+    [[nodiscard]] LibraryCleanupResult cleanup_pending(const RemovalRegistrationIdentity& registration_identity = {});
+    // Explicit mutation/maintenance only; read snapshots never invoke recovery.
+    [[nodiscard]] RemovalRecoveryResult recover_removal(std::string_view id,
+        const RemovalRegistrationIdentity& registration_identity = {});
 private:
+    friend class SapiVoiceManager;
+    // Only SAPI's read snapshot can borrow validated rows, while Session's shared
+    // lock is held. This is not a caller-supplied validation/mutation capability.
+    void with_read_snapshot(const std::function<void(std::vector<LibraryVoice>&&)>&) const;
     std::filesystem::path root_;
     bool machine_storage_ = false;
 };

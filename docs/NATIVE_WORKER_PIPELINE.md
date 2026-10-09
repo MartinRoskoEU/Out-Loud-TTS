@@ -1,5 +1,7 @@
 # Step 2J: resident two-stage streaming workers
 
+> Historical Step 2J architecture/measurements. Production RNG, cancellation and A08/A09 reuse now extend this path; see [ARCHITECTURE.md](ARCHITECTURE.md). Old standalone/build commands are historical; current check selection is in [A11/A12](BUILD_AND_VALIDATION_IMPROVEMENTS.md).
+
 This step adds real overlap between the unchanged Step 2I FlowLM/sampler and
 Mimi kernels. One request is one already prepared text segment with externally
 supplied noise. Performance numbers below describe this development host and

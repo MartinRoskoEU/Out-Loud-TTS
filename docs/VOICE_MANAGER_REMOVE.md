@@ -1,5 +1,14 @@
 # Step 3D.3.2: Remove Voice
 
+> Historical Step 3D.3.2 implementation/validation record. Current journaled recovery and GUI behavior are in [VOICE_MANAGER_GUIDE.md](VOICE_MANAGER_GUIDE.md); build/validation is in [A11/A12](BUILD_AND_VALIDATION_IMPROVEMENTS.md).
+
+The original step record below is historical. Current removal now uses the
+durable journal and token-aware recovery described in
+[Stabilization Phase 2](STABILIZATION_PHASE_2.md), superseding its crash-recovery
+and generic-trash-cleanup limitations. Read-only refresh does not recover;
+authorized Remove retries and explicit administrator maintenance do. Nonempty
+unjournaled trash is retained for review.
+
 The normal x64, `asInvoker` Voice Manager now has a secondary **Remove** action
 next to Import Voice. It uses the selected immutable library ID, asks for themed
 confirmation and then uses the existing one-shot elevated helper. No Rename,

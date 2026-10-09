@@ -20,18 +20,17 @@ void show(const outloud::LibraryVoice& voice) {
 }
 int wmain(int argc,wchar_t** argv) {
     try {
-        int at=1; std::filesystem::path root;
-        if (argc>3 && std::wstring_view(argv[at])==L"--root") { root=argv[++at]; ++at; }
+        int at=1;
         if (at>=argc) {
-            std::cerr<<"Usage: outloud-voice-library [--root DIR] list|inspect ID|rename ID NAME|remove ID|cleanup\n"
+            std::cerr<<"Usage: outloud-voice-library list|inspect ID|rename ID NAME|remove ID|cleanup\n"
                 "       ... import-pocket SOURCE --name NAME --model-compatibility pinned|ID [--expected-source-sha256 SHA] [--allow-duplicate]\n"
                 "       ... import-olv SOURCE --name NAME [--allow-duplicate]\n"
                 "       ... export ID DESTINATION.olv [--replace]\n"
                 "Default root: ProgramData/OutLoud/VoiceLibrary; machine mutations require manual elevation.\n"
-                "Explicit --root is for development/tests or legacy storage; no automatic migration/UAC.\n"; return 2;
+                "No alternate library root or automatic migration/UAC.\n"; return 2;
         }
         const std::wstring_view command(argv[at++]);
-        outloud::VoiceLibrary library(root.empty()?outloud::default_voice_library_root():root);
+        outloud::VoiceLibrary library;
         if (command==L"list" && at==argc) {
             for (const auto& voice : library.list_voices()) { show(voice); std::cout<<'\n'; } return 0;
         }
@@ -43,7 +42,8 @@ int wmain(int argc,wchar_t** argv) {
         }
         if (command==L"cleanup" && at==argc) {
             const auto result=library.cleanup_pending(); std::cout<<"cleaned="<<result.cleaned<<"\npending="<<result.pending.size()<<'\n';
-            for (const auto& path : result.pending) { std::wcout<<path.native()<<L'\n'; } return result.pending.empty()?0:1;
+            for (const auto& path : result.pending) { std::wcout<<path.native()<<L'\n'; }
+            for (const auto& error : result.problems) { std::cout<<"error="<<outloud::voice_library_error_name(error.code())<<"\nmessage="<<error.what()<<'\n'; } return result.pending.empty()?0:1;
         }
         if (command==L"export" && (at+2==argc || (at+3==argc && std::wstring_view(argv[at+2])==L"--replace"))) {
             const auto result=library.export_olv(fs::utf8(argv[at]),argv[at+1],at+3==argc);

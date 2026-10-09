@@ -1,7 +1,6 @@
 #include "outloud/sapi_voices.hpp"
 #include "scratch.hpp"
 #include "engine_registration.hpp"
-#include "voice_registry_location.hpp"
 #include "identity.hpp"
 #include <winioctl.h>
 #include <shlobj.h>
@@ -26,7 +25,6 @@ template<class F> SapiVoiceError rejects(Code code,F fn) {
 class FakeRegistry final : public SapiVoiceRegistry {
 public:
     std::map<std::wstring,SapiTokenTree> tokens;
-    std::map<std::wstring,SapiTokenTree> user_tokens;
     std::mutex mutex;
     bool engine = true, fail_commit = false, race = false;
     std::optional<SapiRegistryValue> engine_registration;
@@ -34,31 +32,29 @@ public:
     std::optional<Code> failure;
     unsigned writes = 0;
     void fail() { if (failure) { throw SapiVoiceError(*failure,"Injected native registry error.",*failure==Code::registry_access_denied ? ERROR_ACCESS_DENIED : ERROR_WRITE_FAULT); } }
-    std::vector<std::wstring> keys(SapiVoiceScope scope) override {
+    std::vector<std::wstring> keys() override {
         std::lock_guard lock(mutex); fail(); std::vector<std::wstring> names;
-        for (const auto& [key,tree] : scope==SapiVoiceScope::machine ? tokens : user_tokens) { names.push_back(key); (void)tree; } return names;
+        for (const auto& [key,tree] : tokens) { names.push_back(key); (void)tree; } return names;
     }
-    std::optional<SapiTokenTree> read(SapiVoiceScope scope,std::wstring_view key) override {
-        std::lock_guard lock(mutex); fail(); const auto& entries = scope==SapiVoiceScope::machine ? tokens : user_tokens;
-        const auto it = entries.find(std::wstring(key));
-        return it==entries.end() ? std::nullopt : std::optional(it->second);
+    std::optional<SapiTokenTree> read(std::wstring_view key) override {
+        std::lock_guard lock(mutex); fail();
+        const auto it = tokens.find(std::wstring(key));
+        return it==tokens.end() ? std::nullopt : std::optional(it->second);
     }
-    void verify_engine(const std::filesystem::path& dll,SapiVoiceScope scope) override {
-        (void)scope;
+    void verify_engine(const std::filesystem::path& dll) override {
         if (!engine || engine_clsid!=sapi::clsid_text) { throw SapiVoiceError(Code::engine_registration_missing,"Injected missing engine/expected CLSID."); }
         // Only the registry lookup is fake. The decoder, path policy, file
         // pinning and identity validation are the production implementation.
         detail::validate_engine_registration(engine_registration ? engine_registration : std::optional(sapi_registry_string(dll.wstring())),dll);
     }
-    void exchange(SapiVoiceScope scope,std::wstring_view name,const std::optional<SapiTokenTree>& expected,
+    void exchange(std::wstring_view name,const std::optional<SapiTokenTree>& expected,
         const std::optional<SapiTokenTree>& replacement) override {
         std::lock_guard lock(mutex); fail(); const std::wstring key(name);
-        auto& entries = scope==SapiVoiceScope::machine ? tokens : user_tokens;
-        if (race) { entries[key].values[L"Unexpected"] = sapi_registry_string(L"external writer"); race = false; }
-        const auto it = entries.find(key); const auto old = it==entries.end() ? std::nullopt : std::optional(it->second);
+        if (race) { tokens[key].values[L"Unexpected"] = sapi_registry_string(L"external writer"); race = false; }
+        const auto it = tokens.find(key); const auto old = it==tokens.end() ? std::nullopt : std::optional(it->second);
         if (old!=expected) { throw SapiVoiceError(Code::token_conflict,"Concurrent modification."); }
         if (fail_commit) { throw SapiVoiceError(Code::registry_io,"Injected rollback.",ERROR_WRITE_FAULT); }
-        if (replacement) { entries[key] = *replacement; } else { entries.erase(key); } ++writes;
+        if (replacement) { tokens[key] = *replacement; } else { tokens.erase(key); } ++writes;
     }
 };
 void junction(const std::filesystem::path& link,const std::filesystem::path& target) {
@@ -83,7 +79,7 @@ void junction(const std::filesystem::path& link,const std::filesystem::path& tar
 int wmain(int argc,wchar_t** argv) {
     try {
         check(argc==5,"Usage: token-tests DLL MODEL TOKENIZER GNOME.olv");
-        sapi_test::Scratch scratch; VoiceLibrary library(scratch.path/L"kni\u017enica");
+        outloud::test::Scratch scratch; VoiceLibrary library(scratch.path/L"kni\u017enica");
         // Exercise every alignment of the Win32 variable-size rename buffer.
         // In particular, an exact eight-byte allocation must still hold NUL.
         for (std::size_t alignment = 0; alignment<4; ++alignment) {
@@ -181,19 +177,13 @@ int wmain(int argc,wchar_t** argv) {
         rejects(Code::invalid_machine_library_root,[&] { (void)production.install(id); });
         rejects(Code::invalid_machine_library_root,[&] { (void)production.update(id); });
         check(registry->tokens.empty() && !registry->writes,"Production root rejection mutated registry.");
-        check(!library.is_machine_storage(),"Temporary/user-profile storage classified as production.");
-        const auto machine_location = detail::voice_registry_location(SapiVoiceScope::machine);
-        check(machine_location.hive==HKEY_LOCAL_MACHINE && machine_location.view==KEY_WOW64_64KEY,"Machine registry hive/view changed.");
-        const auto user_location = detail::voice_registry_location(SapiVoiceScope::user);
-        check(user_location.hive==HKEY_CURRENT_USER && user_location.view==KEY_WOW64_64KEY,"Legacy registry hive/view changed.");
+        check(!library.is_machine_storage(),"Temporary storage classified as production.");
         const std::string known_id = "a4fb27ae6305b2c563711fdb512bcbb2";
         check(managed_sapi_token_key(known_id)==L"OutLoud_Pocket_a4fb27ae6305b2c563711fdb512bcbb2","Stable token key changed.");
         check(managed_sapi_token_id(known_id)==L"HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Speech\\Voices\\Tokens\\OutLoud_Pocket_a4fb27ae6305b2c563711fdb512bcbb2","Machine token ID path wrong.");
-        check(managed_sapi_token_id(known_id,SapiVoiceScope::user)==L"HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Speech\\Voices\\Tokens\\OutLoud_Pocket_a4fb27ae6305b2c563711fdb512bcbb2","Legacy token ID path changed.");
         SapiVoiceManager manager(library,runtime,registry,MachineVoiceLibraryPolicy::development_override);
         check(manager.inspect(id).status==SapiTokenStatus::missing,"Missing token not reported.");
         check(manager.reconcile().size()==1 && !registry->writes,"Reconcile mutated registry.");
-        rejects(Code::unsupported_scope,[&] { (void)manager.install(id,static_cast<SapiVoiceScope>(99)); });
         rejects(Code::invalid_id,[&] { (void)manager.remove("../bad"); });
         const std::string absent(32,'0');
         auto missing = rejects(Code::voice_not_found,[&] { (void)manager.install(absent); });
@@ -217,16 +207,52 @@ int wmain(int argc,wchar_t** argv) {
         check(denied.system_error==ERROR_ACCESS_DENIED,"Access denied flattened."); registry->failure.reset();
         check(manager.install(id)==SapiTokenChange::installed,"Install failed.");
         const auto key = managed_sapi_token_key(id); const auto original = registry->tokens.at(key);
-        check(production.inspect(id).status==SapiTokenStatus::wrong_path,"Production inspection accepted machine token tied to user/test storage.");
+        check(production.inspect(id).status==SapiTokenStatus::wrong_path,"Production inspection accepted machine token tied to test storage.");
         check(original.values.size()==12 && original.children.size()==1,"Machine token snapshot schema changed.");
+        const auto name = detail::library_fs::wide(imported.voice.metadata->display_name);
+        check(sapi_registry_text(original.values.at(L""))==name && sapi_registry_text(original.values.at(L"409"))==name &&
+            sapi_registry_text(original.children.at(L"Attributes").values.at(L"Name"))==name,"Managed display names must match the library exactly.");
         check(sapi_registry_text(original.values.at(L"LibraryId"))==detail::library_fs::wide(id) &&
             sapi_registry_text(original.values.at(L"CLSID"))==sapi::clsid_text &&
             sapi_registry_text(original.children.at(L"Attributes").values.at(L"Vendor"))==L"Out Loud" &&
             sapi_registry_text(original.children.at(L"Attributes").values.at(L"Language"))==L"409","Machine snapshot identity/attributes changed.");
-        // Legacy mutation/cleanup is retained, but machine calls never see it.
-        check(production.install(id,SapiVoiceScope::user)==SapiTokenChange::installed,"Legacy explicit user install compatibility failed.");
-        check(production.inspect(id,SapiVoiceScope::user).status==SapiTokenStatus::correct,"Legacy inspect failed.");
-        const auto legacy_snapshot = registry->user_tokens;
+        check(name==L"Hlas \u017e \U0001f3b5","Unicode name fixture changed.");
+        check(managed_sapi_token_id(id)==L"HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Speech\\Voices\\Tokens\\OutLoud_Pocket_"+detail::library_fs::wide(id),"Immutable full token ID changed.");
+        auto equivalent=original;
+        for (const auto* field : {L"AssetRoot",L"ModelPath",L"TokenizerPath"}) {
+            auto value=sapi_registry_text(equivalent.values.at(field)).value();
+            for (auto& c:value) { if (c==L'\\') { c=L'/'; } else if (c>=L'a' && c<=L'z') { c=static_cast<wchar_t>(c-L'a'+L'A'); } }
+            value.insert(3,L"./"); equivalent.values[field]=sapi_registry_string(value);
+        }
+        registry->tokens[key]=equivalent; const auto writes_before=registry->writes;
+        check(manager.inspect(id).status==SapiTokenStatus::correct,"Equivalent runtime spellings conflict.");
+        check(manager.install(id)==SapiTokenChange::already_installed && manager.update(id)==SapiTokenChange::unchanged,"Equivalent token is not idempotent.");
+        check(registry->writes==writes_before && registry->tokens.at(key)==equivalent,"Equivalent spellings were rewritten.");
+        (void)library.rename_voice(id,"Renamed voice");
+        check(manager.update(id)==SapiTokenChange::updated,"Equivalent runtime prevented name update.");
+        for (const auto* field : {L"AssetRoot",L"ModelPath",L"TokenizerPath"}) {
+            check(registry->tokens.at(key).values.at(field)==equivalent.values.at(field),"Name update rewrote runtime spelling.");
+        }
+        (void)library.rename_voice(id,imported.voice.metadata->display_name); registry->tokens[key]=original;
+        for (const auto* field : {L"AssetRoot",L"ModelPath",L"TokenizerPath"}) {
+            for (const auto* bad : {L"C:\\different\\asset.bin",L"C:\\safe\\..\\asset.bin",L"C:\\asset.bin:stream",L"\\\\server\\share\\asset.bin",L"C:\\NUL",L"relative.bin"}) {
+                registry->tokens[key]=original; registry->tokens[key].values[field]=sapi_registry_string(bad);
+                check(manager.inspect(id).status==SapiTokenStatus::conflict,"Different/unsafe runtime path accepted.");
+            }
+            registry->tokens[key]=original; registry->tokens[key].values[field].type=REG_EXPAND_SZ;
+            check(manager.inspect(id).status==SapiTokenStatus::malformed,"Runtime REG_EXPAND_SZ accepted.");
+            registry->tokens[key]=original; registry->tokens[key].values[field].bytes.pop_back();
+            check(manager.inspect(id).status==SapiTokenStatus::malformed,"Malformed runtime string accepted.");
+        }
+        registry->tokens[key]=original;
+        for (auto* fields : {&registry->tokens[key].values,&registry->tokens[key].children.at(L"Attributes").values}) {
+            for (auto& [field,value]:*fields) {
+                if (field.empty() || field==L"409" || field==L"Name") { value=sapi_registry_string(L"Out Loud - Hlas \u017e \U0001f3b5"); }
+            }
+        }
+        check(manager.inspect(id).status==SapiTokenStatus::stale_name && manager.inspect(id).detail.find("Voice data is intact")!=std::string::npos,"Prefixed name was correct or lacked explanation.");
+        rejects(Code::reconciliation_required,[&] { manager.validate_replacement(imported.voice,imported.voice.managed_olv_path); });
+        registry->tokens[key]=original;
         const auto machine_before = registry->tokens;
         registry->failure = Code::registry_access_denied;
         rejects(Code::registry_access_denied,[&] { (void)manager.list(); });
@@ -234,17 +260,13 @@ int wmain(int argc,wchar_t** argv) {
         rejects(Code::registry_access_denied,[&] { (void)manager.reconcile(); });
         rejects(Code::registry_access_denied,[&] { (void)manager.update(id); });
         rejects(Code::registry_access_denied,[&] { (void)manager.remove(id); });
-        check(registry->tokens==machine_before && registry->user_tokens==legacy_snapshot,"Permission failures damaged either scope.");
+        check(registry->tokens==machine_before,"Permission failures damaged machine tokens.");
         registry->failure.reset();
-        check(production.reconcile(SapiVoiceScope::user).size()==1 && registry->tokens==machine_before,"User reconciliation touched machine tokens.");
         check(original.children.at(L"Attributes").values.size()==3,"Invented gender/age attributes.");
         check(manager.install(id)==SapiTokenChange::already_installed && manager.inspect(id).status==SapiTokenStatus::correct,"Idempotence failed.");
         check(sapi_registry_text(original.values.at(L"VoicePath"))==imported.voice.managed_olv_path.wstring(),"Unicode managed path lost.");
         (void)library.rename_voice(id,"Renamed voice");
         check(manager.inspect(id).status==SapiTokenStatus::stale_name,"Stale name not reported.");
-        check(production.update(id,SapiVoiceScope::user)==SapiTokenChange::updated,"Legacy rename sync failed.");
-        check(registry->user_tokens.at(key).values.at(L"VoicePath")==legacy_snapshot.at(key).values.at(L"VoicePath"),"Legacy rename changed path.");
-        const auto legacy_renamed = registry->user_tokens;
         rejects(Code::token_conflict,[&] { (void)manager.install(id); });
         registry->fail_commit = true;
         rejects(Code::registry_io,[&] { (void)manager.update(id); });
@@ -252,6 +274,8 @@ int wmain(int argc,wchar_t** argv) {
         check(manager.update(id)==SapiTokenChange::updated && manager.update(id)==SapiTokenChange::unchanged,"Rename sync failed.");
         check(registry->tokens.at(key).values.at(L"VoicePath")==original.values.at(L"VoicePath"),"Rename changed voice path.");
         const auto renamed = registry->tokens.at(key);
+        check(sapi_registry_text(renamed.values.at(L""))==L"Renamed voice" && sapi_registry_text(renamed.values.at(L"409"))==L"Renamed voice" &&
+            sapi_registry_text(renamed.children.at(L"Attributes").values.at(L"Name"))==L"Renamed voice","Rename added a prefix or lost exact fields.");
         for (const auto* folder : {&FOLDERID_LocalAppData,&FOLDERID_Profile}) {
             PWSTR user_folder = nullptr;
             check(SUCCEEDED(SHGetKnownFolderPath(*folder,KF_FLAG_DONT_VERIFY,nullptr,&user_folder)),"Cannot resolve user-folder rejection fixture.");
@@ -278,15 +302,14 @@ int wmain(int argc,wchar_t** argv) {
         registry->race = true;
         rejects(Code::token_conflict,[&] { (void)manager.remove(id); });
         check(registry->tokens.at(key).values.contains(L"Unexpected"),"Concurrent registry writer overwritten."); registry->tokens[key] = renamed;
-        registry->tokens[L"OutLoud_Pocket_GnomeMale_Development"] = {};
+        registry->tokens[L"OutLoud_Pocket_Unmanaged"] = {};
         registry->tokens[L"Microsoft_Unrelated"] = {};
         registry->tokens[L"OutLoud_Pocket_malformed"].values[L"OutLoudManagedOwner"] = sapi_registry_string(L"OutLoud.ManagedVoice.1");
-        check(manager.list().size()==2,"Legacy/unrelated not ignored or malformed candidate lost.");
-        check(registry->user_tokens==legacy_renamed,"Machine enumeration migrated/modified legacy HKCU data.");
+        check(manager.list().size()==2,"Unmanaged/unrelated not ignored or malformed candidate lost.");
         const auto second = library.import_olv(argv[4],"Duplicate content distinct ID",DuplicateContentPolicy::allow_separate_entry).voice;
         check(manager.install(second.library_id)==SapiTokenChange::installed,"Independent second token failed.");
         const auto peer = registry->tokens.at(managed_sapi_token_key(second.library_id));
-        check(manager.reconcile().size()==3 && registry->user_tokens==legacy_renamed,"Machine reconciliation merged scopes or lost candidates.");
+        check(manager.reconcile().size()==3,"Machine reconciliation lost candidates.");
         std::atomic<unsigned> removed{0}, rejected{0}; std::exception_ptr concurrent_error;
         std::mutex errors;
         const auto remove_concurrently = [&] {
@@ -315,12 +338,8 @@ int wmain(int argc,wchar_t** argv) {
         check(manager.inspect(id).status==SapiTokenStatus::unhealthy_voice,"Corrupt voice not reported.");
         rejects(Code::unhealthy_voice,[&] { (void)manager.install(id); });
         (void)manager.remove(id);
-        check(registry->user_tokens==legacy_renamed,"Machine removal changed legacy HKCU token.");
-        const auto before_legacy_remove = registry->tokens;
-        check(production.remove(id,SapiVoiceScope::user)==SapiTokenChange::removed,"Legacy explicit cleanup failed.");
-        check(registry->user_tokens.empty() && registry->tokens==before_legacy_remove && registry->engine && registry->engine_clsid==sapi::clsid_text,
-            "Legacy cleanup changed machine tokens/shared COM engine.");
-        check(registry->tokens.contains(L"OutLoud_Pocket_GnomeMale_Development") && registry->tokens.contains(L"Microsoft_Unrelated"),"Unrelated tokens changed.");
+        check(registry->tokens.contains(L"OutLoud_Pocket_Unmanaged") && registry->tokens.contains(L"Microsoft_Unrelated"),"Unrelated tokens changed.");
+        check(registry->engine && registry->engine_clsid==sapi::clsid_text,"Token operations changed shared COM engine.");
         SapiRegistryValue invalid{REG_SZ,{0,0,0,0}}; check(!sapi_registry_text(invalid),"Embedded NUL accepted.");
         std::cout << "PASS: " << checks << " managed-token assertions; fake registry only, private temporary library.\n"; return 0;
     } catch (const std::exception& e) { std::cerr << e.what() << '\n'; return 1; }

@@ -1,5 +1,5 @@
 #include "outloud/voice_library.hpp"
-#include "voice_library_fs.hpp"
+#include "scratch.hpp"
 #include "voice_library_security.hpp"
 
 #include <winioctl.h>
@@ -45,27 +45,8 @@ std::string replace(std::string text,std::string_view before,std::string_view af
 void put(std::vector<unsigned char>& bytes,std::size_t at,std::uint32_t value) {
     for (unsigned i=0;i<4;++i) { bytes[at+i]=static_cast<unsigned char>(value>>(i*8)); }
 }
-void cleanup_owned(const std::filesystem::path& path) noexcept {
-    const auto attributes=GetFileAttributesW(path.c_str());
-    if (attributes==INVALID_FILE_ATTRIBUTES) { return; }
-    if (!(attributes&FILE_ATTRIBUTE_DIRECTORY)) { DeleteFileW(path.c_str()); return; }
-    if (!(attributes&FILE_ATTRIBUTE_REPARSE_POINT)) {
-        try { for (const auto& name : fs::children(path)) { cleanup_owned(path/name); } } catch (...) {}
-    }
-    RemoveDirectoryW(path.c_str()); // Junction itself, never its target.
-}
-struct Scratch {
-    std::filesystem::path path;
-    Scratch() {
-        std::wstring temp(32768,L'\0'); const auto length=GetTempPathW(static_cast<DWORD>(temp.size()),temp.data());
-        require(length && length<temp.size(),"Cannot locate test temporary directory"); temp.resize(length);
-        const fs::Pins parents(temp);
-        path=parents.path/(L"outloud-library-tests-"+fs::wide(fs::random_id()));
-        require(CreateDirectoryW(path.c_str(),nullptr)!=0,"Cannot create unique test scratch root");
-        require(fs::within(path,parents.path) && path!=parents.path,"Unsafe test cleanup root");
-    }
-    ~Scratch() { cleanup_owned(path); }
-};
+using test::Scratch;
+using test::cleanup_owned;
 struct Descriptor {
     PSECURITY_DESCRIPTOR value = nullptr;
     explicit Descriptor(const wchar_t* sddl) {
@@ -373,12 +354,13 @@ int wmain(int argc,wchar_t** argv) {
         write(unexpected/L"unknown.txt","retained");
         require(library.cleanup_pending().pending==std::vector<std::filesystem::path>{unexpected},"Recovery deleted unknown files");
         cleanup_owned(unexpected);
-        // Simulate a crash after removal committed and the voice was deleted, but before metadata cleanup.
+        // Older unjournaled trash has no proof of commit; even metadata-only content is retained.
         const auto partial_trash=root/L".trash"/L"dddddddddddddddddddddddddddddddd";
         std::filesystem::create_directory(partial_trash); write(partial_trash/L"metadata.json",metadata_bytes);
         const auto recovered_removal=library.cleanup_pending();
-        require(recovered_removal.cleaned==1 && recovered_removal.pending.empty() && !std::filesystem::exists(partial_trash) &&
-                library.inspect_voice(first.library_id).health==VoiceHealth::valid,"Partial committed removal recovery failed");
+        require(recovered_removal.cleaned==0 && recovered_removal.pending==std::vector<std::filesystem::path>{partial_trash} && std::filesystem::exists(partial_trash/L"metadata.json") &&
+                library.inspect_voice(first.library_id).health==VoiceHealth::valid,"Unjournaled trash was blindly discarded");
+        cleanup_owned(partial_trash);
         {
             const auto held=fs::file(second_path,GENERIC_READ,FILE_SHARE_READ|FILE_SHARE_DELETE);
             try {

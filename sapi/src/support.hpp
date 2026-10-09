@@ -2,6 +2,7 @@
 #include <sapi.h>
 #include <sapiddk.h>
 #include <sperror.h>
+#include <algorithm>
 #include <limits>
 #include <stdexcept>
 #include <string>
@@ -27,27 +28,54 @@ inline std::string utf8(std::wstring_view text) {
     }
     return result;
 }
+// UTF-16 units: comfortably above the UI limit, bounded even for other hosts.
+inline constexpr std::size_t maximum_text_units=262144, maximum_fragments=8192;
+inline constexpr std::size_t maximum_bookmarks=1024, maximum_bookmark_units=65536;
+inline void collect_add(std::size_t& total,std::size_t amount,std::size_t limit) {
+    if (total>limit || amount>limit-total) { throw Failure{HRESULT_FROM_WIN32(ERROR_BUFFER_OVERFLOW)}; }
+    total+=amount;
+}
+struct CollectionControl {
+    bool (*poll)(void*)=nullptr;
+    void* context=nullptr;
+    bool aborted() const { return poll && poll(context); }
+};
 struct SpeechRequest {
     std::string text;
     std::vector<std::wstring> bookmarks;
+    bool cancelled=false;
 };
-inline SpeechRequest collect_request(const SPVTEXTFRAG* fragments) {
+inline SpeechRequest collect_request(const SPVTEXTFRAG* fragments,CollectionControl control={}) {
     SpeechRequest request;
     std::wstring text;
     std::unordered_set<const SPVTEXTFRAG*> visited;
+    std::size_t fragments_seen=0, text_units=0, bookmarks_seen=0, bookmark_units=0;
     for (auto f = fragments; f; f = f->pNext) {
+        if (control.aborted()) { return {{},{},true}; }
+        collect_add(fragments_seen,1,maximum_fragments);
         if (!visited.insert(f).second) { throw Failure{E_INVALIDARG}; }
         if (f->State.eAction == SPVA_Speak) {
             if (f->ulTextLen && !f->pTextStart) { throw Failure{E_POINTER}; }
-            if (f->ulTextLen) { text.append(f->pTextStart,f->ulTextLen); }
+            collect_add(text_units,f->ulTextLen,maximum_text_units);
+            for (std::size_t offset=0;offset<f->ulTextLen;) {
+                if (control.aborted()) { return {{},{},true}; }
+                const auto count=(std::min)(std::size_t{4096},static_cast<std::size_t>(f->ulTextLen)-offset);
+                text.append(f->pTextStart+offset,count); offset+=count;
+            }
         } else if (f->State.eAction == SPVA_Bookmark) {
+            collect_add(bookmarks_seen,1,maximum_bookmarks);
+            collect_add(bookmark_units,f->ulTextLen,maximum_bookmark_units);
             // Unsupported non-leading bookmarks remain metadata, as before
             // Step 2O. Rejecting the whole request here suppresses valid speech
             // when a host appends a bookmark. Do not invent an audio offset.
             if (!text.empty()) { continue; }
             if (f->ulTextLen && !f->pTextStart) { throw Failure{E_POINTER}; }
             std::wstring name;
-            if (f->ulTextLen) { name.assign(f->pTextStart,f->ulTextLen); }
+            for (std::size_t offset=0;offset<f->ulTextLen;) {
+                if (control.aborted()) { return {{},{},true}; }
+                const auto count=(std::min)(std::size_t{4096},static_cast<std::size_t>(f->ulTextLen)-offset);
+                name.append(f->pTextStart+offset,count); offset+=count;
+            }
             // SPEVENT carries a NUL-terminated string, so embedded NULs cannot
             // round-trip exactly. Fragment data itself need not be terminated.
             if (name.find(L'\0') != std::wstring::npos) { throw Failure{E_INVALIDARG}; }

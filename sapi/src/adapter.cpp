@@ -1,5 +1,7 @@
 #include "identity.hpp"
 #include "support.hpp"
+#include "asset_diagnostics.hpp"
+#include "error_logger.hpp"
 #include "outloud/orchestration.hpp"
 #include "outloud/pcm16.hpp"
 #include <atomic>
@@ -13,13 +15,38 @@ namespace outloud::sapi {
 namespace {
 std::atomic<long> objects{0}, locks{0};
 HMODULE module = nullptr;
-HRESULT exception_code() noexcept {
+HRESULT logged_result(logging::Event event,HRESULT hr) noexcept {
+    if (FAILED(hr)) {
+        logging::error({event,hr,HRESULT_FACILITY(hr)==FACILITY_WIN32 ? HRESULT_CODE(hr) : 0UL});
+    }
+    return hr;
+}
+HRESULT exception_code(bool publish=true,logging::Event event=logging::Event::synthesis) noexcept {
+    const auto log=[&](HRESULT hr,logging::Kind kind,DWORD system=0,logging::Component component=logging::Component::native) {
+        if (publish) { logging::error({event,hr,system,component,kind}); }
+        return hr;
+    };
     try { throw; }
-    catch (const Failure& e) { return e.code; }
-    catch (const std::bad_alloc&) { return E_OUTOFMEMORY; }
-    catch (const std::invalid_argument&) { return E_INVALIDARG; }
-    catch (const std::filesystem::filesystem_error& e) { return HRESULT_FROM_WIN32(static_cast<DWORD>(e.code().value())); }
-    catch (...) { return E_FAIL; }
+    catch (const AssetError& e) {
+        const auto detail=std::string_view(e.what());
+        const auto component=detail.starts_with("model: ") ? logging::Component::model :
+            detail.starts_with("tokenizer: ") ? logging::Component::tokenizer :
+            detail.starts_with("voice: ") ? logging::Component::voice : logging::Component::assets;
+        const auto kind=e.code==AssetErrorCode::io ? logging::Kind::asset_io :
+            e.code==AssetErrorCode::invalid_data ? logging::Kind::asset_invalid : logging::Kind::asset_compatibility;
+        (void)log(asset_hresult(e),kind,e.system_error,component);
+        return publish ? report_asset_error(e) : asset_hresult(e);
+    }
+    catch (const Failure& e) {
+        if (publish) { (void)logged_result(event,e.code); } return e.code;
+    }
+    catch (const std::bad_alloc&) { return log(E_OUTOFMEMORY,logging::Kind::allocation); }
+    catch (const std::invalid_argument&) { return log(E_INVALIDARG,logging::Kind::invalid_argument); }
+    catch (const std::filesystem::filesystem_error& e) {
+        const auto system=static_cast<DWORD>(e.code().value());
+        return log(HRESULT_FROM_WIN32(system),logging::Kind::filesystem,system);
+    }
+    catch (...) { return log(E_FAIL,logging::Kind::unexpected); }
 }
 std::wstring token_string(ISpObjectToken* token, const wchar_t* name, bool optional = false) {
     wchar_t* raw = nullptr;
@@ -71,7 +98,7 @@ Configuration read_configuration(ISpObjectToken* token) {
         if (native.size()<3 || native[1]!=L':' || native[2]!=L'\\' ||
             native.find(L':',2)!=std::wstring::npos || native.find(L'\0')!=std::wstring::npos) { throw Failure{E_INVALIDARG}; }
         if (std::wstring_view(key)==L"VoicePath" && _wcsicmp(path.extension().c_str(),L".olv")!=0) { throw Failure{E_INVALIDARG}; }
-        if (!std::filesystem::is_regular_file(path)) { throw Failure{HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND)}; }
+        readable_asset(path,std::wstring_view(key)==L"ModelPath" ? "model" : std::wstring_view(key)==L"TokenizerPath" ? "tokenizer" : "voice");
         return path;
     };
     Configuration c;
@@ -94,20 +121,30 @@ struct Resident {
     Tokenizer tokenizer;
     UtterancePipeline pipeline; // destroyed first: joins workers before assets/tokenizer
     explicit Resident(const Configuration& c)
-        : model(c.model), voice(c.voice), tokenizer(c.tokenizer),
+        : model(load_asset<PocketModelAsset>(c.model,"model")), voice(load_asset<OutLoudVoice>(c.voice,"voice")), tokenizer(load_asset<Tokenizer>(c.tokenizer,"tokenizer")),
           pipeline(model,voice,tokenizer,c.tokens,FlowLMGenerator::estimate_max_gen_len(c.tokens),c.path) {}
 };
 struct RequestControl {
     ISpTTSEngineSite* site;
     std::stop_source cancellation;
     bool aborted = false;
+    unsigned control_errors = 0;
+    void control_result(logging::Event event,HRESULT hr,unsigned bit) {
+        if (FAILED(hr) && !(control_errors&bit)) {
+            control_errors|=bit; (void)logged_result(event,hr);
+        }
+    }
     bool poll() {
         const auto actions = site->GetActions(); // always Speak caller thread
         if ((actions & SPVES_ABORT) && !aborted) { aborted = true; cancellation.request_stop(); }
         // Chatterbox policy: consume controls without waveform transforms/seeking.
-        if (actions & SPVES_RATE) { long value = 0; (void)site->GetRate(&value); }
-        if (actions & SPVES_VOLUME) { USHORT value = 100; (void)site->GetVolume(&value); }
-        if (actions & SPVES_SKIP) { SPVSKIPTYPE type{}; long count = 0; (void)site->GetSkipInfo(&type,&count); (void)site->CompleteSkip(0); }
+        if (actions & SPVES_RATE) { long value = 0; control_result(logging::Event::rate,site->GetRate(&value),1); }
+        if (actions & SPVES_VOLUME) { USHORT value = 100; control_result(logging::Event::volume,site->GetVolume(&value),2); }
+        if (actions & SPVES_SKIP) {
+            SPVSKIPTYPE type{}; long count = 0;
+            control_result(logging::Event::skip_info,site->GetSkipInfo(&type,&count),4);
+            control_result(logging::Event::skip_complete,site->CompleteSkip(0),8);
+        }
         return aborted;
     }
 };
@@ -116,7 +153,7 @@ HRESULT leading_bookmarks(RequestControl& control, const std::vector<std::wstrin
     if (names.empty()) { return S_OK; }
     ULONGLONG interest = 0;
     auto hr = control.site->GetEventInterest(&interest);
-    if (FAILED(hr)) { return hr; }
+    if (FAILED(hr)) { return logged_result(logging::Event::bookmark_interest,hr); }
     // SPFEI includes reserved flag-check bits; test only the bookmark bit.
     if (!(interest & (1ULL << SPEI_TTS_BOOKMARK))) { return S_OK; }
     for (const auto& name : names) {
@@ -132,7 +169,7 @@ HRESULT leading_bookmarks(RequestControl& control, const std::vector<std::wstrin
         // Microsoft samplettsengine frees its input string after AddEvents:
         // the site copies it. Our owned string remains alive through this call.
         hr = control.site->AddEvents(&event,1);
-        if (FAILED(hr)) { return hr; }
+        if (FAILED(hr)) { return logged_result(logging::Event::bookmark_delivery,hr); }
     }
     return S_OK;
 }
@@ -145,6 +182,7 @@ struct Delivery {
     std::array<std::int16_t,1920> pcm{};
     bool ready = false, done = false;
     HRESULT output_error = S_OK, native_error = S_OK;
+    std::exception_ptr native_failure;
     SynthesisStatus native_status = SynthesisStatus::completed;
     std::stop_token cancellation;
     explicit Delivery(std::stop_token stop) : cancellation(stop) {}
@@ -194,12 +232,22 @@ HRESULT stream(std::unique_ptr<Resident>& resident, const Configuration& configu
                 if (!d.cancellation.stop_requested()) {
                     resident->pipeline.prepare(text,configuration.seed);
                     if (!d.cancellation.stop_requested()) {
+#ifdef OUTLOUD_ERROR_LOGGER_TEST
+                        const auto fault=logging::fault();
+                        const GenerationObserver observer=[fault](const GenerationCall&) {
+                            if (fault==logging::Fault::worker_allocation) { throw std::bad_alloc{}; }
+                            throw std::runtime_error("PRIVATE_WORKER_MESSAGE C:\\Users\\private\\secret");
+                        };
+                        const auto probe=fault==logging::Fault::worker_exception || fault==logging::Fault::worker_allocation ? &observer : nullptr;
+                        status = resident->pipeline.run(Delivery::frame,&d,probe,d.cancellation).status;
+#else
                         status = resident->pipeline.run(Delivery::frame,&d,nullptr,d.cancellation).status;
+#endif
                     }
                 }
             }
         }
-        catch (...) { hr = exception_code(); }
+        catch (...) { d.native_failure=std::current_exception(); hr = exception_code(false); }
         std::lock_guard lock(d.mutex); d.native_error = hr; d.native_status = status; d.done = true; d.changed.notify_one();
     });
     try {
@@ -223,11 +271,18 @@ HRESULT stream(std::unique_ptr<Resident>& resident, const Configuration& configu
         d.changed.notify_all(); control.cancellation.request_stop(); coordinator.join(); return hr;
     }
     coordinator.join();
-    if (d.output_error!=S_OK) { return d.output_error; }
-    if (d.native_error!=S_OK) { return d.native_error; }
+    if (d.output_error!=S_OK) { return logged_result(logging::Event::write,d.output_error); }
+    if (d.native_error!=S_OK) {
+        if (d.native_failure) { try { std::rethrow_exception(d.native_failure); } catch (...) { return exception_code(); } }
+        return logged_result(logging::Event::synthesis,d.native_error);
+    }
     // Same distinction as Chatterbox: requested SAPI abort is normal S_OK;
     // an unexpected internally cancelled generation would be E_ABORT.
-    return d.native_status==SynthesisStatus::cancelled && !control.aborted ? E_ABORT : S_OK;
+    if (d.native_status==SynthesisStatus::cancelled && !control.aborted) {
+        logging::error({logging::Event::synthesis,E_ABORT,0,logging::Component::native,logging::Kind::unexpected_cancellation});
+        return E_ABORT;
+    }
+    return S_OK;
 }
 class Engine final : public ISpTTSEngine, public ISpObjectWithToken {
 public:
@@ -241,33 +296,38 @@ public:
     ULONG STDMETHODCALLTYPE AddRef() override { return ++references_; }
     ULONG STDMETHODCALLTYPE Release() override { const auto n = --references_; if (!n) { delete this; } return n; }
     HRESULT STDMETHODCALLTYPE SetObjectToken(ISpObjectToken* token) override {
-        if (!token) { return E_POINTER; }
+        if (!token) { return logged_result(logging::Event::configuration,E_POINTER); }
         try {
+            (void)SetErrorInfo(0,nullptr);
             auto c = read_configuration(token);
             std::unique_lock lock(serial_);
             available_.wait(lock,[&] { return !active_; });
             if (!token_ || !c.same_runtime(configuration_)) { resident_.reset(); }
             token->AddRef(); if (token_) { token_->Release(); } token_ = token;
             configuration_ = std::move(c); return S_OK;
-        } catch (...) { return exception_code(); }
+        } catch (...) { return exception_code(true,logging::Event::configuration); }
     }
     HRESULT STDMETHODCALLTYPE GetObjectToken(ISpObjectToken** token) override {
-        if (!token) { return E_POINTER; } *token = nullptr;
-        try { std::lock_guard lock(serial_); if (!token_) { return SPERR_UNINITIALIZED; }
+        if (!token) { return logged_result(logging::Event::token_access,E_POINTER); } *token = nullptr;
+        try { std::lock_guard lock(serial_); if (!token_) { return logged_result(logging::Event::token_access,SPERR_UNINITIALIZED); }
             token_->AddRef(); *token = token_; return S_OK;
-        } catch (...) { return exception_code(); }
+        } catch (...) { return exception_code(true,logging::Event::token_access); }
     }
     HRESULT STDMETHODCALLTYPE GetOutputFormat(const GUID*, const WAVEFORMATEX*, GUID* format, WAVEFORMATEX** wave) override {
-        if (!format || !wave) { return E_POINTER; } *wave = nullptr;
+        if (!format || !wave) { return logged_result(logging::Event::output_format,E_POINTER); } *wave = nullptr;
         const auto memory = static_cast<WAVEFORMATEX*>(CoTaskMemAlloc(sizeof(WAVEFORMATEX)));
-        if (!memory) { return E_OUTOFMEMORY; }
+        if (!memory) {
+            logging::error({logging::Event::output_format,E_OUTOFMEMORY,0,logging::Component::sapi,logging::Kind::allocation});
+            return E_OUTOFMEMORY;
+        }
         *memory = native_format(); *format = SPDFID_WaveFormatEx; *wave = memory; return S_OK;
     }
     HRESULT STDMETHODCALLTYPE Speak(DWORD, REFGUID format, const WAVEFORMATEX* wave, const SPVTEXTFRAG* fragments, ISpTTSEngineSite* site) override {
-        if (!site) { return E_POINTER; }
-        if (format!=SPDFID_WaveFormatEx || !valid_format(wave)) { return SPERR_UNSUPPORTED_FORMAT; }
+        if (!site) { return logged_result(logging::Event::synthesis,E_POINTER); }
+        if (format!=SPDFID_WaveFormatEx || !valid_format(wave)) { return logged_result(logging::Event::output_format,SPERR_UNSUPPORTED_FORMAT); }
         AddRef(); struct Keep { Engine* value; ~Keep() { value->Release(); } } keep{this};
         try {
+            (void)SetErrorInfo(0,nullptr);
             RequestControl control{site};
             if (control.poll()) { return S_OK; }
             std::unique_lock lock(serial_);
@@ -284,12 +344,13 @@ public:
                     engine->available_.notify_all();
                 }
             } end{this};
-            if (!token_) { return SPERR_UNINITIALIZED; }
-            const auto request = collect_request(fragments);
+            if (!token_) { return logged_result(logging::Event::synthesis,SPERR_UNINITIALIZED); }
+            const auto request = collect_request(fragments,{[](void* context) { return static_cast<RequestControl*>(context)->poll(); },&control});
+            if (request.cancelled) { return S_OK; }
             if (request.text.empty() && request.bookmarks.empty()) { return S_OK; }
             if (control.poll()) { return S_OK; }
             const auto hr = leading_bookmarks(control,request.bookmarks);
-            if (FAILED(hr)) { return hr; }
+            if (FAILED(hr)) { return hr; } // leading_bookmarks records the failed site operation.
             if (request.text.empty() || control.aborted) { return S_OK; }
             if (!request.bookmarks.empty() && control.poll()) { return S_OK; }
             return stream(resident_,configuration_,request.text,control);
@@ -319,7 +380,7 @@ public:
         if (!result) { return E_POINTER; } *result = nullptr;
         if (outer) { return CLASS_E_NOAGGREGATION; }
         try { auto engine = new Engine; const auto hr = engine->QueryInterface(iid,result); engine->Release(); return hr; }
-        catch (...) { return exception_code(); }
+        catch (...) { return exception_code(true,logging::Event::create_engine); }
     }
     HRESULT STDMETHODCALLTYPE LockServer(BOOL lock) override {
         if (lock) { ++locks; return S_OK; }
@@ -336,7 +397,7 @@ HRESULT get_class(REFCLSID clsid, REFIID iid, void** result) noexcept {
     if (!result) { return E_POINTER; } *result = nullptr;
     if (clsid!=engine_clsid) { return CLASS_E_CLASSNOTAVAILABLE; }
     try { auto factory = new Factory; const auto hr = factory->QueryInterface(iid,result); factory->Release(); return hr; }
-    catch (...) { return exception_code(); }
+    catch (...) { return exception_code(true,logging::Event::create_factory); }
 }
 HRESULT can_unload() noexcept { return objects.load()==0 && locks.load()==0 ? S_OK : S_FALSE; }
 void attach(HMODULE value) noexcept { module = value; }

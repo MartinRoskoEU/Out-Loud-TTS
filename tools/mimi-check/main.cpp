@@ -1,27 +1,9 @@
 #include "mimi_fixture_checks.hpp"
+#include "../audio/wav.hpp"
 #include <iostream>
 #include <optional>
 
 namespace {
-void little(std::ostream& out, std::uint32_t value, std::size_t bytes) {
-    for (std::size_t i = 0; i < bytes; ++i) { out.put(static_cast<char>((value >> (i * 8)) & 255)); }
-}
-void wav(const std::filesystem::path& path, std::span<const float> pcm) {
-    std::ofstream out(path, std::ios::binary);
-    out.write("RIFF", 4); little(out, static_cast<std::uint32_t>(36 + pcm.size() * 2), 4);
-    out.write("WAVEfmt ", 8); little(out, 16, 4); little(out, 1, 2); little(out, 1, 2);
-    little(out, 24000, 4); little(out, 48000, 4); little(out, 2, 2); little(out, 16, 2);
-    out.write("data", 4); little(out, static_cast<std::uint32_t>(pcm.size() * 2), 4);
-    for (float value : pcm) {
-        // Explicit round-to-nearest, ties-to-even, independent of process rounding mode.
-        const double scaled = std::clamp(double(value), -1.0, 1.0) * 32767;
-        const double low = std::floor(scaled), fraction = scaled - low;
-        const auto lower = static_cast<int>(low);
-        const int rounded = lower + (fraction > 0.5 || (fraction == 0.5 && lower % 2 != 0) ? 1 : 0);
-        little(out, static_cast<std::uint16_t>(static_cast<std::int16_t>(rounded)), 2);
-    }
-    outloud::test::neural_require(bool(out), "Cannot write listening WAV");
-}
 void write_report(const std::filesystem::path& path, const outloud::test::MimiReport& r) {
     std::ofstream out(path);
     out << std::setprecision(17) << "{\n\"case_a\": "; outloud::test::write_sampler_errors(out, r.errors);
@@ -53,7 +35,7 @@ int wmain(int argc, wchar_t** argv) {
         const auto audio = directory.parent_path() / "audio";
         if (write_audio) {
             std::filesystem::create_directories(audio);
-            wav(audio / "upstream-segment1.wav", fixture.values("pcm.complete"));
+            outloud::development::write_pcm16_wave(audio / "upstream-segment1.wav", fixture.values("pcm.complete"));
         }
         std::optional<outloud::test::MimiReport> portable;
         std::cout << "Out Loud Pocket Mimi decoder\nReference latent frames: 46\nSample rate: 24000\nSamples/frame: 1920\nExpected samples: 88320\n";
@@ -82,8 +64,8 @@ int wmain(int argc, wchar_t** argv) {
                 std::cout << "Path agreement: " << (measure ? "MEASURED" : "PASS") << '\n';
             } else {
                 if (write_audio) {
-                    wav(audio / "native-reference-latents.wav", r.reference_pcm);
-                    wav(audio / "native-free-running.wav", r.native_pcm);
+                    outloud::development::write_pcm16_wave(audio / "native-reference-latents.wav", r.reference_pcm);
+                    outloud::development::write_pcm16_wave(audio / "native-free-running.wav", r.native_pcm);
                 }
                 portable = std::move(r);
             }

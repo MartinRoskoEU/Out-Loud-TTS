@@ -134,7 +134,7 @@ int wmain(int argc,wchar_t** argv) {
     try {
         check(argc==6,"Usage: multi-voice-check DLL MODEL TOKENIZER GNOME.olv UNDEAD.olv");
         hr(CoInitializeEx(nullptr,COINIT_MULTITHREADED),"Cannot initialize COM."); struct EndCOM { ~EndCOM() { CoUninitialize(); } } end_com;
-        sapi_test::Scratch scratch; outloud::VoiceLibrary library(scratch.path/L"hlasy-\u017e");
+        outloud::test::Scratch scratch; outloud::VoiceLibrary library(scratch.path/L"hlasy-\u017e");
         const auto a = library.import_olv(argv[4],"Gnome test").voice;
         const auto b = library.import_olv(argv[5],"Undead test").voice;
         const auto expected_a = reference(argv[2],argv[3],a.managed_olv_path), expected_b = reference(argv[2],argv[3],b.managed_olv_path);

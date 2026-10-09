@@ -45,7 +45,7 @@ std::size_t MimiDecoderState::convolution_bytes() const {
     std::size_t bytes = 0; for (const auto& c : carry_) { bytes += c.capacity() * 4; } return bytes;
 }
 MimiDecoder::MimiDecoder(PocketModelAsset model, cpu::KernelPath path)
-    : model_(std::move(model)), kernels_(path), convolutions_(path), a_(122880), b_(122880), residual_(122880),
+    : model_(std::move(model)), kernels_(path), convolutions_(model_,path), a_(122880), b_(122880), residual_(122880),
       hidden_(8192), norm_(8192), packed_(24576), queries_(8192), keys_(8192), values_(8192),
       attention_(8192), update_(8192), ffn_(32768) {}
 std::size_t MimiDecoder::scratch_bytes() const {
@@ -119,7 +119,7 @@ std::span<const float> MimiDecoder::decode_frame(std::span<const float> latent,
         auto conv = [&](std::size_t configuration, std::span<const float> in, std::span<float> out) {
             const auto& spec = cpu::mimi_convolutions[configuration];
             if (observer) { observer(std::string(spec.name) + ".input", in); observer(std::string(spec.name) + ".state_before", state.carry_[configuration]); }
-            convolutions_.run(model_, configuration, in, state.carry_[configuration], out);
+            convolutions_.run(configuration, in, state.carry_[configuration], out);
             if (observer) { observer(std::string(spec.name) + ".output", out); observer(std::string(spec.name) + ".state_after", state.carry_[configuration]); }
         };
         auto a = std::span(a_), b = std::span(b_), residual = std::span(residual_);

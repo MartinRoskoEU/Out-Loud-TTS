@@ -10,15 +10,51 @@ namespace {
 void require(bool condition, const char* message) {
     if (!condition) { throw std::invalid_argument(message); }
 }
+std::size_t checked_product(std::size_t a,std::size_t b) {
+    if (b && a>std::numeric_limits<std::size_t>::max()/b) { throw std::length_error("Mimi phase weight size overflow"); }
+    return a*b;
+}
 }
 std::size_t convolution_state_elements(const MimiConvolutionSpec& s) {
     return (s.transpose ? s.output : s.input) * (s.kernel - s.stride);
 }
-MimiConvolutionKernels::MimiConvolutionKernels(KernelPath path) : kernels_(path), windows_(368640) {}
+MimiConvolutionKernels::MimiConvolutionKernels(PocketModelAsset model,KernelPath path)
+    : model_(std::move(model)),kernels_(path),windows_(368640) {
+    std::size_t total=0;
+    for (std::size_t i=0;i<mimi_convolutions.size();++i) {
+        const auto& s=mimi_convolutions[i];
+        if (!s.transpose || s.groups!=1) { continue; }
+        require(s.stride>0 && s.kernel==2*s.stride,"Unsupported Mimi transpose phase layout");
+        const auto tensor=model_.tensor(static_cast<PocketTensorId>(s.weight));
+        const auto count=checked_product(checked_product(s.input,s.output),s.kernel);
+        require(tensor.dimensions.size()==3 && tensor.dimensions[0]==s.input && tensor.dimensions[1]==s.output &&
+                tensor.dimensions[2]==s.kernel && tensor.bf16_values.size()==count,"Mimi transpose weight shape mismatch");
+        if (count>std::numeric_limits<std::size_t>::max()-total) { throw std::length_error("Mimi phase weight total overflow"); }
+        phase_offsets_[i]=total; total+=count;
+    }
+    require(total<=phase_weights_.max_size() && total<=std::numeric_limits<std::size_t>::max()/sizeof(float),"Mimi phase weight allocation overflow");
+    phase_weights_.resize(total);
+    for (std::size_t i=0;i<mimi_convolutions.size();++i) {
+        const auto& s=mimi_convolutions[i];
+        if (!s.transpose || s.groups!=1) { continue; }
+        const auto weight=model_.tensor(static_cast<PocketTensorId>(s.weight)).bf16_values;
+        const auto width=std::size_t(s.input)*2;
+        for (std::size_t c=0;c<s.output;++c) {
+            for (std::size_t p=0;p<s.stride;++p) {
+                auto row=std::span(phase_weights_).subspan(phase_offsets_[i]+(c*s.stride+p)*width,width);
+                for (std::size_t in=0;in<s.input;++in) {
+                    const auto w=(in*s.output+c)*s.kernel+p;
+                    row[in*2]=bf16_to_float32(weight[w]);
+                    row[in*2+1]=bf16_to_float32(weight[w+s.stride]);
+                }
+            }
+        }
+    }
+}
 std::size_t MimiConvolutionKernels::scratch_bytes() const {
     return windows_.capacity() * 4 + sizeof(row_) + Kernels::widening_scratch_bytes();
 }
-void MimiConvolutionKernels::run(const PocketModelAsset& model, std::size_t configuration,
+void MimiConvolutionKernels::run(std::size_t configuration,
         std::span<const float> input, std::span<float> carry, std::span<float> output) {
     require(configuration < mimi_convolutions.size(), "Unknown Mimi convolution");
     const auto& s = mimi_convolutions[configuration];
@@ -28,9 +64,9 @@ void MimiConvolutionKernels::run(const PocketModelAsset& model, std::size_t conf
             carry.size() == convolution_state_elements(s) &&
             output.size() == steps * s.output * (s.transpose ? s.stride : 1) &&
             input.data() != output.data(), "Mimi convolution dimensions/alias mismatch");
-    const auto weight = model.tensor(static_cast<PocketTensorId>(s.weight)).bf16_values;
+    const auto weight = model_.tensor(static_cast<PocketTensorId>(s.weight)).bf16_values;
     const auto bias = s.bias < 0 ? std::span<const std::uint16_t>{}
-                               : model.tensor(static_cast<PocketTensorId>(s.bias)).bf16_values;
+                               : model_.tensor(static_cast<PocketTensorId>(s.bias)).bf16_values;
     const auto add = [&](std::size_t c) { return bias.empty() ? 0.0f : bf16_to_float32(bias[c]); };
     if (!s.transpose) {
         const auto width = s.input * s.kernel, history = s.kernel - 1;
@@ -78,17 +114,11 @@ void MimiConvolutionKernels::run(const PocketModelAsset& model, std::size_t conf
     }
     for (std::size_t c = 0; c < s.output; ++c) {
         for (std::size_t p = 0; p < s.stride; ++p) {
-            OUTLOUD_PERF_CALL(::outloud::perf::Stage::preparation, {
-            for (std::size_t in = 0; in < s.input; ++in) {
-                const auto w = (in * s.output + c) * s.kernel + p;
-                row_[in * 2] = bf16_to_float32(weight[w]);
-                row_[in * 2 + 1] = bf16_to_float32(weight[w + s.stride]);
-            }
-            });
-            kernels_.dot_rows(std::span(row_).first(width), {std::span(windows_).first(steps * width), steps, width},
+            const auto row=std::span<const float>(phase_weights_).subspan(phase_offsets_[configuration]+(c*s.stride+p)*width,width);
+            kernels_.dot_rows(row, {std::span(windows_).first(steps * width), steps, width},
                               output.subspan(c * length + p, length - p), s.stride, add(c));
             output[c * length + p] += carry[c * s.stride + p];
-            const float tail = kernels_.dot(std::span(row_).first(width), std::span(windows_).subspan(steps * width, width)) + add(c);
+            const float tail = kernels_.dot(row, std::span(windows_).subspan(steps * width, width)) + add(c);
             carry[c * s.stride + p] = tail - add(c); // Source explicitly subtracts the tail bias.
         }
     }

@@ -95,6 +95,28 @@ void invalid_states(const outloud::PocketModelAsset& model, const outloud::OutLo
         rejected([&] { (void)backbone.backbone(embeddings, other_state); }, "state mismatch");
     }
 }
+void reusable_prefill(const outloud::PocketModelAsset& model,const outloud::OutLoudVoice& voice,outloud::cpu::KernelPath path) {
+    outloud::FlowLMBackbone backbone(model,voice,path);
+    auto state=backbone.make_state(20); outloud::FlowLMResult reused;
+    std::size_t capacity=0;
+    for (const auto count:{20U,1U,7U,20U}) {
+        const auto tokens=std::span(outloud::test::neural_tokens).first(count);
+        state.reset(); const auto expected=backbone.prefill(tokens,state);
+        state.reset(); backbone.prefill_into(tokens,state,reused);
+        neural_require(outloud::test::same_float_bits(expected.normalized,reused.normalized) &&
+            std::bit_cast<std::uint32_t>(expected.eos_logit)==std::bit_cast<std::uint32_t>(reused.eos_logit) &&
+            state.offset()==voice.prefix_length()+count,"Reusable prefill contents/offset differ");
+        if (!capacity) { capacity=reused.normalized.capacity(); }
+        neural_require(reused.normalized.capacity()==capacity,"Shorter prefill discarded retained output capacity");
+    }
+    state.reset();
+    rejected([&] { backbone.prefill_into(outloud::test::neural_tokens,state,reused,[](auto name,auto,auto) {
+        if (name=="layer0.k_suffix") { throw std::runtime_error("Reusable observer failure"); }
+    }); },"observer failure");
+    state.reset(); backbone.prefill_into(outloud::test::neural_tokens,state,reused);
+    neural_require(reused.normalized.capacity()==capacity && state.offset()==voice.prefix_length()+20,"Reusable prefill did not recover");
+    std::cout << outloud::cpu::path_name(path) << ": prefill_into lengths 20/1/7/20, owned-result equality and failure/reset PASS\n";
+}
 } // namespace
 
 int wmain(int argc, wchar_t** argv) {
@@ -112,6 +134,7 @@ int wmain(int argc, wchar_t** argv) {
         portable.primitives = std::move(portable_primitives);
         outloud::test::enforce_report(portable);
         invalid_states(model, voice, assets);
+        reusable_prefill(model,voice,outloud::cpu::KernelPath::portable);
         const outloud::cpu::Kernels automatic(outloud::cpu::KernelPath::automatic);
         neural_require(automatic.selected_path() == (outloud::cpu::optimized_available() ? outloud::cpu::KernelPath::avx2_fma
                                                                                       : outloud::cpu::KernelPath::portable),
@@ -124,6 +147,7 @@ int wmain(int argc, wchar_t** argv) {
             optimized.primitives = std::move(optimized_primitives);
             outloud::test::enforce_report(optimized);
             outloud::test::enforce_path_agreement(outloud::test::compare_paths(portable, optimized));
+            reusable_prefill(model,voice,outloud::cpu::KernelPath::avx2_fma);
             std::cout << "AVX2/FMA and portable agreement: PASS\n";
         } else {
             rejected([] { outloud::cpu::Kernels unavailable(outloud::cpu::KernelPath::avx2_fma); }, "unavailable");

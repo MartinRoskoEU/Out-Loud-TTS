@@ -27,14 +27,20 @@ inline constexpr std::array<MimiConvolutionSpec, 12> mimi_convolutions = {{
 [[nodiscard]] std::size_t convolution_state_elements(const MimiConvolutionSpec& spec);
 class MimiConvolutionKernels {
 public:
-    explicit MimiConvolutionKernels(KernelPath path = KernelPath::portable);
-    void run(const PocketModelAsset& model, std::size_t configuration, std::span<const float> input,
+    explicit MimiConvolutionKernels(PocketModelAsset model, KernelPath path = KernelPath::portable);
+    void run(std::size_t configuration, std::span<const float> input,
              std::span<float> carry, std::span<float> output);
     [[nodiscard]] std::size_t scratch_bytes() const;
+    [[nodiscard]] std::size_t prepared_weight_bytes() const { return phase_weights_.capacity()*sizeof(float); }
 private:
+    friend struct MimiConvolutionTestAccess;
+    PocketModelAsset model_;
     Kernels kernels_;
     std::vector<float> windows_;
     std::array<float, 4096> row_{};
+    // Dense transpose rows [Cout, phase, Cin, current/previous], never reset.
+    std::vector<float> phase_weights_;
+    std::array<std::size_t,12> phase_offsets_{};
 };
 void mimi_rope(std::span<float> queries, std::span<float> keys, std::uint32_t offset);
 [[nodiscard]] bool mimi_visible(std::uint32_t query, std::uint32_t key) noexcept;

@@ -1,5 +1,7 @@
 # Step 3D.4: Out Loud Voice Tester
 
+> Historical Step 3D.4 design/validation evidence. Current user procedures are in [VOICE_MANAGER_GUIDE.md](VOICE_MANAGER_GUIDE.md); build/check selection is in [A11/A12](BUILD_AND_VALIDATION_IMPROVEMENTS.md). Past test results do not certify later installed binaries.
+
 The WPF Voice Manager now has Voice Library and Voice Tester pages. The tester
 uses the installed production SAPI engine, with one exact managed machine token
 per request. Play, Stop and Export WAV are implemented. Test text survives

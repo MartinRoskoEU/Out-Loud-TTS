@@ -2,8 +2,11 @@
 # No App startup, production native read, real registry access or visible UI.
 [CmdletBinding()]
 param([ValidateSet('Debug','Release')][string]$Configuration = 'Release',
-      [string]$NativeBuildDirectory = (Join-Path $PSScriptRoot '..\..\build'))
+      [string]$NativeBuildDirectory)
 $ErrorActionPreference = 'Stop'
+if (-not $PSBoundParameters.ContainsKey('NativeBuildDirectory')) {
+    $NativeBuildDirectory = Join-Path $PSScriptRoot '..\..\build'
+}
 $nativeDirectory = [IO.Path]::GetFullPath($NativeBuildDirectory)
 $previousCertificateSetting = $env:DOTNET_GENERATE_ASPNET_CERTIFICATE
 try {

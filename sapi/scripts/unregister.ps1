@@ -1,63 +1,43 @@
 #Requires -Version 5.1
-# MANUAL removal of one explicitly named Pocket token. No wildcard deletion/HKCU cleanup.
-# Retains the shared COM class while ANY other token references it, including other voice packs.
+# MANUAL shared-engine removal only. Refuses while any HKLM voice references it.
+# Does not delete voice tokens, library entries or deployment files.
 [CmdletBinding()]
-param(
-    [string]$TokenName = 'OutLoud_Pocket_GnomeMale_Development',
-    [Parameter(Mandatory = $true)][string]$ReportDirectory
-)
+param([Parameter(Mandatory = $true)][string]$ReportDirectory)
 . (Join-Path $PSScriptRoot 'registry-common.ps1')
 Assert-RegistryAdministrator
 Assert-GameClosed
 Assert-NoUserOverride
-$tokenPath = Get-PocketTokenPath $TokenName
-if ($TokenName -match '^OutLoud_Pocket_[0-9a-f]{32}$') {
-    throw 'Managed library tokens use outloud-sapi-voices remove; this legacy helper cannot remove them.'
-}
 $machine = [Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::LocalMachine, [Microsoft.Win32.RegistryView]::Registry64)
 try {
     Assert-OwnedClass $machine
-    Assert-OwnedToken $machine $tokenPath
-    $before = @{ engine_class = (Read-RegistryTree $machine $PocketClassPath); voice_token = (Read-RegistryTree $machine $tokenPath) }
-    if ($null -eq $before.voice_token) { throw 'Selected Pocket token is not registered; nothing changed.' }
-    $otherUsers = @()
-    $voices = $machine.OpenSubKey($PocketVoiceRoot)
-    try {
-        foreach ($name in $voices.GetSubKeyNames()) {
-            if ($name -eq $TokenName) { continue }
-            $key = $voices.OpenSubKey($name)
-            try { if ($key.GetValue('CLSID') -eq $PocketClsid) { $otherUsers += $name } } finally { $key.Dispose() }
-        }
-    } finally { $voices.Dispose() }
-    # Managed HKCU voices can share the machine engine. Retain that COM class
-    # even if the development token is its last HKLM voice.
-    $user = [Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::CurrentUser, [Microsoft.Win32.RegistryView]::Registry64)
-    try {
-        $userVoices = $user.OpenSubKey($PocketVoiceRoot)
-        if ($null -ne $userVoices) {
-            try {
-                foreach ($name in $userVoices.GetSubKeyNames()) {
-                    $key = $userVoices.OpenSubKey($name)
-                    try { if ($key.GetValue('CLSID') -eq $PocketClsid) { $otherUsers += "HKCU:$name" } }
-                    finally { $key.Dispose() }
-                }
-            } finally { $userVoices.Dispose() }
-        }
-    } finally { $user.Dispose() }
+    $before = @{ engine_class = (Read-RegistryTree $machine $PocketClassPath) }
+    if ($null -eq $before.engine_class) { throw 'Shared Pocket engine is not registered; nothing changed.' }
+    function Assert-NoMachineVoiceReferences {
+        $voices = $machine.OpenSubKey($PocketVoiceRoot)
+        if ($null -eq $voices) { return }
+        try {
+            foreach ($name in $voices.GetSubKeyNames()) {
+                $key = $voices.OpenSubKey($name)
+                if ($null -eq $key) { throw 'Voice token changed during engine dependency check; retry after all voice operations finish.' }
+                try {
+                    if ($key.GetValue('CLSID') -eq $PocketClsid) {
+                        throw "Shared engine is still referenced by machine voice '$name'. Remove managed voices through Voice Manager first; unowned registrations need separate manual review."
+                    }
+                } finally { $key.Dispose() }
+            }
+        } finally { $voices.Dispose() }
+    }
+    Assert-NoMachineVoiceReferences
     Save-RegistrySnapshot $ReportDirectory $before
     Assert-GameClosed
-    try {
-        $machine.DeleteSubKeyTree($tokenPath, $false)
-        if ($otherUsers.Count -eq 0) { $machine.DeleteSubKeyTree($PocketClassPath, $false) }
-    } catch {
+    Assert-OwnedClass $machine
+    Assert-NoMachineVoiceReferences
+    try { $machine.DeleteSubKeyTree($PocketClassPath, $false) }
+    catch {
         $original = $_
-        $rollbackErrors = @()
-        try { Restore-RegistryTree $machine $tokenPath $before.voice_token } catch { $rollbackErrors += $_.Exception.Message }
-        if ($otherUsers.Count -eq 0) {
-            try { Restore-RegistryTree $machine $PocketClassPath $before.engine_class } catch { $rollbackErrors += $_.Exception.Message }
-        }
-        if ($rollbackErrors.Count) { throw "Unregistration failed: $original. Rollback failed: $($rollbackErrors -join '; '). See $ReportDirectory." }
+        try { Restore-RegistryTree $machine $PocketClassPath $before.engine_class }
+        catch { throw "Engine unregistration failed: $original. Rollback failed: $($_.Exception.Message). See $ReportDirectory." }
         throw $original
     }
-    Write-Output "UNREGISTERED only HKLM Registry64 $tokenPath. Retained other shared-engine tokens: $($otherUsers -join ', '). Snapshot: $ReportDirectory"
+    Write-Output "UNREGISTERED only shared engine HKLM Registry64 $PocketClassPath. Snapshot: $ReportDirectory. No voice token or library changes."
 } finally { $machine.Dispose() }

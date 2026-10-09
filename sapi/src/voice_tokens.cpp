@@ -2,17 +2,16 @@
 #include "outloud/assets.hpp"
 #include "outloud/tokenizer.hpp"
 #include "identity.hpp"
+#include "token_comparison.hpp"
 #include "voice_library_fs.hpp"
 #include <cstring>
+#include "asset_io.hpp"
 #include <set>
 
 namespace outloud {
 namespace {
 using Code = SapiVoiceErrorCode;
 constexpr std::wstring_view marker = L"OutLoud.ManagedVoice.1";
-void scope_check(SapiVoiceScope scope) {
-    if (scope!=SapiVoiceScope::user && scope!=SapiVoiceScope::machine) { throw SapiVoiceError(Code::unsupported_scope,"Unknown SAPI voice scope; no fallback."); }
-}
 Code library_code(const VoiceLibraryError& error) {
     return error.code()==VoiceLibraryErrorCode::library_access_denied ? Code::library_access_denied : Code::library_failure;
 }
@@ -44,7 +43,7 @@ SapiTokenTree without_name(SapiTokenTree tree) {
     return tree;
 }
 bool candidate(std::wstring_view key,const SapiTokenTree& tree) {
-    return key.starts_with(L"OutLoud_Pocket_") && key!=sapi::token_name &&
+    return key.starts_with(L"OutLoud_Pocket_") &&
         (key.size()==47 || tree.values.contains(L"OutLoudManagedOwner") || tree.values.contains(L"LibraryId"));
 }
 }
@@ -55,7 +54,7 @@ std::string_view sapi_voice_error_name(Code code) noexcept {
     switch (code) {
 #define CASE(x) case Code::x: return #x
     CASE(invalid_id); CASE(voice_not_found); CASE(unhealthy_voice); CASE(incompatible_voice); CASE(token_not_found);
-    CASE(token_conflict); CASE(malformed_token); CASE(registry_access_denied); CASE(registry_io); CASE(unsupported_scope);
+    CASE(token_conflict); CASE(malformed_token); CASE(registry_access_denied); CASE(registry_io);
     CASE(engine_registration_missing); CASE(invalid_runtime); CASE(library_failure); CASE(reconciliation_required); CASE(internal_failure);
     CASE(engine_registration_malformed); CASE(engine_dll_mismatch); CASE(engine_dll_inaccessible);
     CASE(invalid_machine_library_root); CASE(library_access_denied);
@@ -86,19 +85,17 @@ std::wstring managed_sapi_token_key(std::string_view id) {
     if (!detail::library_fs::id(id)) { throw SapiVoiceError(Code::invalid_id,"Expected 32 lowercase hexadecimal library ID."); }
     return L"OutLoud_Pocket_"+wide(id);
 }
-std::wstring managed_sapi_token_id(std::string_view id,SapiVoiceScope scope) {
-    scope_check(scope);
-    return std::wstring(scope==SapiVoiceScope::machine ? L"HKEY_LOCAL_MACHINE" : L"HKEY_CURRENT_USER")+
-        L"\\SOFTWARE\\Microsoft\\Speech\\Voices\\Tokens\\"+managed_sapi_token_key(id);
+std::wstring managed_sapi_token_id(std::string_view id) {
+    return L"HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Speech\\Voices\\Tokens\\"+managed_sapi_token_key(id);
 }
 SapiVoiceManager::SapiVoiceManager(VoiceLibrary library,SapiVoiceRuntime runtime,std::shared_ptr<SapiVoiceRegistry> registry,
     MachineVoiceLibraryPolicy machine_policy)
     : library_(std::move(library)),runtime_(std::move(runtime)),registry_(std::move(registry)),machine_policy_(machine_policy) {
     if (!registry_) { throw SapiVoiceError(Code::internal_failure,"Missing registry backend."); }
 }
-void SapiVoiceManager::validate_machine_library(SapiVoiceScope scope) const {
-    if (scope==SapiVoiceScope::machine && machine_policy_!=MachineVoiceLibraryPolicy::development_override && !library_.is_machine_storage()) {
-        throw SapiVoiceError(Code::invalid_machine_library_root,"Production HKLM tokens require the ProgramData OutLoud/VoiceLibrary; other roots require an explicit development override.");
+void SapiVoiceManager::validate_machine_library() const {
+    if (machine_policy_!=MachineVoiceLibraryPolicy::development_override && !library_.is_machine_storage()) {
+        throw SapiVoiceError(Code::invalid_machine_library_root,"Production HKLM tokens require the ProgramData OutLoud/VoiceLibrary; other roots are allowed only by the explicit isolated-test policy.");
     }
 }
 LibraryVoice SapiVoiceManager::voice(std::string_view id) const {
@@ -120,7 +117,7 @@ SapiTokenTree SapiVoiceManager::desired(const LibraryVoice& v) const {
     auto& attr = tree.children[L"Attributes"];
     set(attr,L"Name",name); set(attr,L"Language",L"409"); set(attr,L"Vendor",L"Out Loud"); return tree;
 }
-void SapiVoiceManager::validate_runtime(const LibraryVoice& v,SapiVoiceScope scope) const {
+void SapiVoiceManager::validate_runtime(const LibraryVoice& v) const {
     if (v.health!=VoiceHealth::valid) { throw SapiVoiceError(Code::unhealthy_voice,v.detail); }
     try {
         detail::library_fs::Pins root(runtime_.asset_root);
@@ -137,24 +134,40 @@ void SapiVoiceManager::validate_runtime(const LibraryVoice& v,SapiVoiceScope sco
     catch (const VoiceLibraryError& e) { throw SapiVoiceError(e.code()==VoiceLibraryErrorCode::library_access_denied ? Code::library_access_denied : Code::invalid_runtime,e.what(),e.system_error(),e); }
     catch (const SapiVoiceError&) { throw; }
     catch (const std::exception& e) { throw SapiVoiceError(Code::invalid_runtime,e.what()); }
-    registry_->verify_engine(runtime_.engine_dll,scope);
+    registry_->verify_engine(runtime_.engine_dll);
 }
-SapiVoiceToken SapiVoiceManager::inspect(std::string_view id,SapiVoiceScope scope) const {
-    scope_check(scope);
+SapiVoiceToken SapiVoiceManager::inspect(std::string_view id) const {
+    return inspect_impl(id,nullptr);
+}
+std::vector<SapiVoiceSnapshotRow> SapiVoiceManager::read_snapshot() const {
+    std::vector<SapiVoiceSnapshotRow> rows;
+    library_.with_read_snapshot([&](std::vector<LibraryVoice>&& voices) {
+        rows.reserve(voices.size());
+        for (auto& voice:voices) {
+            SapiVoiceSnapshotRow row;
+            try { row.token=inspect_impl(voice.library_id,&voice); }
+            catch (const SapiVoiceError& error) { row.error=error; }
+            row.voice=std::move(voice); rows.push_back(std::move(row));
+        }
+    });
+    return rows;
+}
+SapiVoiceToken SapiVoiceManager::inspect_impl(std::string_view id,const LibraryVoice* snapshot) const {
     SapiVoiceToken result; result.library_id = id; result.token_key = managed_sapi_token_key(id);
-    try { result.tree = registry_->read(scope,result.token_key); }
+    try { result.tree = registry_->read(result.token_key); }
     catch (const SapiVoiceError& e) {
         if (e.code!=Code::malformed_token) { throw; }
         result.status = SapiTokenStatus::malformed; result.detail = e.what(); result.suggested_action = "review_registry"; return result;
     }
-    std::optional<LibraryVoice> v;
-    try { v = voice(id); } catch (const SapiVoiceError& e) { if (e.code!=Code::voice_not_found) { throw; } }
+    std::optional<LibraryVoice> fresh;
+    if (!snapshot) { try { fresh=voice(id); } catch (const SapiVoiceError& e) { if (e.code!=Code::voice_not_found) { throw; } } }
+    const auto* v=snapshot ? snapshot : (fresh ? &*fresh : nullptr);
     if (!result.tree) { result.status = v && v->health!=VoiceHealth::valid ? SapiTokenStatus::unhealthy_voice : SapiTokenStatus::missing; }
     else if (!owned(*result.tree,id)) { result.status = SapiTokenStatus::conflict; }
     else if (!shape(*result.tree)) { result.status = SapiTokenStatus::malformed; }
     else if (!v) { result.status = SapiTokenStatus::orphan; }
     else if (v->health!=VoiceHealth::valid) { result.status = SapiTokenStatus::unhealthy_voice; result.detail = v->detail; }
-    else if (scope==SapiVoiceScope::machine && machine_policy_!=MachineVoiceLibraryPolicy::development_override && !library_.is_machine_storage()) {
+    else if (machine_policy_!=MachineVoiceLibraryPolicy::development_override && !library_.is_machine_storage()) {
         result.status = SapiTokenStatus::wrong_path;
         result.detail = "This diagnostic library root is not production machine storage; HKLM install/update are prohibited.";
     }
@@ -165,8 +178,11 @@ SapiVoiceToken SapiVoiceManager::inspect(std::string_view id,SapiVoiceScope scop
             result.detail = "Library identity/path/name checked; shared runtime configuration was not supplied.";
         }
         if (text(*result.tree,L"VoicePath")!=text(expected,L"VoicePath")) { result.status = SapiTokenStatus::wrong_path; }
-        else if (*result.tree==expected) { result.status = SapiTokenStatus::correct; }
-        else if (without_name(*result.tree)==without_name(expected)) { result.status = SapiTokenStatus::stale_name; }
+        else if (sapi::same_token(*result.tree,expected)) { result.status = SapiTokenStatus::correct; }
+        else if (sapi::same_token(without_name(*result.tree),without_name(expected))) {
+            result.status = SapiTokenStatus::stale_name;
+            result.detail = "SAPI display names differ from the Voice Library name. Voice data is intact; exact names are required. Manually reconcile the owned machine token before replacement.";
+        }
         else { result.status = SapiTokenStatus::conflict; }
     }
     if (result.detail.empty()) { result.detail = std::string(sapi_token_status_name(result.status)); }
@@ -180,63 +196,89 @@ SapiVoiceToken SapiVoiceManager::inspect(std::string_view id,SapiVoiceScope scop
     }
     return result;
 }
-std::vector<SapiVoiceToken> SapiVoiceManager::list(SapiVoiceScope scope) const {
-    scope_check(scope); std::vector<SapiVoiceToken> rows;
-    for (const auto& key : registry_->keys(scope)) {
-        // Ignore peers and legacy tokens without reading their contents.
-        if (!key.starts_with(L"OutLoud_Pocket_") || key==sapi::token_name) { continue; }
+std::vector<SapiVoiceToken> SapiVoiceManager::list() const {
+    std::vector<SapiVoiceToken> rows;
+    for (const auto& key : registry_->keys()) {
+        // Ignore foreign keys; ownership checks classify managed candidates.
+        if (!key.starts_with(L"OutLoud_Pocket_")) { continue; }
         std::optional<SapiTokenTree> tree;
-        try { tree = registry_->read(scope,key); }
+        try { tree = registry_->read(key); }
         catch (const SapiVoiceError& e) {
             if (e.code!=Code::malformed_token) { throw; }
             rows.push_back({key,{},SapiTokenStatus::malformed,e.what(),{},"review_registry"}); continue;
         }
         if (!tree || !candidate(key,*tree)) { continue; }
         const auto id = utf8(key.substr(15));
-        if (detail::library_fs::id(id)) { rows.push_back(inspect(id,scope)); }
+        if (detail::library_fs::id(id)) { rows.push_back(inspect(id)); }
         else { rows.push_back({key,{},SapiTokenStatus::malformed,"Unexpected managed candidate key; manual review required.",tree,"review_registry"}); }
     } return rows;
 }
-std::vector<SapiVoiceToken> SapiVoiceManager::reconcile(SapiVoiceScope scope) const {
-    auto rows = list(scope);
+std::vector<SapiVoiceToken> SapiVoiceManager::reconcile() const {
+    auto rows = list();
     std::vector<LibraryVoice> voices;
     try { voices = library_.list_voices(); }
     catch (const VoiceLibraryError& e) { throw SapiVoiceError(library_code(e),e.what(),e.system_error(),e); }
     for (const auto& v : voices) {
-        if (std::none_of(rows.begin(),rows.end(),[&](const auto& row) { return row.library_id==v.library_id; })) { rows.push_back(inspect(v.library_id,scope)); }
+        if (std::none_of(rows.begin(),rows.end(),[&](const auto& row) { return row.library_id==v.library_id; })) { rows.push_back(inspect(v.library_id)); }
     } return rows;
 }
-SapiTokenChange SapiVoiceManager::install(std::string_view id,SapiVoiceScope scope) {
-    scope_check(scope); validate_machine_library(scope); const auto v = voice(id); validate_runtime(v,scope); const auto next = desired(v);
-    const auto key = managed_sapi_token_key(id); const auto old = registry_->read(scope,key);
-    if (old==std::optional(next)) { return SapiTokenChange::already_installed; }
+SapiTokenChange SapiVoiceManager::install(std::string_view id) {
+    validate_machine_library(); const auto v = voice(id); validate_runtime(v); const auto next = desired(v);
+    const auto key = managed_sapi_token_key(id); const auto old = registry_->read(key);
+    if (old && sapi::same_token(*old,next)) { return SapiTokenChange::already_installed; }
     if (old) { throw SapiVoiceError(Code::token_conflict,"Token exists with different contents; reconcile before changing it."); }
-    registry_->exchange(scope,key,{},next); return SapiTokenChange::installed;
+    registry_->exchange(key,{},next); return SapiTokenChange::installed;
 }
-void SapiVoiceManager::validate_replacement(const LibraryVoice& current,const std::filesystem::path& staged,SapiVoiceScope scope) const {
-    scope_check(scope); validate_machine_library(scope);
+void SapiVoiceManager::validate_replacement(const LibraryVoice& current,const std::filesystem::path& staged) const {
+    validate_machine_library();
     if (!current.metadata || current.health!=VoiceHealth::valid || current.managed_olv_path!=library_.root()/L"voices"/wide(current.library_id)/L"voice.olv") {
         throw SapiVoiceError(Code::unhealthy_voice,"Replacement target must be a healthy managed entry.");
     }
-    auto candidate=current; candidate.managed_olv_path=staged; validate_runtime(candidate,scope);
-    const auto expected=desired(current); const auto actual=registry_->read(scope,managed_sapi_token_key(current.library_id));
-    if (actual!=std::optional(expected)) { throw SapiVoiceError(Code::reconciliation_required,"Replacement requires the existing owned machine token to be correct. Reconcile it first; no content was published."); }
+    auto candidate=current; candidate.managed_olv_path=staged; validate_runtime(candidate);
+    const auto expected=desired(current); const auto actual=registry_->read(managed_sapi_token_key(current.library_id));
+    if (!actual || !sapi::same_token(*actual,expected)) { throw SapiVoiceError(Code::reconciliation_required,"Replacement requires the existing owned machine token to be correct. Reconcile it first; no content was published."); }
 }
-SapiTokenChange SapiVoiceManager::update(std::string_view id,SapiVoiceScope scope) {
-    scope_check(scope); validate_machine_library(scope); const auto v = voice(id); validate_runtime(v,scope); const auto next = desired(v);
-    const auto key = managed_sapi_token_key(id); const auto old = registry_->read(scope,key);
+SapiTokenChange SapiVoiceManager::update(std::string_view id) {
+    validate_machine_library(); const auto v = voice(id); validate_runtime(v); auto next = desired(v);
+    const auto key = managed_sapi_token_key(id); const auto old = registry_->read(key);
     if (!old) { throw SapiVoiceError(Code::token_not_found,"Token is not installed."); }
-    if (!owned(*old,id) || !shape(*old) || without_name(*old)!=without_name(next)) {
+    if (!owned(*old,id) || !shape(*old) || !sapi::same_token(without_name(*old),without_name(next))) {
         throw SapiVoiceError(Code::reconciliation_required,"Only an owned token with exclusively stale name fields can be updated.");
     }
-    if (*old==next) { return SapiTokenChange::unchanged; }
-    registry_->exchange(scope,key,old,next); return SapiTokenChange::updated;
+    if (sapi::same_token(*old,next)) { return SapiTokenChange::unchanged; }
+    sapi::retain_runtime_spelling(next,*old);
+    registry_->exchange(key,old,next); return SapiTokenChange::updated;
 }
-SapiTokenChange SapiVoiceManager::remove(std::string_view id,SapiVoiceScope scope) {
-    scope_check(scope); const auto key = managed_sapi_token_key(id); const auto old = registry_->read(scope,key);
+namespace {
+std::string removal_identity(const SapiTokenTree& tree,std::string_view id) {
+    if (!owned(tree,id)) { throw SapiVoiceError(Code::token_conflict,"Removal token ownership, ID or CLSID differs."); }
+    if (!shape(tree)) { throw SapiVoiceError(Code::malformed_token,"Removal token has unexpected fields/types/subkeys."); }
+    detail::Sha256 digest;
+    const auto number=[&](std::uint64_t value) {
+        std::array<unsigned char,8> bytes{}; for (unsigned i=0;i<8;++i) { bytes[i]=static_cast<unsigned char>(value>>(8*i)); } digest.update(bytes);
+    };
+    const auto value=[&](std::wstring_view name,const SapiRegistryValue& data) {
+        number(name.size()); digest.update({reinterpret_cast<const unsigned char*>(name.data()),name.size()*sizeof(wchar_t)});
+        number(data.type); number(data.bytes.size()); digest.update(data.bytes);
+    };
+    number(tree.values.size()); for (const auto& [name,data]:tree.values) { value(name,data); }
+    const auto& attributes=tree.children.at(L"Attributes");
+    number(attributes.values.size()); for (const auto& [name,data]:attributes.values) { value(name,data); }
+    return detail::hex(digest.finish());
+}
+}
+std::string SapiVoiceManager::removal_registration_identity(std::string_view id) const {
+    const auto token=registry_->read(managed_sapi_token_key(id));
+    return token ? removal_identity(*token,id) : "absent";
+}
+SapiTokenChange SapiVoiceManager::remove(std::string_view id,std::string_view expected_identity) {
+    const auto key = managed_sapi_token_key(id); const auto old = registry_->read(key);
     if (!old) { throw SapiVoiceError(Code::token_not_found,"Token is not installed."); }
     if (!owned(*old,id)) { throw SapiVoiceError(Code::token_conflict,"Ownership, library ID or CLSID differs."); }
     if (!shape(*old)) { throw SapiVoiceError(Code::malformed_token,"Unexpected registry values/subkeys; refusing removal."); }
-    registry_->exchange(scope,key,old,{}); return SapiTokenChange::removed;
+    if (!expected_identity.empty() && removal_identity(*old,id)!=expected_identity) {
+        throw SapiVoiceError(Code::token_conflict,"Token changed after removal preparation; nothing unregistered.");
+    }
+    registry_->exchange(key,old,{}); return SapiTokenChange::removed;
 }
 } // namespace outloud

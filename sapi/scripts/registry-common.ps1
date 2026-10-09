@@ -4,6 +4,7 @@
 $PocketClsid = '{F38C3398-3552-43B9-8350-7DD301327D70}'
 $PocketClassPath = "SOFTWARE\Classes\CLSID\$PocketClsid"
 $PocketVoiceRoot = 'SOFTWARE\Microsoft\Speech\Voices\Tokens'
+# Existing shared-engine ownership marker; independent of managed voice tokens.
 $PocketOwner = 'OutLoudPocketSAPI-2M'
 
 function Assert-RegistryAdministrator {
@@ -19,10 +20,6 @@ function Assert-GameClosed {
         throw 'Close WoW manually before changing registration. This script never stops processes.'
     }
 }
-function Get-PocketTokenPath([string]$TokenName) {
-    if ($TokenName -notmatch '^OutLoud_Pocket_[A-Za-z0-9_]+$') { throw 'TokenName must start OutLoud_Pocket_ and contain only ASCII letters, digits and underscores.' }
-    return "$PocketVoiceRoot\$TokenName"
-}
 function Assert-OwnedClass($Machine, [string]$ExpectedDll = '') {
     $key = $Machine.OpenSubKey($PocketClassPath)
     if ($null -eq $key) { return }
@@ -33,25 +30,16 @@ function Assert-OwnedClass($Machine, [string]$ExpectedDll = '') {
         try {
             if ($server.GetValue('ThreadingModel') -ne 'Both' -or -not $server.GetValue('')) { throw 'Unexpected Pocket COM server registration.' }
             if ($ExpectedDll -and $server.GetValue('') -ne $ExpectedDll) {
-                throw 'This CLSID uses another deployment. Unregister its Pocket tokens manually before switching bundles.'
+                throw 'This CLSID uses another deployment. Select the existing shared deployment; replacing engine registration requires separate manual maintenance.'
             }
         } finally { $server.Dispose() }
-    } finally { $key.Dispose() }
-}
-function Assert-OwnedToken($Machine, [string]$Path) {
-    $key = $Machine.OpenSubKey($Path)
-    if ($null -eq $key) { return }
-    try {
-        if ($key.GetValue('OutLoudPocketOwner') -ne $PocketOwner -or $key.GetValue('CLSID') -ne $PocketClsid) {
-            throw "Voice token is not owned by this Pocket engine: $Path"
-        }
     } finally { $key.Dispose() }
 }
 function Assert-NoUserOverride {
     $user = [Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::CurrentUser, [Microsoft.Win32.RegistryView]::Registry64)
     try {
         $key = $user.OpenSubKey($PocketClassPath)
-        if ($null -ne $key) { $key.Dispose(); throw 'An HKCU override for the new Pocket CLSID exists; inspect it manually. No HKCU cleanup is performed.' }
+        if ($null -ne $key) { $key.Dispose(); throw 'An HKCU override for the shared Pocket CLSID exists; inspect it manually. No HKCU cleanup is performed.' }
     } finally { $user.Dispose() }
 }
 function Read-RegistryTree($Base, [string]$Path) {

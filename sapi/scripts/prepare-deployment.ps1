@@ -6,8 +6,7 @@ param(
     [string]$BuildDirectory = 'build/Release',
     [Parameter(Mandatory = $true)][string]$DeploymentRoot,
     [string]$ModelPath = 'generated/assets/pocket-english.olp',
-    [string]$TokenizerPath = 'generated/tokenizer/pocket-english-tokenizer.bin',
-    [string]$VoicePath = 'generated/assets/gnome_male.olv'
+    [string]$TokenizerPath = 'generated/tokenizer/pocket-english-tokenizer.bin'
 )
 . (Join-Path $PSScriptRoot 'deployment-common.ps1')
 if (-not [Environment]::Is64BitProcess) { throw 'Use x64 PowerShell.' }
@@ -28,9 +27,9 @@ $sources = [ordered]@{
     'bin/vcruntime140_1.dll' = (Join-Path $env:SystemRoot 'System32/vcruntime140_1.dll')
     'runtime/pocket-english.olp' = (Source-Path $ModelPath)
     'runtime/pocket-english-tokenizer.bin' = (Source-Path $TokenizerPath)
-    'voices/gnome_male.olv' = (Source-Path $VoicePath)
     'deployment-inventory.json' = (Join-Path $ProjectRoot 'sapi/deployment-inventory.json')
     'docs/SAPI_ADAPTER.md' = (Join-Path $ProjectRoot 'docs/SAPI_ADAPTER.md')
+    'docs/MULTI_VOICE_SAPI.md' = (Join-Path $ProjectRoot 'docs/MULTI_VOICE_SAPI.md')
     'docs/SAPI_CANCELLATION.md' = (Join-Path $ProjectRoot 'docs/SAPI_CANCELLATION.md')
     'RNG_NOTICES.md' = (Join-Path $ProjectRoot 'RNG_NOTICES.md')
 }

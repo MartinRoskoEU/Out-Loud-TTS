@@ -3,20 +3,36 @@
 #include <iostream>
 #include <limits>
 #include <new>
+#include "mimi_transpose_checks.hpp"
 
-namespace { bool audit = false; std::size_t allocations = 0; }
+namespace { bool audit = false; std::size_t allocations = 0, live_allocations = 0; std::int64_t fail_after = -1; }
 void* operator new(std::size_t size) {
-    if (void* p = std::malloc(size == 0 ? 1 : size)) { if (audit) { ++allocations; } return p; }
+    if (fail_after==0) { throw std::bad_alloc(); }
+    if (fail_after>0) { --fail_after; }
+    if (void* p = std::malloc(size == 0 ? 1 : size)) { ++live_allocations; if (audit) { ++allocations; } return p; }
     throw std::bad_alloc();
 }
 void* operator new[](std::size_t size) { return ::operator new(size); }
-void operator delete(void* p) noexcept { std::free(p); }
-void operator delete[](void* p) noexcept { std::free(p); }
-void operator delete(void* p, std::size_t) noexcept { std::free(p); }
-void operator delete[](void* p, std::size_t) noexcept { std::free(p); }
+void operator delete(void* p) noexcept { if (p) { --live_allocations; } std::free(p); }
+void operator delete[](void* p) noexcept { ::operator delete(p); }
+void operator delete(void* p, std::size_t) noexcept { ::operator delete(p); }
+void operator delete[](void* p, std::size_t) noexcept { ::operator delete(p); }
 
 namespace {
 using outloud::test::neural_require;
+void initialization_failures(const outloud::PocketModelAsset& model) {
+    allocations=0; audit=true;
+    { outloud::MimiDecoder decoder(model); }
+    audit=false; const auto count=allocations;
+    for (std::size_t at=0;at<count;++at) {
+        const auto before=live_allocations; fail_after=static_cast<std::int64_t>(at); bool failed=false;
+        try { outloud::MimiDecoder decoder(model); }
+        catch (const std::bad_alloc&) { failed=true; }
+        fail_after=-1;
+        neural_require(failed && live_allocations==before,"Failed Mimi initialization leaked owned buffers");
+    }
+    std::cout << "Mimi initialization: " << count << " injected allocation failures released all owned buffers\n";
+}
 template<class Function> void rejected(Function f, std::string_view reason) {
     try { f(); } catch (const std::exception& e) {
         neural_require(std::string_view(e.what()).find(reason) != std::string_view::npos, "Mimi rejected for unexpected reason"); return;
@@ -102,9 +118,11 @@ int wmain(int argc, wchar_t** argv) {
         const outloud::PocketModelAsset model(std::filesystem::path(argv[1]) / "pocket-english.olp");
         const outloud::test::MimiFixture fixture(argv[2]);
         neural_require(outloud::MimiDecoder(model).selected_path() == outloud::cpu::KernelPath::portable, "Mimi default is not portable");
+        initialization_failures(model);
         for (const auto path : {outloud::cpu::KernelPath::portable, outloud::cpu::KernelPath::avx2_fma}) {
             if (path == outloud::cpu::KernelPath::avx2_fma && !outloud::cpu::optimized_available()) { continue; }
             outloud::test::enforce_mimi_errors(outloud::test::check_mimi_convolutions(model, fixture, path));
+            outloud::test::transpose_cache_checks(model,fixture,path);
             attention_window(path); lifecycle(model, fixture, path);
         }
         rejected([] { outloud::test::SamplerError e{}; e.raw.max_absolute = 1; outloud::test::enforce_mimi_errors({{"pcm.complete", e}}); }, "gate failed");

@@ -16,13 +16,34 @@ void observe(const SamplerObserver& observer, std::string_view name, std::span<c
     if (observer) { observer(name, values); }
 }
 struct Scratch {
-    std::array<float, 512> x, y, norm, h, update, s, t, condition_silu;
+    std::array<float, 512> x, y, norm, h, update, condition_silu;
     std::array<float, 1536> parameters;
-    std::array<float, 256> features;
 };
 static_assert(sizeof(Scratch) == FlowSampler::activation_scratch_bytes());
 } // namespace
-FlowSampler::FlowSampler(PocketModelAsset model, cpu::KernelPath path) : model_(std::move(model)), kernels_(path) {}
+FlowSampler::FlowSampler(PocketModelAsset model, cpu::KernelPath path) : model_(std::move(model)), kernels_(path) {
+    time_embedding(0,time_[0]); time_embedding(1,time_[1]);
+}
+void FlowSampler::time_embedding(std::uint32_t index,std::span<float> output,const SamplerObserver& observer) {
+    std::array<float,256> features;
+    std::array<float,512> norm;
+    const float value=static_cast<float>(index); // s=0, t=1 only
+    const std::uint32_t base=60+6*index;
+    const auto p=index==0 ? "time.s." : "time.t.";
+    auto tensor=[&](std::uint32_t id) { return model_.tensor(static_cast<PocketTensorId>(id)); };
+    auto linear=[&](std::span<const float> input,std::uint32_t weight,std::uint32_t bias,std::span<float> result) {
+        kernels_.linear({input,1,input.size()},tensor(weight),{result,1,result.size()},tensor(bias).bf16_values);
+    };
+    auto emit=[&](std::string_view name,std::span<const float> values) {
+        if (observer) { observe(observer,std::string(p)+std::string(name),values); }
+    };
+    emit("scalar",{&value,1});
+    cpu::time_features(value,tensor(base).bf16_values,features); emit("features",features);
+    linear(features,base+2,base+1,norm); emit("linear1",norm);
+    cpu::silu(norm); emit("silu",norm);
+    linear(norm,base+4,base+3,output); emit("mlp",output);
+    cpu::sample_variance_norm(output,tensor(base+5).bf16_values,output); emit("normalized",output);
+}
 FlowSample FlowSampler::sample(std::span<const float> hidden, std::span<const float> supplied_noise,
                                const SamplerObserver& observer) {
     OUTLOUD_PERF_DOMAIN(sampler); OUTLOUD_PERF_SCOPE(::outloud::perf::Stage::sampler);
@@ -37,26 +58,15 @@ FlowSample FlowSampler::sample(std::span<const float> hidden, std::span<const fl
     observe(observer, "input.projected", work.x);
     linear(hidden, 5, 4, work.y);
     observe(observer, "condition.projected", work.y);
-    auto time_embedding = [&](std::uint32_t index, std::span<float> output) {
-        const float value = static_cast<float>(index); // s=0, t=1 only
-        const std::uint32_t base = 60 + 6 * index;
-        const auto p = index == 0 ? "time.s." : "time.t.";
-        auto emit = [&](std::string_view name, std::span<const float> values) {
-            if (observer) { observe(observer, std::string(p) + std::string(name), values); }
-        };
-        emit("scalar", {&value, 1});
-        cpu::time_features(value, tensor(base).bf16_values, work.features);
-        emit("features", work.features);
-        linear(work.features, base + 2, base + 1, work.norm);
-        emit("linear1", work.norm);
-        cpu::silu(work.norm); emit("silu", work.norm);
-        linear(work.norm, base + 4, base + 3, output); emit("mlp", output);
-        cpu::sample_variance_norm(output, tensor(base + 5).bf16_values, output);
-        emit("normalized", output);
-    };
-    time_embedding(0, work.s); time_embedding(1, work.t);
-    OUTLOUD_PERF_CALL(::outloud::perf::Stage::modulation, for (std::size_t i = 0; i < 512; ++i) { work.y[i] = work.y[i] + (work.s[i] + work.t[i]) / 2.0f; });
+    if (observer) {
+        // Preserve detailed development checkpoints without retaining every time-MLP stage.
+        // These recomputations are observation-only; inference below always consumes the cache.
+        std::array<float,512> observed;
+        time_embedding(0,observed,observer); time_embedding(1,observed,observer);
+    }
+    OUTLOUD_PERF_CALL(::outloud::perf::Stage::modulation, for (std::size_t i = 0; i < 512; ++i) { work.y[i] = work.y[i] + (time_[0][i] + time_[1][i]) / 2.0f; });
     observe(observer, "condition.combined", work.y);
+    work.condition_silu=work.y; cpu::silu(work.condition_silu);
     static_assert(static_cast<std::uint32_t>(PocketTensorId::flow_lm_flow_net_res_blocks_0_adaLN_modulation_1_bias) == 12);
     static_assert(static_cast<std::uint32_t>(PocketTensorId::flow_lm_flow_net_res_blocks_5_mlp_2_weight) == 59);
     for (std::uint32_t block = 0; block < 6; ++block) {
@@ -66,7 +76,7 @@ FlowSample FlowSampler::sample(std::span<const float> hidden, std::span<const fl
             if (observer) { observe(observer, p + std::string(name), values); }
         };
         emit("input", work.x);
-        work.condition_silu = work.y; cpu::silu(work.condition_silu); emit("condition_silu", work.condition_silu);
+        emit("condition_silu", work.condition_silu);
         linear(work.condition_silu, base + 1, base, work.parameters);
         const auto shift = std::span(work.parameters).first(512);
         const auto scale = std::span(work.parameters).subspan(512, 512);
@@ -83,7 +93,6 @@ FlowSample FlowSampler::sample(std::span<const float> hidden, std::span<const fl
         emit("gated_update", work.update);
         cpu::residual_add(work.x, work.update); emit("output", work.x);
     }
-    work.condition_silu = work.y; cpu::silu(work.condition_silu);
     observe(observer, "final.condition_silu", work.condition_silu);
     const auto final_parameters = std::span(work.parameters).first(1024);
     linear(work.condition_silu, 7, 6, final_parameters);

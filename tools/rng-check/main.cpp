@@ -10,6 +10,7 @@
 #include <iostream>
 #include <new>
 #include <sstream>
+#include <string_view>
 
 namespace { bool audit = false; std::uint64_t allocations = 0; }
 void* operator new(std::size_t size) {
@@ -32,8 +33,10 @@ void state_equal(const outloud::ProductionNoiseSource& rng, std::span<const std:
         std::memcmp(state.words.data(), bytes.data()+16, 624*4) == 0, "MT19937 engine progression differs");
 }
 }
-int wmain() {
+int wmain(int argc, wchar_t** argv) {
     try {
+        const bool check_only = argc == 2 && std::wstring_view(argv[1]) == L"--check-only";
+        require(argc == 1 || check_only, "Usage: outloud-rng-check [--check-only]");
         const std::filesystem::path directory = OUTLOUD_RNG_DIRECTORY;
         outloud::detail::MappedFile fixture(directory / "rng-reference.bin", outloud::test::rng_fixture_bytes);
         const auto bytes = fixture.bytes();
@@ -78,6 +81,11 @@ int wmain() {
         const auto first = rng.next(); std::array<float, 32> saved;
         std::copy(first.begin(), first.end(), saved.begin()); rng.reseed(74);
         require(std::memcmp(rng.next().data(), saved.data(), 128) != 0, "Different seed failed to change output");
+        if (check_only) {
+            std::cout << "PASS: exact PyTorch noise bits, engine states, reseed and zero draw allocations; "
+                      << checked << " draws. Timing deliberately not run.\n";
+            return 0;
+        }
         // A single 48-draw timing: small diagnostic, no statistical campaign.
         rng.reseed(73); allocations = 0; audit = true;
         const auto start = std::chrono::steady_clock::now();

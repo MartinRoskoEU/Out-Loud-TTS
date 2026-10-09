@@ -162,7 +162,7 @@ void cancellation_checks(UtterancePipeline& pipeline,std::span<const float> refe
     report << "],\"orchestration_object_bytes\":" << storage.object_bytes << ",\"worker_inline_bytes\":" << storage.worker_inline_bytes << "}\n";
     require(bool(report),"Cannot write native cancellation report");
 }
-void correctness(UtterancePipeline& pipeline, const std::filesystem::path& directory, const char* path) {
+void correctness(UtterancePipeline& pipeline, const std::filesystem::path& directory, const char* path, bool sapi_reference) {
     using namespace outloud::test;
     require(canonical == full_text, "Canonical text changed");
     // Existing text API, source-backed empty/limit probes, no extra generation.
@@ -241,19 +241,30 @@ void correctness(UtterancePipeline& pipeline, const std::filesystem::path& direc
     result_json(report,results[0]); report << ','; result_json(report,results[1]); report << "]}\n";
     require(bool(report), "Cannot write correctness report");
     if (std::string_view(path) == "avx2") {
+        std::filesystem::create_directories(directory.parent_path()/"audio");
+        std::filesystem::create_directories(directory.parent_path()/"orchestration");
         development::write_pcm16_wave(directory.parent_path()/"audio/native-full-canonical-avx2.wav",pcm);
         std::ofstream raw(directory.parent_path()/"orchestration/native-full-canonical-avx2.f32",std::ios::binary);
         raw.write(reinterpret_cast<const char*>(pcm.data()),std::streamsize(pcm.size()*4)); require(bool(raw),"Cannot write native development PCM");
     }
     std::cout << "PASS: full tokens/splits, continuous RNG, EOS/counts, immediate streaming, A/B bit equality and sink error recovery; SHA " << hash << '\n';
     cancellation_checks(pipeline,first,directory);
+    if (sapi_reference) {
+        const auto output = directory.parent_path()/"orchestration/native-full-canonical-auto.f32";
+        std::filesystem::create_directories(output.parent_path());
+        std::ofstream raw(output,std::ios::binary);
+        raw.write(reinterpret_cast<const char*>(pcm.data()),std::streamsize(pcm.size()*4));
+        require(bool(raw),"Cannot write fresh registration-free SAPI reference");
+    }
 }
 #endif
 }
 int wmain(int argc, wchar_t** argv) {
     try {
-        const bool portable = argc >= 2 && std::wstring_view(argv[1]) == L"portable";
-        require(argc <= 3 && (argc < 2 || portable || std::wstring_view(argv[1]) == L"avx2"), "Usage: outloud-utterance-check|synth [avx2|portable] [bench]");
+        const bool automatic = argc >= 2 && std::wstring_view(argv[1]) == L"auto";
+        const bool portable = (argc >= 2 && std::wstring_view(argv[1]) == L"portable") ||
+                              (automatic && !cpu::optimized_available());
+        require(argc <= 3 && (argc < 2 || automatic || portable || std::wstring_view(argv[1]) == L"avx2"), "Usage: outloud-utterance-check|synth [auto|avx2|portable] [bench]");
         const auto path = portable ? cpu::KernelPath::portable : cpu::KernelPath::avx2_fma;
         const char* suffix = portable ? "portable" : "avx2";
         const std::filesystem::path assets = OUTLOUD_ASSET_DIRECTORY;
@@ -266,7 +277,7 @@ int wmain(int argc, wchar_t** argv) {
         const auto directory = assets.parent_path()/"perf"; std::filesystem::create_directories(directory);
 #ifdef OUTLOUD_UTTERANCE_CHECK
         require(argc <= 2, "Correctness checker has no benchmark mode");
-        correctness(pipeline,directory,suffix);
+        correctness(pipeline,directory,suffix,automatic);
 #else
         const bool benchmark = argc == 3 && std::wstring_view(argv[2]) == L"bench";
         require(argc < 3 || benchmark, "Unknown synthesis mode");

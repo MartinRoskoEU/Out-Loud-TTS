@@ -14,22 +14,23 @@ public:
     std::map<std::wstring,SapiTokenTree> tokens;
     bool fixture_setup = false, deny = false, unexpected = false, deny_exchange = false;
     unsigned writes = 0, verifies = 0, reads = 0;
-    void scope(SapiVoiceScope value) { check(value==SapiVoiceScope::machine,"Bridge used non-machine scope."); }
-    std::vector<std::wstring> keys(SapiVoiceScope value) override {
-        scope(value); throw std::runtime_error("Bridge must inspect library rows, not enumerate unrelated registry tokens.");
+    std::function<void(std::wstring_view)> before_read;
+    std::vector<std::wstring> keys() override {
+        throw std::runtime_error("Bridge must inspect library rows, not enumerate unrelated registry tokens.");
     }
-    std::optional<SapiTokenTree> read(SapiVoiceScope value,std::wstring_view key) override {
-        scope(value); ++reads;
+    std::optional<SapiTokenTree> read(std::wstring_view key) override {
+        ++reads;
         if (deny) { throw SapiVoiceError(SapiVoiceErrorCode::registry_access_denied,"Injected registry denial.",5); }
         if (unexpected) { throw std::runtime_error("private C++ exception details"); }
+        if (before_read) { before_read(key); }
         const auto it = tokens.find(std::wstring(key)); return it==tokens.end() ? std::nullopt : std::optional(it->second);
     }
-    void verify_engine(const std::filesystem::path&,SapiVoiceScope value) override {
-        scope(value); check(fixture_setup,"Read-only bridge attempted engine verification."); ++verifies;
+    void verify_engine(const std::filesystem::path&) override {
+        check(fixture_setup,"Read-only bridge attempted engine verification."); ++verifies;
     }
-    void exchange(SapiVoiceScope value,std::wstring_view key,const std::optional<SapiTokenTree>& expected,
+    void exchange(std::wstring_view key,const std::optional<SapiTokenTree>& expected,
         const std::optional<SapiTokenTree>& replacement) override {
-        scope(value); check(fixture_setup,"Read-only bridge attempted token mutation.");
+        check(fixture_setup,"Read-only bridge attempted token mutation.");
         if (deny_exchange) { throw SapiVoiceError(SapiVoiceErrorCode::registry_io,"Injected token transaction failure.",5); }
         const auto name = std::wstring(key); const auto it = tokens.find(name);
         const auto current = it==tokens.end() ? std::nullopt : std::optional(it->second);
@@ -71,6 +72,8 @@ struct Module {
 #include "../mutation/tests.hpp"
 #include "../mutation/replace_tests.hpp"
 #include "../mutation/remove_tests.hpp"
+#include "../mutation/removal_recovery_tests.hpp"
+#include "refresh_tests.hpp"
 int wmain(int argc,wchar_t** argv) {
     try {
         check(argc==7,"Usage: bridge-tests BRIDGE SAPI MODEL TOKENIZER VOICE.olv PREPARED.safetensors");
@@ -85,7 +88,7 @@ int wmain(int argc,wchar_t** argv) {
         check(outloud_vm_result_snapshot(nullptr)==nullptr && outloud_vm_result_error(nullptr)==nullptr,"NULL getters.");
         check(outloud_vm_result_content(nullptr,0)==nullptr,"NULL content extension getter.");
         outloud_vm_result_free(nullptr);
-        sapi_test::Scratch scratch;
+        outloud::test::Scratch scratch;
         VoiceLibrary absent(scratch.path/L"absent"); auto registry = std::make_shared<FakeRegistry>();
         check(frontend::read_injected(absent,registry,nullptr)==OUTLOUD_VM_INVALID_ARGUMENT,"NULL output accepted.");
         auto empty = read(absent,registry);
@@ -120,6 +123,8 @@ int wmain(int argc,wchar_t** argv) {
         mutation_checks(argv[6],argv[2],runtime,scratch.path);
         replacement_checks(argv[6],runtime,scratch.path);
         removal_checks(argv[6],runtime,scratch.path);
+        removal_recovery_checks(argv[6],runtime,scratch.path);
+        refresh_checks(argv[5],argv[6],runtime,scratch.path);
         SapiVoiceManager setup(library,runtime,registry,MachineVoiceLibraryPolicy::development_override);
         registry->fixture_setup = true; (void)setup.install(id); registry->fixture_setup = false;
         const auto fixture_writes = registry->writes, fixture_verifies = registry->verifies;
