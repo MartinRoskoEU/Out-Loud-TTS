@@ -111,7 +111,7 @@ LibraryVoice SapiVoiceManager::voice(std::string_view id) const {
 SapiTokenTree SapiVoiceManager::desired(const LibraryVoice& v) const {
     if (v.health!=VoiceHealth::valid || !v.metadata) { throw SapiVoiceError(Code::unhealthy_voice,v.detail); }
     SapiTokenTree tree;
-    const auto name = L"Out Loud - "+wide(v.metadata->display_name);
+    const auto name = wide(v.metadata->display_name);
     set(tree,L"",name); set(tree,L"409",name); set(tree,L"CLSID",sapi::clsid_text);
     set(tree,L"OutLoudManagedOwner",marker); set(tree,L"LibraryId",wide(v.library_id));
     set(tree,L"AssetRoot",runtime_.asset_root.wstring()); set(tree,L"ModelPath",runtime_.model.wstring());
