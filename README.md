@@ -2,8 +2,8 @@
 
 Out Loud provides offline English narration for the Out Loud World of Warcraft
 addon through a native Pocket TTS engine and Windows SAPI5. Its x64 WPF Voice
-Manager imports prepared voices, replaces/removes them, tests speech and exports
-test audio to WAV.
+Manager imports prepared Pocket and `.olv` voices, replaces/removes them, exports
+portable `.olv` voice files, tests speech and exports test audio to WAV.
 
 The supported production library is machine-wide, normally
 `C:\ProgramData\OutLoud\VoiceLibrary`. Voices have immutable library IDs and

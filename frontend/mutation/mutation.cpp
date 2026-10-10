@@ -32,7 +32,7 @@ Request decode_request(std::span<const std::uint8_t> bytes) {
     if (bytes.size()>limit || bytes.size()<16) { malformed(); }
     Reader reader{bytes};
     if (reader.number()!=magic || reader.number()!=version) { malformed(); }
-    const auto kind=reader.number(); if ((kind<1 || kind>3) || reader.number()!=bytes.size()-16) { malformed(); }
+    const auto kind=reader.number(); if ((kind<1 || kind>5) || reader.number()!=bytes.size()-16) { malformed(); }
     if (kind==3) {
         auto id=reader.string(), name=reader.string(), expected_hash=reader.string(), health=reader.string();
         if (!fs::id(id) || !reader.remaining.empty() || health.empty() || health.size()>32 ||
@@ -41,14 +41,14 @@ Request decode_request(std::span<const std::uint8_t> bytes) {
     }
     const auto source = reader.string(), name = reader.string();
     std::string id, expected_hash;
-    if (kind==2) { id=reader.string(); expected_hash=reader.string();
+    if (kind==2 || kind==5) { id=reader.string(); expected_hash=reader.string();
         if (!fs::id(id) || expected_hash.size()!=64 || expected_hash.find_first_not_of("0123456789abcdef")!=expected_hash.npos) { malformed(); } }
     if (!reader.remaining.empty() || source.empty() || name.empty()) { malformed(); }
     // Transport constraints only. Native VoiceLibrary/importer own all file/name validation.
     const std::filesystem::path supplied = fs::wide(source);
     if (!supplied.is_absolute()) { malformed(); }
     auto path = fs::local(supplied,VoiceLibraryErrorCode::source_io);
-    if (_wcsicmp(path.extension().c_str(),L".safetensors")!=0) { malformed(); }
+    if (_wcsicmp(path.extension().c_str(),kind==4 || kind==5 ? L".olv" : L".safetensors")!=0) { malformed(); }
     return {std::move(path),name,static_cast<Operation>(kind),id,expected_hash};
 }
 std::vector<std::uint8_t> encode_result(const Result& result) {
@@ -133,18 +133,18 @@ Result import_and_install(const Request& request,VoiceLibrary library,std::share
             return result;
         }
         VoiceImportOptions options; options.declared_model_compatibility_id = pocket_model_compatibility_id;
-        if (request.kind==Operation::replace) {
+        if (request.kind==Operation::replace || request.kind==Operation::replace_olv) {
             result.library_id=request.target_id;
             VoiceReplaceOptions replacement; replacement.import=options; replacement.expected_display_name=request.display_name; replacement.expected_olv_sha256=request.expected_hash;
             SapiVoiceManager manager(library,resolve(),registry,policy);
             replacement.validate_before_publish=[&](const LibraryVoice& current,const std::filesystem::path& staged) { manager.validate_replacement(current,staged); };
-            const auto replaced=library.replace_pocket_voice(request.target_id,request.source,replacement);
+            const auto replaced=request.kind==Operation::replace_olv ? library.replace_olv(request.target_id,request.source,replacement) : library.replace_pocket_voice(request.target_id,request.source,replacement);
             result.outcome=replaced.changed ? Outcome::replaced : Outcome::unchanged;
             if (replaced.cleanup_pending) { result.outcome=Outcome::replacement_warning; result.error.domain="library"; result.error.code="cleanup_pending"; result.error.message=replaced.detail; }
             return result; // Correct owned token remains byte-for-byte unchanged.
         }
-        if (request.kind!=Operation::import) { malformed(); }
-        const auto imported = library.import_pocket_voice(request.source,request.display_name,options,DuplicateContentPolicy::reject);
+        if (request.kind!=Operation::import && request.kind!=Operation::import_olv) { malformed(); }
+        const auto imported = request.kind==Operation::import_olv ? library.import_olv(request.source,request.display_name,DuplicateContentPolicy::reject) : library.import_pocket_voice(request.source,request.display_name,options,DuplicateContentPolicy::reject);
         result.library_id = imported.voice.library_id;
         result.outcome = Outcome::partial;
         SapiVoiceManager manager(std::move(library),resolve(),std::move(registry),policy);

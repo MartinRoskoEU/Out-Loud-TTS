@@ -17,9 +17,10 @@ cached across refreshes or privileged mutations.
 
 | Action | Behavior |
 | --- | --- |
-| Import Voice | Select one prepared Pocket `.safetensors` file and name; helper validates/converts it, publishes a new ID, installs its owned machine token. |
+| Import Voice | Select a prepared Pocket `.safetensors` or Out Loud `.olv` file and confirm its name. The helper validates/converts prepared state or validates/copies OLV, publishes a new ID and installs its owned machine token. |
 | Import-or-Replace | A trimmed, ordinal case-insensitive snapshot name match prompts confirmation. Multiple matches require explicit ID selection. Replacement retains the selected ID, stored name and token; no separate Replace toolbar action. |
 | Remove | Confirm selected ID/name/content/health. Helper rechecks them, coordinates journaled file/token removal and refreshes even after failure/conflict. |
+| Export Voice | Select a healthy library voice, save a byte-exact `.olv` outside the library and confirm any overwrite. Runs without elevation; selection is retained without refresh. |
 | Refresh | Read diagnostics without elevation, cleanup or repair. |
 
 Names are backend-validated/trimmed; duplicate names remain legal. IDs are random
@@ -29,29 +30,35 @@ removal allocates a new ID; replacement retains it.
 
 Future token descriptions, `409` and `Attributes\Name` use the exact stored name.
 No `Out Loud - ` prefix is added; Vendor stays `Out Loud`, Language `409`, token
-key `OutLoud_Pocket_<library_id>`. There is no GUI Rename, raw-audio preparation,
-direct OLV import or OLV export. Rename and OLV import/export are separate library
-CLI operations; raw-audio preparation requires separate upstream tools. Tester
-**Export WAV** produces audio, not voice state.
+key `OutLoud_Pocket_<library_id>`. GUI Rename and raw-audio preparation remain
+unavailable; rename is a separate library CLI operation and raw-audio preparation
+requires upstream tools. **Export Voice** copies portable OLV conditioning;
+Tester **Export WAV** synthesizes audio. See [OLV import/export](VOICE_MANAGER_OLV_IMPORT_EXPORT.md)
+for workflows, compatibility, file safety and manual checks.
 
 ## Privilege and result boundaries
 
 ```text
 Refresh: WPF -> ViewModel -> service -> native bridge -> read-only snapshot
+Export: selected identity -> Save dialog -> non-elevated bridge -> native OLV copy
 Mutation: confirmed request -> authenticated pipe -> runas helper -> backend
 Tester: ViewModel -> SAPI backend -> request-owned STA -> exact installed token
 ```
 
 [OutLoudVoiceManagerNative.dll](../frontend/native/voice_manager.h) retains ABI v1,
-six C exports and immutable opaque result ownership. Managed interop copies
+the original six C exports and immutable opaque result ownership. Four additive
+exports provide capability discovery, destination inspection and checked OLV
+export. Managed interop copies
 borrowed UTF-8 data and frees the result through the native export. There is no
-mutation/root/scope export. The one-shot helper uses protocol v3 for Import,
-Replace and Remove; it authenticates parent/pipe and chooses the fixed protected
+installed-library mutation/root/scope export. The one-shot helper retains protocol
+v3 operations 1–3 for prepared Import/Replace and Remove, adding explicit OLV
+Import/Replace operations 4/5 with unchanged framing. It authenticates parent/pipe and chooses the fixed protected
 machine library/registry. Requests cannot select arbitrary roots/hives/token keys.
 
 Only confirmed mutations launch `OutLoudVoiceImportHelper.exe` with `runas` for
 Windows approval. The frontend stays asInvoker. Busy/testing guards prevent
-overlapping mutations. Shared runtime resolves from fixed HKLM64 COM registration
+overlapping mutations and exports. Closing waits for an active export to finish
+or clean up. Shared runtime resolves from fixed HKLM64 COM registration
 in `<deployment>\bin\OutLoudPocketSAPI.dll` layout; the helper does not register
 that class. Runtime/registration failure after import reports partial success
 with the retained library entry. UAC cancellation before submission is cancellation;

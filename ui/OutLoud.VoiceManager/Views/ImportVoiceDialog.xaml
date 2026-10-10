@@ -6,15 +6,16 @@
         FontFamily="Segoe UI" FontSize="13" UseLayoutRounding="True"
         Background="{DynamicResource CanvasBrush}" Foreground="{DynamicResource TextBrush}">
   <StackPanel Margin="26">
-    <TextBlock Text="Import a prepared Pocket voice" FontSize="21" FontWeight="SemiBold" Margin="0,0,0,14" />
+    <TextBlock Text="Import a voice" FontSize="21" FontWeight="SemiBold" Margin="0,0,0,14" />
     <TextBlock Text="Selected file" Style="{StaticResource Caption}" />
     <TextBox Text="{Binding SourcePath, Mode=OneWay}" Style="{StaticResource DetailValue}" Margin="0,6,0,16" MaxHeight="90" />
+    <TextBlock Text="{Binding SourceFormat}" Style="{StaticResource Caption}" Margin="0,0,0,14" TextWrapping="Wrap" />
     <Label Content="Voice _name" Target="{Binding ElementName=NameInput}" Foreground="{DynamicResource TextBrush}" Padding="0,0,0,6" />
     <TextBox x:Name="NameInput" Text="{Binding DisplayName, UpdateSourceTrigger=PropertyChanged}"
              TextChanged="NameChanged" Padding="10,8" BorderThickness="1"
              BorderBrush="{DynamicResource BorderBrush}" Background="{DynamicResource SurfaceBrush}" Foreground="{DynamicResource TextBrush}"
              SelectionBrush="{DynamicResource AccentBrush}" />
-    <TextBlock Text="Use a voice prepared for the supported Pocket English model. The native importer validates the file; preparation provenance cannot be verified."
+    <TextBlock Text="The file will be validated and installed in the managed Voice Library. Use voice data for the supported Pocket English model; preparation provenance cannot be verified."
                Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,8,0,18" />
     <Border Style="{StaticResource Card}" Padding="14">
       <TextBlock Text="Out Loud needs Administrator permission to add this voice to the machine voice library and Windows speech system. Windows will ask after you click Import."

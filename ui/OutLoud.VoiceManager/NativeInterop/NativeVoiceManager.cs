@@ -73,6 +73,48 @@ internal static class NativeVoiceManager
         { throw Failure("entry_point_missing", "The native bridge exports do not match this Voice Manager build."); }
     }
 
+    private static void RequireExportCapability()
+    {
+        try { if (AbiVersion() != 1 || (Capabilities() & 1) == 0) throw Failure("export_unsupported", "Rebuild the native bridge with OLV export support."); }
+        catch (EntryPointNotFoundException) { throw Failure("export_unsupported", "This native bridge supports listing only. Rebuild the Voice Manager output."); }
+        catch (DllNotFoundException) { throw Failure("bridge_not_found", "The native bridge or a required VC runtime could not be loaded."); }
+        catch (BadImageFormatException) { throw Failure("architecture_mismatch", "The native bridge and Voice Manager must be x64."); }
+    }
+    private static ResultHandle ExportResult(int status, IntPtr pointer)
+    {
+        var result = new ResultHandle(pointer);
+        if (status == 0 && !result.IsInvalid) return result;
+        try {
+            if (status == 1 && !result.IsInvalid && ResultError(result) is var error && error != IntPtr.Zero)
+                throw new BackendException(CopyError(error));
+            throw Failure(status == 3 ? "out_of_memory" : "export_failure", "Native voice export could not complete.");
+        } finally { result.Dispose(); }
+    }
+    public static string InspectExportDestination(string path)
+    {
+        RequireExportCapability();
+        int status = ExportDestination(path, out IntPtr pointer);
+        using var result = ExportResult(status, pointer);
+        return Required(ResultDestination(result));
+    }
+    public static void Export(VoiceRecord voice, VoiceExportRequest request)
+    {
+        RequireExportCapability();
+        int status = ExportVoice(voice.LibraryId, voice.DisplayName ?? "", voice.OlvSha256 ?? "", request.DestinationPath,
+            request.ExpectedDestination, out IntPtr pointer);
+        using var result = ExportResult(status, pointer);
+    }
+    [DllImport(Library, EntryPoint = "outloud_vm_capabilities", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+    private static extern uint Capabilities();
+    [DllImport(Library, EntryPoint = "outloud_vm_export_destination", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+    private static extern int ExportDestination([MarshalAs(UnmanagedType.LPUTF8Str)] string destination, out IntPtr result);
+    [DllImport(Library, EntryPoint = "outloud_vm_result_destination", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+    private static extern IntPtr ResultDestination(ResultHandle result);
+    [DllImport(Library, EntryPoint = "outloud_vm_export", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+    private static extern int ExportVoice([MarshalAs(UnmanagedType.LPUTF8Str)] string id, [MarshalAs(UnmanagedType.LPUTF8Str)] string name,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string hash, [MarshalAs(UnmanagedType.LPUTF8Str)] string destination,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string expectedDestination, out IntPtr result);
+
     private static string Required(IntPtr pointer) => Optional(pointer) ??
         throw Failure("protocol_error", "A required native string is missing.");
     private static string? Optional(IntPtr pointer) => pointer == IntPtr.Zero ? null : Marshal.PtrToStringUTF8(pointer);

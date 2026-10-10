@@ -8,4 +8,6 @@ namespace outloud::frontend {
 int32_t read_injected(VoiceLibrary library,std::shared_ptr<SapiVoiceRegistry> registry,
     outloud_vm_result** result,
     MachineVoiceLibraryPolicy policy = MachineVoiceLibraryPolicy::production) noexcept;
+int32_t export_injected(VoiceLibrary, std::string_view id, std::string_view name, std::string_view hash,
+    const std::filesystem::path& destination, std::string_view destination_identity, outloud_vm_result**) noexcept;
 } // namespace outloud::frontend

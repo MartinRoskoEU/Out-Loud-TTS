@@ -7,7 +7,9 @@
 #include <barrier>
 #include <condition_variable>
 #include <exception>
+#include <fstream>
 #include <iostream>
+#include <iterator>
 #include <thread>
 
 namespace {
@@ -139,6 +141,18 @@ int wmain(int argc,wchar_t** argv) {
         const auto b = library.import_olv(argv[5],"Undead test").voice;
         const auto expected_a = reference(argv[2],argv[3],a.managed_olv_path), expected_b = reference(argv[2],argv[3],b.managed_olv_path);
         check(expected_a!=expected_b,"Distinct voices produced identical references.");
+        const auto exported=scratch.path/L"roundtrip-voice.olv";
+        (void)library.export_olv(a.library_id,exported);
+        outloud::VoiceLibrary roundtrip(scratch.path/L"roundtrip-library");
+        const auto recovered=roundtrip.import_olv(exported,"Roundtrip").voice;
+        const auto bytes=[](const std::filesystem::path& path) {
+            std::ifstream file(path,std::ios::binary); check(file.is_open(),"Cannot read roundtrip bytes");
+            std::vector<char> result(std::istreambuf_iterator<char>(file),{}); check(!file.bad(),"Incomplete roundtrip read"); return result;
+        };
+        check(bytes(argv[4])==bytes(exported) && bytes(exported)==bytes(recovered.managed_olv_path) &&
+            outloud::validate_olv(exported).file_sha256==a.metadata->olv_sha256 &&
+            reference(argv[2],argv[3],recovered.managed_olv_path)==expected_a,"OLV roundtrip bytes/PCM differ");
+        std::cout<<"PASS: isolated OLV import/export/reimport, exact bytes and complete native PCM16.\n";
         module = LoadLibraryExW(std::filesystem::absolute(argv[1]).c_str(),nullptr,LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR|LOAD_LIBRARY_SEARCH_SYSTEM32);
         check(module!=nullptr,"Cannot load shared DLL.");
         using GetClass = HRESULT (__stdcall*)(REFCLSID,REFIID,void**); using Unload = HRESULT (__stdcall*)();

@@ -74,13 +74,14 @@ struct Module {
 #include "../mutation/remove_tests.hpp"
 #include "../mutation/removal_recovery_tests.hpp"
 #include "refresh_tests.hpp"
+#include "../mutation/olv_tests.hpp"
 int wmain(int argc,wchar_t** argv) {
     try {
         check(argc==7,"Usage: bridge-tests BRIDGE SAPI MODEL TOKENIZER VOICE.olv PREPARED.safetensors");
         Module dll{LoadLibraryExW(argv[1],nullptr,LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR|LOAD_LIBRARY_SEARCH_SYSTEM32)};
         check(dll.handle!=nullptr,"Cannot load production bridge DLL.");
         for (const auto* name : {"outloud_vm_abi_version","outloud_vm_read","outloud_vm_result_snapshot",
-            "outloud_vm_result_error","outloud_vm_result_free","outloud_vm_result_content"}) {
+            "outloud_vm_result_error","outloud_vm_result_free","outloud_vm_result_content","outloud_vm_capabilities","outloud_vm_export_destination","outloud_vm_result_destination","outloud_vm_export"}) {
             check(GetProcAddress(dll.handle,name)!=nullptr,"Missing stable C export.");
         }
         const auto version = reinterpret_cast<decltype(&outloud_vm_abi_version)>(GetProcAddress(dll.handle,"outloud_vm_abi_version"));
@@ -122,6 +123,7 @@ int wmain(int argc,wchar_t** argv) {
             std::filesystem::absolute(argv[3]).lexically_normal(),std::filesystem::absolute(argv[4]).lexically_normal()};
         mutation_checks(argv[6],argv[2],runtime,scratch.path);
         replacement_checks(argv[6],runtime,scratch.path);
+        olv_checks(std::filesystem::absolute(argv[5]),scratch.path,runtime);
         removal_checks(argv[6],runtime,scratch.path);
         removal_recovery_checks(argv[6],runtime,scratch.path);
         refresh_checks(argv[5],argv[6],runtime,scratch.path);

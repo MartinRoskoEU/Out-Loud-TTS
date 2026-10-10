@@ -60,6 +60,12 @@ internal static class RuntimeValidation
         public System.Threading.Tasks.Task<VoiceTestOutcome> RunAsync(VoiceTestRequest request, IProgress<VoiceTestState> progress, System.Threading.CancellationToken cancellation)
         { Progress = progress; Stop = cancellation; return Pending?.Task ?? System.Threading.Tasks.Task.FromResult(new VoiceTestOutcome(false)); }
     }
+    private sealed class FakeExport : IVoiceExportService, IVoiceExportDialog
+    {
+        public System.Threading.Tasks.Task<string> InspectDestinationAsync(string path) => throw new Exception("No native export inspection in view validation.");
+        public System.Threading.Tasks.Task<VoiceExportRequest?> ChooseAsync(VoiceRecord voice) => System.Threading.Tasks.Task.FromResult<VoiceExportRequest?>(new("C:\\fake\\hlas-ž.olv", "absent"));
+        public System.Threading.Tasks.Task ExportAsync(VoiceRecord voice, VoiceExportRequest request) => System.Threading.Tasks.Task.CompletedTask;
+    }
     private static void Layout(Window window, int width = 1120, int height = 780)
     {
         window.Width = width; window.Height = height;
@@ -133,6 +139,13 @@ internal static class RuntimeValidation
             nameInput.Text = "Hlas ž 🎵"; Layout(importDialog, 530, 480);
             if (!confirm.IsEnabled || importDialog.Model.Confirm().DisplayName != "Hlas ž 🎵") throw new Exception("Import dialog name editing failed.");
             importDialog.Close();
+            var olvDialog = new ImportVoiceDialog("C:\\fake\\hlas-ž.olv");
+            foreach (AppTheme theme in new[] { AppTheme.Light, AppTheme.Dark, AppTheme.HighContrast }) {
+                palette.Apply(theme); Layout(olvDialog, 530, 480);
+                if (olvDialog.Model.SourceFormat != "Out Loud Voice (.olv)" || !((Button)olvDialog.FindName("ConfirmButton")).IsEnabled)
+                    throw new Exception("OLV import format/confirmation binding failed.");
+            }
+            olvDialog.Close();
             var sharedStyles = app.Resources.MergedDictionaries[1];
             string[]? keys = null;
             foreach (AppTheme theme in new[] { AppTheme.Light, AppTheme.Dark, AppTheme.HighContrast, AppTheme.Light })
@@ -249,6 +262,24 @@ internal static class RuntimeValidation
                 if (!removalModel.IsEmpty || removeAction.IsEnabled) throw new Exception("Last-row removal did not restore empty/disabled state.");
             }
             removeDialog.Close();
+            var exporting = new FakeExport(); var exportService = new FakeService();
+            var exportModel = new MainViewModel(exportService, exporter: exporting, exportDialog: exporting); window.DataContext = exportModel;
+            var exportButton = (Button)window.FindName("ExportVoiceButton");
+            Layout(window); if (exportButton.IsEnabled) throw new Exception("Export enabled without selection.");
+            var exportVoice = voice with { OlvSha256 = new string('a',64), DisplayName = "Hlas ž 🎵" };
+            exportService.Next = new("fake", new[] { exportVoice }); exportModel.RefreshAsync().GetAwaiter().GetResult(); exportModel.SelectedVoice = exportVoice;
+            foreach (AppTheme theme in new[] { AppTheme.Light, AppTheme.Dark, AppTheme.HighContrast }) {
+                palette.Apply(theme); Layout(window, 860, 560); Layout(window, 1440, 900);
+                if (!exportButton.IsEnabled || !exportButton.Focusable || !ReferenceEquals(exportButton.Command, exportModel.ExportCommand) ||
+                    !ReferenceEquals(exportButton.Foreground, app.Resources["AccentTextBrush"])) throw new Exception("Export selection/keyboard/theme binding failed.");
+                exportModel.ExportAsync().GetAwaiter().GetResult(); Layout(window, 860, 560);
+                if (!ReferenceEquals(exportModel.SelectedVoice, exportVoice) || exportModel.NotificationSeverity != NotificationSeverity.Success ||
+                    !ReferenceEquals(((Border)window.FindName("OperationNotification")).Background, app.Resources["SuccessBrush"])) throw new Exception("Export success/selection/theme failed.");
+                if (exportButton.TranslatePoint(new Point(), (FrameworkElement)window.Content).X + exportButton.ActualWidth > window.Width)
+                    throw new Exception("Export toolbar exceeds the resized window.");
+                exportModel.DismissNotificationCommand.Execute(null); Layout(window);
+                if (((Border)window.FindName("OperationNotification")).Visibility != Visibility.Collapsed) throw new Exception("Export notification dismissal failed.");
+            }
             var playback = new FakePlayback(); var tester = new VoiceTesterViewModel(playback);
             var testerService = new FakeService { Next = new("C:\\fake-library", new[] { voice, voice with { LibraryId = "fedcba9876543210fedcba9876543210" } }) };
             var testerMain = new MainViewModel(testerService, tester: tester); window.DataContext = testerMain;

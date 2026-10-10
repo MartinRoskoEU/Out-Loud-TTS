@@ -132,15 +132,18 @@ void recover_replacement(Session& session,const std::filesystem::path& path,fs::
     }
     discard_replacement(path,stage_directory,session.machine);
 }
-LibraryReplaceResult replace_prepared(Session& session,std::string_view id,const std::filesystem::path& input,const VoiceReplaceOptions& options) {
+LibraryReplaceResult replace_prepared(Session& session,std::string_view id,const std::filesystem::path& input,const VoiceReplaceOptions& options,bool olv=false) {
     auto target=healthy(session,id);
     if (!hash(options.expected_olv_sha256) || target.metadata->display_name!=options.expected_display_name || target.metadata->olv_sha256!=options.expected_olv_sha256) {
         fs::fail(Code::replacement_conflict,"Voice name or content changed since confirmation. Refresh and confirm again.",target.managed_olv_path); }
     if (options.import.replace_existing) { fs::fail(Code::replace_required,"Replacement staging must not overwrite an arbitrary destination",input); }
     const auto source=fs::local(input,Code::source_io); const fs::Pins source_parents(source.parent_path()); const auto source_file=fs::file(source);
-    Stage stage(session); const auto converted=convert_pocket_voice_to_olv(source,stage.path/L"voice.olv",options.import);
+    Stage stage(session);
+    OlvInfo converted;
+    if (olv) { converted=validate_olv(source); copy_voice(source,stage.path/L"voice.olv",session.machine); }
+    else { converted=convert_pocket_voice_to_olv(source,stage.path/L"voice.olv",options.import).voice; }
     if (session.machine) { detail::library_security::protect_created_file(stage.path/L"voice.olv"); }
-    const auto record=new_metadata(target.library_id,target.metadata->display_name,converted.voice,source,VoiceImportKind::pocket_prepared);
+    const auto record=new_metadata(target.library_id,target.metadata->display_name,converted,source,olv ? VoiceImportKind::olv : VoiceImportKind::pocket_prepared);
     // Compare validated conditioning independently of source-header provenance.
     // A differently encoded safetensors header need not change actual voice data.
     const auto same_data=[&](const std::filesystem::path& path) {

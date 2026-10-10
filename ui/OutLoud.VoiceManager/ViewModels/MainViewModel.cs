@@ -22,16 +22,22 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private VoiceImportResult? importResult;
     private VoiceOperation activeOperation;
     private bool testerPage, closing;
-    public MainViewModel(IVoiceManagerService service, IImportDialogService? dialogs = null, IVoiceImportService? importer = null, VoiceTesterViewModel? tester = null)
+    private readonly IVoiceExportService? exporter;
+    private readonly IVoiceExportDialog? exportDialog;
+    private TaskCompletionSource? exportCompletion;
+    public MainViewModel(IVoiceManagerService service, IImportDialogService? dialogs = null, IVoiceImportService? importer = null, VoiceTesterViewModel? tester = null, IVoiceExportService? exporter = null, IVoiceExportDialog? exportDialog = null)
     {
-        this.service = service;
+        this.service = service; this.exporter = exporter; this.exportDialog = exportDialog;
         this.dialogs = dialogs; this.importer = importer;
         Tester = tester;
-        if (Tester != null) Tester.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(VoiceTesterViewModel.IsBusy)) { ImportCommand?.Notify(); RemoveCommand?.Notify(); } };
+        if (Tester != null) Tester.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(VoiceTesterViewModel.IsBusy)) { ImportCommand?.Notify(); RemoveCommand?.Notify(); ExportCommand?.Notify(); } };
         RefreshCommand = new RefreshCommand(RefreshAsync, () => !IsBusy && !closing);
         ImportCommand = new RefreshCommand(ImportAsync, () => !IsBusy && !closing && Tester?.IsBusy != true && dialogs != null && importer != null);
         RemoveCommand = new RefreshCommand(RemoveAsync, () => !IsBusy && !closing && Tester?.IsBusy != true && dialogs != null && importer != null && SelectedVoice is { } target &&
             target.LibraryId.Length == 32 && target.LibraryId.All(c => c is >= '0' and <= '9' or >= 'a' and <= 'f'));
+        ExportCommand = new RefreshCommand(ExportAsync, () => !IsBusy && !closing && Tester?.IsBusy != true && exporter != null && exportDialog != null && SelectedVoice is { Health: "valid", DisplayName: not null, OlvSha256: not null } voice &&
+            !string.IsNullOrWhiteSpace(voice.DisplayName) && voice.LibraryId.Length == 32 && voice.LibraryId.All(c => c is >= '0' and <= '9' or >= 'a' and <= 'f') &&
+            voice.OlvSha256.Length == 64 && voice.OlvSha256.All(c => c is >= '0' and <= '9' or >= 'a' and <= 'f'));
         DismissNotificationCommand = new RefreshCommand(() => { importResult = null; StateChanged(); return Task.CompletedTask; }, () => HasImportResult);
         ShowTesterCommand = new RefreshCommand(() => { if (!testerPage) Tester!.UpdateVoices(snapshot, SelectedVoice?.LibraryId); testerPage = true; StateChanged(); return Task.CompletedTask; }, () => Tester != null && !IsBusy && !closing);
         ShowLibraryCommand = new RefreshCommand(async () => { if (Tester != null) await Tester.StopAsync(); testerPage = false; StateChanged(); }, () => !IsBusy && !closing);
@@ -40,19 +46,24 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public RefreshCommand RefreshCommand { get; }
     public RefreshCommand ImportCommand { get; }
     public RefreshCommand RemoveCommand { get; }
+    public RefreshCommand ExportCommand { get; }
     public RefreshCommand DismissNotificationCommand { get; }
     public RefreshCommand ShowTesterCommand { get; }
     public RefreshCommand ShowLibraryCommand { get; }
     public VoiceTesterViewModel? Tester { get; }
     public bool IsTesterPage => testerPage;
     public bool IsLibraryPage => !testerPage;
-    public async Task ShutdownAsync() { closing = true; StateChanged(); if (Tester != null) await Tester.CloseAsync(); }
+    public async Task ShutdownAsync() {
+        closing = true; StateChanged();
+        if (Tester != null) await Tester.CloseAsync();
+        if (exportCompletion != null) await exportCompletion.Task;
+    }
     public IReadOnlyList<VoiceRecord> Voices => snapshot.Voices;
     public string LibraryRoot => snapshot.LibraryRoot;
     public VoiceRecord? SelectedVoice
     {
         get => selectedVoice;
-        set { if (selectedVoice == value) return; selectedVoice = value; Changed(); Changed(nameof(HasSelection)); RemoveCommand.Notify(); }
+        set { if (selectedVoice == value) return; selectedVoice = value; Changed(); Changed(nameof(HasSelection)); RemoveCommand.Notify(); ExportCommand.Notify(); }
     }
     public bool HasSelection => SelectedVoice != null;
     public bool IsBusy => isBusy;
@@ -68,10 +79,12 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public string NotificationSeverityText => NotificationSeverity.ToString();
     public string ImportStateText => importPhase switch {
         ImportPhase.Choosing when activeOperation == VoiceOperation.Remove => "Confirm removal of the selected voice.",
-        ImportPhase.Choosing => "Choose a prepared Pocket voice and confirm its name.",
+        ImportPhase.Choosing when activeOperation == VoiceOperation.Export => "Choose where to save the Out Loud voice.",
+        ImportPhase.Choosing => "Choose a voice file and confirm its name.",
         ImportPhase.AwaitingElevation => "Waiting for Windows Administrator approval...",
         ImportPhase.Importing when activeOperation == VoiceOperation.Remove => "Removing the selected voice and its Windows speech registration...",
-        ImportPhase.Importing => "Validating and saving the prepared voice...",
+        ImportPhase.Importing when activeOperation == VoiceOperation.Export => "Exporting the selected voice...",
+        ImportPhase.Importing => "Validating and saving the voice file...",
         _ => importResult?.Message ?? ""
     };
     public string ImportDiagnostic => importResult?.Diagnostic ?? "";
@@ -143,9 +156,24 @@ public sealed class MainViewModel : INotifyPropertyChanged
                 }
             }
             importResult = request == null ? new(ImportPhase.Cancelled) : await importer.ImportAsync(request, new ImportProgress(this));
+            if (request?.IsOlv == true && importResult.Error?.Code == "duplicate_content" && importResult.DuplicateIds is { Length: > 1 } ids) {
+                // Resolve every reported identity in a fresh snapshot before asking;
+                // never infer an arbitrary replacement from names or array order.
+                await ReadSnapshotAsync();
+                var candidates = Voices.Where(voice => ids.Contains(voice.LibraryId) && voice.DisplayName != null && voice.OlvSha256 != null).ToArray();
+                if (!HasError && candidates.Length == ids.Distinct().Count()) {
+                    VoiceRecord? target = await dialogs.ConfirmReplacementAsync(request, candidates);
+                    if (target == null) { request = null; importResult = new(ImportPhase.Cancelled, Operation: VoiceOperation.ImportOlv); }
+                    else if (!candidates.Any(candidate => ReferenceEquals(candidate, target))) throw new InvalidOperationException("Choose an exact duplicate snapshot target.");
+                    else {
+                        request = new(request.SourcePath, target.DisplayName!, target.LibraryId, target.OlvSha256);
+                        importResult = await importer.ImportAsync(request, new ImportProgress(this));
+                    }
+                }
+            }
             importPhase = importResult.Phase; StateChanged();
             if (importResult.Phase is ImportPhase.Succeeded or ImportPhase.Partial || importResult.Error?.Code == "outcome_unknown" ||
-                request?.Operation == VoiceOperation.Replace)
+                request?.IsReplacement == true)
                 await ReadSnapshotAsync(importResult.LibraryId);
         }
         catch (Exception failure) {
@@ -153,6 +181,31 @@ public sealed class MainViewModel : INotifyPropertyChanged
             importPhase = ImportPhase.Failed;
         }
         finally { isBusy = false; StateChanged(); }
+    }
+    public async Task ExportAsync()
+    {
+        if (!ExportCommand.CanExecute(null) || exporter == null || exportDialog == null || SelectedVoice is not { } target) return;
+        activeOperation = VoiceOperation.Export;
+        var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        exportCompletion = completion;
+        isBusy = true; importPhase = ImportPhase.Choosing; importResult = null; StateChanged();
+        try {
+            VoiceExportRequest? request = await exportDialog.ChooseAsync(target);
+            if (closing) request = null;
+            if (request == null) importResult = new(ImportPhase.Cancelled, Operation: VoiceOperation.Export);
+            else {
+                importPhase = ImportPhase.Importing; StateChanged();
+                await exporter.ExportAsync(target, request);
+                importResult = new(ImportPhase.Succeeded, target.LibraryId, Operation: VoiceOperation.Export);
+            }
+        } catch (BackendException failure) { importResult = new(ImportPhase.Failed, target.LibraryId, failure.Error, Operation: VoiceOperation.Export); }
+        catch (Exception failure) { importResult = new(ImportPhase.Failed, target.LibraryId,
+            new BackendError("frontend", "export_failure", "Unable to export the voice file.", LibraryCode: failure.GetType().Name), Operation: VoiceOperation.Export); }
+        finally {
+            importPhase = importResult?.Phase ?? ImportPhase.Failed; isBusy = false;
+            exportCompletion = null; completion.SetResult(); StateChanged();
+        }
+        // Export never mutates the source snapshot or refreshes/clears selection.
     }
     public async Task RemoveAsync()
     {
@@ -184,7 +237,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         Changed(nameof(IsEmpty)); Changed(nameof(StateText)); RefreshCommand.Notify();
         Changed(nameof(ImportPhase)); Changed(nameof(ImportResult)); Changed(nameof(HasImportResult));
         Changed(nameof(ImportStateText)); Changed(nameof(ImportDiagnostic)); ImportCommand.Notify();
-        RemoveCommand.Notify();
+        RemoveCommand.Notify(); ExportCommand.Notify();
         Changed(nameof(HasImportDiagnostic)); Changed(nameof(NotificationSeverity)); Changed(nameof(NotificationSeverityText)); DismissNotificationCommand.Notify();
         Changed(nameof(IsTesterPage)); Changed(nameof(IsLibraryPage)); ShowTesterCommand.Notify(); ShowLibraryCommand.Notify();
     }

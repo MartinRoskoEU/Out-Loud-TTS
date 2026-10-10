@@ -14,7 +14,9 @@ public partial class App : Application
         base.OnStartup(e);
         themeService = new WindowsThemeService(new ThemePalette(Resources), Dispatcher);
         var tester = new VoiceTesterViewModel(new SapiVoiceTestBackend(), new WaveExportDialog());
-        var model = new MainViewModel(new NativeVoiceManagerService(), new ImportDialogService(themeService.AttachWindow), new ElevatedVoiceImportService(), tester);
+        var exporter = new NativeVoiceExportService();
+        var model = new MainViewModel(new NativeVoiceManagerService(), new ImportDialogService(themeService.AttachWindow), new ElevatedVoiceImportService(), tester,
+            exporter, new VoiceExportDialog(exporter));
         var window = new MainWindow { DataContext = model };
         MainWindow = window;
         themeService.AttachWindow(window);

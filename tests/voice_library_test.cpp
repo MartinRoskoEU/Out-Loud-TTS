@@ -131,6 +131,8 @@ void security_checks(Scratch& scratch,VoiceLibrary& library,const LibraryVoice& 
         rejects(Code::library_access_denied,[&] { security::protect_created_file(parent/L"must-not-exist"); });
         require(!std::filesystem::exists(parent/L"must-not-exist"),"Denied operation created a directory");
         require(!CreateDirectoryW((parent/L"raw-denied").c_str(),nullptr) && GetLastError()==ERROR_ACCESS_DENIED,"Users could write machine DACL");
+        rejects(Code::library_access_denied,[&] { (void)library.export_olv(voice.library_id,parent/L"denied-export.olv"); });
+        require(!std::filesystem::exists(parent/L"denied-export.olv"),"Denied export created a destination");
     }
     const auto child = parent/L"inherited";
     // Create the inheritance fixture using a held, authorized directory handle.
@@ -158,6 +160,9 @@ void security_checks(Scratch& scratch,VoiceLibrary& library,const LibraryVoice& 
         require(library.inspect_voice(voice.library_id).health==VoiceHealth::valid && !library.list_voices().empty(),
             "Read-only lock/metadata/voice require write permission");
         require(validate_olv(voice.managed_olv_path).file_sha256==voice.metadata->olv_sha256,"Ordinary asset read/validation failed");
+        const auto ordinary_export=scratch.path/L"ordinary-user-export.olv";
+        (void)library.export_olv(voice.library_id,ordinary_export);
+        require(validate_olv(ordinary_export).file_sha256==voice.metadata->olv_sha256,"Non-elevated export requires source write permission or changed bytes");
         rejects(Code::library_access_denied,[&] { (void)library.rename_voice(voice.library_id,"Denied rename"); });
         rejects(Code::library_access_denied,[&] { (void)library.remove_voice(voice.library_id); });
         rejects(Code::library_access_denied,[&] { (void)library.import_olv(source,"Denied import",DuplicateContentPolicy::allow_separate_entry); });

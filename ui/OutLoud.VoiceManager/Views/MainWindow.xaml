@@ -23,24 +23,19 @@
         <TextBlock Text="Out Loud Voice Manager" FontSize="26" FontWeight="SemiBold" TextWrapping="Wrap" />
         <TextBlock Text="Installed voices and Windows speech status." Style="{StaticResource Caption}" Margin="0,6,0,0" TextWrapping="Wrap" />
       </StackPanel>
-      <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-        <Border Background="{DynamicResource SurfaceBrush}" BorderBrush="{DynamicResource BorderBrush}"
-                BorderThickness="1" CornerRadius="8" Padding="12,9" Margin="0,0,12,0">
-          <StackPanel Orientation="Horizontal">
-            <TextBlock Text="{Binding Voices.Count}" FontWeight="SemiBold" Margin="0,0,6,0" />
-            <TextBlock Text="managed voices" Style="{StaticResource Caption}" VerticalAlignment="Center" />
-          </StackPanel>
-        </Border>
-        <Button Style="{StaticResource RefreshButton}" Command="{Binding ImportCommand}" Content="_Import Voice" Margin="0,0,10,0"
-                ToolTip="Import a prepared Pocket voice; Administrator approval is requested after confirmation" AutomationProperties.Name="Import Voice" />
-        <Button x:Name="RemoveVoiceButton" Style="{StaticResource DestructiveButton}" Command="{Binding RemoveCommand}" Content="_Remove" Margin="0,0,10,0"
-                ToolTip="Remove the selected voice; Administrator approval is requested after confirmation" AutomationProperties.Name="Remove selected voice" />
-        <Button Style="{StaticResource RefreshButton}" Command="{Binding RefreshCommand}" ToolTip="Refresh the voice list" AutomationProperties.Name="Refresh voices">
+      <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+        <Button Style="{StaticResource RefreshButton}" Command="{Binding RefreshCommand}" ToolTip="Refresh the voice list" AutomationProperties.Name="Refresh voices" Margin="0,0,10,0">
           <StackPanel Orientation="Horizontal">
             <TextBlock Text="&#xE72C;" FontFamily="Segoe MDL2 Assets" FontSize="14" Margin="0,0,8,0" VerticalAlignment="Center" />
             <AccessText Text="_Refresh" />
           </StackPanel>
         </Button>
+        <Button Style="{StaticResource RefreshButton}" Command="{Binding ImportCommand}" Content="_Import Voice" Margin="0,0,10,0"
+                ToolTip="Import a prepared Pocket or Out Loud voice; Administrator approval is requested after confirmation" AutomationProperties.Name="Import Voice" />
+        <Button x:Name="ExportVoiceButton" Style="{StaticResource RefreshButton}" Command="{Binding ExportCommand}" Content="_Export Voice" Margin="0,0,10,0"
+                ToolTip="Export selected voice data as .olv; no Administrator approval required" AutomationProperties.Name="Export selected voice" />
+        <Button x:Name="RemoveVoiceButton" Style="{StaticResource DestructiveButton}" Command="{Binding RemoveCommand}" Content="_Remove"
+                ToolTip="Remove the selected voice; Administrator approval is requested after confirmation" AutomationProperties.Name="Remove selected voice" />
       </StackPanel>
     </Grid>
     <Border Grid.Row="1" Background="{DynamicResource ErrorBrush}" BorderBrush="{DynamicResource ErrorTextBrush}"

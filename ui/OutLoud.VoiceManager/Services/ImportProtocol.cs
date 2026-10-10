@@ -21,10 +21,13 @@ public static class ImportProtocol
             if (request.TargetId == null || request.ExpectedHash == null || string.IsNullOrEmpty(request.ExpectedHealth) || request.SourcePath.Length != 0) throw new InvalidDataException("Removal identity is missing or a source path was supplied.");
             WriteText(writer, request.TargetId); WriteText(writer, request.DisplayName); WriteText(writer, request.ExpectedHash); WriteText(writer, request.ExpectedHealth);
         } else {
-            if (request.Operation is not (VoiceOperation.Import or VoiceOperation.Replace)) throw new InvalidDataException("Unsupported voice operation.");
+            if (request.Operation is not (VoiceOperation.Import or VoiceOperation.Replace or VoiceOperation.ImportOlv or VoiceOperation.ReplaceOlv)) throw new InvalidDataException("Unsupported voice operation.");
+            if (!VoiceFileSelection.IsSupported(request.SourcePath) ||
+                (request.Operation is VoiceOperation.ImportOlv or VoiceOperation.ReplaceOlv) != request.IsOlv)
+                throw new InvalidDataException("Source format does not match the operation.");
             WriteText(writer, request.SourcePath); WriteText(writer, request.DisplayName);
         }
-        if (request.Operation == VoiceOperation.Replace) {
+        if (request.IsReplacement) {
             if (request.TargetId == null || request.ExpectedHash == null) throw new InvalidDataException("Replacement identity is missing.");
             WriteText(writer, request.TargetId); WriteText(writer, request.ExpectedHash);
         }
@@ -64,8 +67,8 @@ public static class ImportProtocol
         var ids = new string[count]; for (int i = 0; i < ids.Length; ++i) ids[i] = ReadText(reader);
         static bool ValidId(string value) => value.Length == 32 && value.All(c => c is >= '0' and <= '9' or >= 'a' and <= 'f');
         if (reader.BaseStream.Position != bytes.Length || ids.Any(value => !ValidId(value)) ||
-            (operation is not (1 or 2 or 3)) || (kind is 1 or 3 && operation != 1) || (kind is 5 or 6 or 7 && operation != 2) || (kind is 8 or 9 && operation != 3) ||
-            (kind != 2 || operation != 1 ? !ValidId(id) : id.Length != 0) ||
+            (operation is not (1 or 2 or 3 or 4 or 5)) || (kind is 1 or 3 && operation is not (1 or 4)) || (kind is 5 or 6 or 7 && operation is not (2 or 5)) || (kind is 8 or 9 && operation != 3) ||
+            (kind != 2 || operation is not (1 or 4) ? !ValidId(id) : id.Length != 0) ||
             (kind is 1 or 5 or 6 or 8 ? domain.Length != 0 || code.Length != 0 : domain.Length == 0 || code.Length == 0))
             throw new InvalidDataException("Inconsistent helper outcome.");
         return new(kind is 1 or 5 or 6 or 8 ? ImportPhase.Succeeded : kind is 3 or 7 or 9 ? ImportPhase.Partial : ImportPhase.Failed,

@@ -16,6 +16,7 @@
     <Compile Include="..\OutLoud.VoiceManager\ViewModels\*.cs" Link="ViewModels\%(Filename)%(Extension)" />
     <Compile Include="..\OutLoud.VoiceManager\Services\IVoiceManagerService.cs" Link="Services\IVoiceManagerService.cs" />
     <Compile Include="..\OutLoud.VoiceManager\Services\IVoiceImportService.cs" Link="Services\IVoiceImportService.cs" />
+    <Compile Include="..\OutLoud.VoiceManager\Services\IVoiceExportService.cs" Link="Services\IVoiceExportService.cs" />
     <Compile Include="..\OutLoud.VoiceManager\Services\IVoiceTestBackend.cs" Link="Services\IVoiceTestBackend.cs" />
     <Compile Include="..\OutLoud.VoiceManager\Services\SapiVoiceTestBackend.cs" Link="Services\SapiVoiceTestBackend.cs" />
     <Compile Include="..\OutLoud.VoiceManager\Services\SapiTestSessionFactory.cs" Link="Services\SapiTestSessionFactory.cs" />

@@ -33,6 +33,7 @@ std::string_view voice_library_error_name(VoiceLibraryErrorCode code) noexcept {
     OUTLOUD_LIBRARY_CODE(library_access_denied); OUTLOUD_LIBRARY_CODE(library_security_invalid);
     OUTLOUD_LIBRARY_CODE(voice_in_use); OUTLOUD_LIBRARY_CODE(replacement_conflict); OUTLOUD_LIBRARY_CODE(replacement_pending);
     OUTLOUD_LIBRARY_CODE(removal_conflict); OUTLOUD_LIBRARY_CODE(removal_partial); OUTLOUD_LIBRARY_CODE(removal_pending);
+    OUTLOUD_LIBRARY_CODE(export_conflict);
 #undef OUTLOUD_LIBRARY_CODE
     }
     return "internal_failure";
@@ -360,6 +361,29 @@ void copy_voice(const std::filesystem::path& source,const std::filesystem::path&
     auto file=fs::file(target,GENERIC_WRITE,0,CREATE_NEW,Code::destination_io,security.get());
     fs::write(file.value,mapping.bytes(),target);
 }
+// Pin the destination against ordinary writes/deletion throughout copying.
+std::string export_destination(const std::filesystem::path& path,fs::Handle& pinned) {
+    if (!fs::exists(path)) { return "absent"; }
+    pinned=fs::file(path,GENERIC_READ,FILE_SHARE_READ,OPEN_EXISTING,Code::destination_io);
+    const auto identity=fs::info(pinned.value,path,false);
+    if (identity.dwFileAttributes&FILE_ATTRIBUTE_READONLY) { fs::fail(Code::destination_io,"Export destination is read-only",path,ERROR_ACCESS_DENIED); }
+    // Native identity fields plus complete bytes detect replaced/equal-content files too.
+    detail::Sha256 digest;
+    const std::array<DWORD,7> fields={identity.dwVolumeSerialNumber,identity.nFileIndexHigh,identity.nFileIndexLow,
+        identity.nFileSizeHigh,identity.nFileSizeLow,identity.ftLastWriteTime.dwHighDateTime,identity.ftLastWriteTime.dwLowDateTime};
+    digest.update({reinterpret_cast<const unsigned char*>(fields.data()),sizeof(fields)});
+    std::uint64_t remaining=(std::uint64_t(identity.nFileSizeHigh)<<32)|identity.nFileSizeLow;
+    if (remaining>maximum_voice) { fs::fail(Code::destination_io,"Export destination exceeds inspection limit",path); }
+    std::array<unsigned char,65536> buffer;
+    while (remaining) {
+        const auto count=static_cast<DWORD>(std::min<std::uint64_t>(remaining,buffer.size())); DWORD read=0;
+        if (!ReadFile(pinned.value,buffer.data(),count,&read,nullptr) || read!=count) {
+            fs::fail(Code::destination_io,"Cannot inspect complete export destination",path,GetLastError());
+        }
+        digest.update({buffer.data(),read}); remaining-=read;
+    }
+    return detail::hex(digest.finish());
+}
 #include "voice_library_replace.inc"
 #include "voice_library_remove.inc"
 #include "voice_library_snapshot.inc"
@@ -418,6 +442,9 @@ LibraryVoice VoiceLibrary::inspect_voice(std::string_view id) const {
 LibraryReplaceResult VoiceLibrary::replace_pocket_voice(std::string_view id,const std::filesystem::path& input,const VoiceReplaceOptions& options) {
     return guarded(input,[&] { Session session(root_,true,machine_storage_); return replace_prepared(session,id,input,options); });
 }
+LibraryReplaceResult VoiceLibrary::replace_olv(std::string_view id,const std::filesystem::path& input,const VoiceReplaceOptions& options) {
+    return guarded(input,[&] { Session session(root_,true,machine_storage_); return replace_prepared(session,id,input,options,true); });
+}
 LibraryImportResult VoiceLibrary::import_pocket_voice(const std::filesystem::path& input,std::string_view name,
     const VoiceImportOptions& options,DuplicateContentPolicy policy) {
     return guarded(input,[&] {
@@ -438,9 +465,28 @@ LibraryImportResult VoiceLibrary::import_olv(const std::filesystem::path& input,
         return publish(session,stage,new_metadata(stage.id,normalized,voice,source,VoiceImportKind::olv),policy);
     });
 }
+std::string inspect_olv_export_destination(const std::filesystem::path& output) {
+    return guarded(output,[&] {
+        const auto destination=fs::local(output,Code::destination_io);
+        const auto extension=destination.extension().native();
+        if (CompareStringOrdinal(extension.c_str(),static_cast<int>(extension.size()),L".olv",4,TRUE)!=CSTR_EQUAL) {
+            fs::fail(Code::destination_io,"Export destination must end in .olv",destination);
+        }
+        const fs::Pins parents(destination.parent_path()); fs::Handle target;
+        return export_destination(destination,target);
+    });
+}
 OlvInfo VoiceLibrary::export_olv(std::string_view id,const std::filesystem::path& output,bool replace) const {
+    VoiceExportOptions options; options.replace_existing=replace;
+    return export_olv(id,output,options);
+}
+OlvInfo VoiceLibrary::export_olv(std::string_view id,const std::filesystem::path& output,const VoiceExportOptions& options) const {
     return guarded(output,[&] {
         Session session(root_,false,machine_storage_); const auto voice=healthy(session,id);
+        if ((!options.expected_olv_sha256.empty() || !options.expected_display_name.empty()) &&
+            (!hash(options.expected_olv_sha256) || voice.metadata->olv_sha256!=options.expected_olv_sha256 || voice.metadata->display_name!=options.expected_display_name)) {
+            fs::fail(Code::export_conflict,"Selected voice changed. Refresh and select it again.",voice.managed_olv_path);
+        }
         const auto entry=fs::directory(voice.managed_olv_path.parent_path()); const auto source=fs::file(voice.managed_olv_path);
         const auto destination=fs::local(output,Code::destination_io); const fs::Pins parent(destination.parent_path());
         const auto physical_root=fs::final_path(session.root.handles.back().value,root_);
@@ -450,9 +496,13 @@ OlvInfo VoiceLibrary::export_olv(std::string_view id,const std::filesystem::path
         if (CompareStringOrdinal(extension.c_str(),static_cast<int>(extension.size()),L".olv",4,TRUE)!=CSTR_EQUAL) {
             fs::fail(Code::destination_io,"Export destination must end in .olv",destination);
         }
-        if (fs::exists(destination)) {
-            const auto target=fs::file(destination);
-            if (!replace) { fs::fail(Code::replace_required,"Destination exists; explicit replacement required",destination); }
+        fs::Handle target;
+        const auto destination_state=export_destination(destination,target);
+        if (options.expected_destination && destination_state!=*options.expected_destination) {
+            fs::fail(Code::export_conflict,"Export destination changed since confirmation. Choose it again.",destination);
+        }
+        if (destination_state!="absent" && !options.replace_existing) {
+            fs::fail(Code::replace_required,"Destination exists; explicit replacement required",destination);
         }
         const auto temporary=parent.path/(L".outloud-export-"+fs::wide(fs::random_id())+L".tmp");
         auto owner=fs::file(temporary,GENERIC_WRITE|DELETE,0,CREATE_NEW,Code::destination_io);
@@ -462,16 +512,37 @@ OlvInfo VoiceLibrary::export_olv(std::string_view id,const std::filesystem::path
             return current.dwVolumeSerialNumber==original_identity.dwVolumeSerialNumber && current.nFileIndexHigh==original_identity.nFileIndexHigh &&
                 current.nFileIndexLow==original_identity.nFileIndexLow;
         };
+        fs::Handle verification;
         try {
             const detail::MappedFile mapping(voice.managed_olv_path,maximum_voice);
+            #ifdef OUTLOUD_REPLACEMENT_AUDIT
+            detail::export_audit::point(0,owner.value);
+            #endif
             fs::write(owner.value,mapping.bytes(),temporary);
+            #ifdef OUTLOUD_REPLACEMENT_AUDIT
+            detail::export_audit::point(1,owner.value);
+            #endif
             // Verify the copied bytes with the production loader after dropping the writer handle.
             owner.close();
+            verification=fs::file(temporary,GENERIC_READ,FILE_SHARE_READ|FILE_SHARE_DELETE,OPEN_EXISTING,Code::destination_io);
+            if (!same_file(verification.value)) { fs::fail(Code::destination_io,"Export temporary identity changed",temporary); }
+            #ifdef OUTLOUD_REPLACEMENT_AUDIT
+            detail::export_audit::point(3,verification.value);
+            #endif
             const auto validated=validate_olv(temporary);
             if (validated.file_sha256!=voice.metadata->olv_sha256) { fs::fail(Code::corrupt_voice,"Export copy identity mismatch",temporary); }
-            owner=fs::file(temporary,DELETE,0,OPEN_EXISTING,Code::destination_io);
+            owner=fs::file(temporary,DELETE,FILE_SHARE_READ,OPEN_EXISTING,Code::destination_io);
             if (!same_file(owner.value)) { fs::fail(Code::destination_io,"Export temporary identity changed",temporary); }
-            fs::rename(owner.value,destination,replace,Code::destination_io); return validated;
+            #ifdef OUTLOUD_REPLACEMENT_AUDIT
+            detail::export_audit::point(2,owner.value);
+            #endif
+            // Windows replacement requires releasing the destination's deny-delete
+            // pin. Keep that interval to the existing atomic handle rename call.
+            // The validated temporary remains pinned against writes throughout.
+            const bool replacing=target.value!=INVALID_HANDLE_VALUE;
+            target.close();
+            fs::rename(owner.value,destination,replacing,Code::destination_io);
+            return validated;
         } catch (...) {
             // Handle-based deletion cannot follow a substituted path to another file.
             if (owner.value!=INVALID_HANDLE_VALUE) {
@@ -479,7 +550,7 @@ OlvInfo VoiceLibrary::export_olv(std::string_view id,const std::filesystem::path
             }
             else {
                 try {
-                    auto cleanup=fs::file(temporary,DELETE,0,OPEN_EXISTING,Code::destination_io);
+                    auto cleanup=fs::file(temporary,DELETE,FILE_SHARE_READ,OPEN_EXISTING,Code::destination_io);
                     if (same_file(cleanup.value)) { fs::discard(cleanup.value,temporary); }
                 } catch (...) {}
             }

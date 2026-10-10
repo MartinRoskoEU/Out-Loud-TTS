@@ -14,7 +14,7 @@ public sealed class ImportDialogService : IImportDialogService
     public ImportDialogService(Action<Window>? attachTheme = null) => this.attachTheme = attachTheme;
     public Task<VoiceImportRequest?> ChooseAsync()
     {
-        var picker = new OpenFileDialog { Title = "Select a prepared Pocket voice", Filter = "Prepared Pocket voices (*.safetensors)|*.safetensors",
+        var picker = new OpenFileDialog { Title = "Select a voice file", Filter = VoiceFileSelection.ImportFilter, FilterIndex = 1,
             CheckFileExists = true, Multiselect = false };
         var owner = Application.Current.MainWindow;
         if (picker.ShowDialog(owner) != true) return Task.FromResult<VoiceImportRequest?>(null);

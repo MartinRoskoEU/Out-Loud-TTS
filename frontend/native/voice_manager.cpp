@@ -26,6 +26,8 @@ struct Row {
 };
 }
 struct outloud_vm_result {
+    bool is_snapshot=true;
+    std::string destination_identity;
     std::string root;
     std::vector<Row> rows;
     std::vector<outloud_vm_voice_v1> records;
@@ -97,7 +99,7 @@ int32_t __cdecl outloud_vm_read(outloud_vm_result** result) noexcept {
     return read([] { return std::tuple{VoiceLibrary{},windows_sapi_voice_registry(),MachineVoiceLibraryPolicy::production}; },result);
 }
 const outloud_vm_snapshot_v1* __cdecl outloud_vm_result_snapshot(const outloud_vm_result* result) noexcept {
-    return result && !result->error ? &result->snapshot : nullptr;
+    return result && result->is_snapshot && !result->error ? &result->snapshot : nullptr;
 }
 const outloud_vm_error_v1* __cdecl outloud_vm_result_error(const outloud_vm_result* result) noexcept {
     return result && result->error ? &result->error->view : nullptr;
@@ -105,4 +107,52 @@ const outloud_vm_error_v1* __cdecl outloud_vm_result_error(const outloud_vm_resu
 void __cdecl outloud_vm_result_free(outloud_vm_result* result) noexcept { delete result; }
 const outloud_vm_content_v1* __cdecl outloud_vm_result_content(const outloud_vm_result* result,uint64_t row) noexcept {
     return result && !result->error && row<result->contents.size() ? &result->contents[static_cast<std::size_t>(row)] : nullptr;
+}
+
+namespace {
+template<class Function> int32_t export_operation(Function function,outloud_vm_result** output) noexcept {
+    if (!output) { return OUTLOUD_VM_INVALID_ARGUMENT; } *output=nullptr;
+    try {
+        auto result=std::make_unique<outloud_vm_result>(); result->is_snapshot=false;
+        try { function(*result); }
+        catch (const VoiceLibraryError& error) { result->error=frontend::error_from<Error>(error); }
+        catch (const std::bad_alloc&) { throw; }
+        catch (...) { result->error=internal_error(); }
+        result->bind(); const auto status=result->error ? OUTLOUD_VM_ERROR : OUTLOUD_VM_OK;
+        *output=result.release(); return status;
+    } catch (const std::bad_alloc&) { return OUTLOUD_VM_OUT_OF_MEMORY; }
+    catch (...) { return OUTLOUD_VM_INTERNAL_ERROR; }
+}
+void checked_export(VoiceLibrary library,std::string_view id,std::string_view name,std::string_view hash,
+    const std::filesystem::path& destination,std::string_view identity) {
+    if (!detail::library_fs::id(id) || hash.size()!=64 || hash.find_first_not_of("0123456789abcdef")!=hash.npos || name.empty() ||
+        (identity!="absent" && (identity.size()!=64 || identity.find_first_not_of("0123456789abcdef")!=identity.npos))) {
+        throw VoiceLibraryError(VoiceLibraryErrorCode::export_conflict,"Export requires a valid selected voice and destination snapshot.");
+    }
+    VoiceExportOptions options; options.expected_display_name=name; options.expected_olv_sha256=hash;
+    options.expected_destination=std::string(identity); options.replace_existing=identity!="absent";
+    (void)library.export_olv(id,destination,options);
+}
+bool bounded(const char* text) { return text && strnlen_s(text,32769)<=32768 && detail::valid_utf8(text); }
+}
+namespace outloud::frontend {
+int32_t export_injected(VoiceLibrary library,std::string_view id,std::string_view name,std::string_view hash,
+    const std::filesystem::path& destination,std::string_view identity,outloud_vm_result** output) noexcept {
+    return export_operation([&](auto&) { checked_export(std::move(library),id,name,hash,destination,identity); },output);
+}
+}
+uint32_t __cdecl outloud_vm_capabilities() noexcept { return OUTLOUD_VM_CAP_OLV_EXPORT_V1; }
+int32_t __cdecl outloud_vm_export_destination(const char* destination,outloud_vm_result** output) noexcept {
+    if (!bounded(destination)) { if (output) { *output=nullptr; } return OUTLOUD_VM_INVALID_ARGUMENT; }
+    return export_operation([&](auto& result) { result.destination_identity=inspect_olv_export_destination(detail::library_fs::wide(destination)); },output);
+}
+const char* __cdecl outloud_vm_result_destination(const outloud_vm_result* result) noexcept {
+    return result && !result->is_snapshot && !result->error && !result->destination_identity.empty() ? result->destination_identity.c_str() : nullptr;
+}
+int32_t __cdecl outloud_vm_export(const char* id,const char* name,const char* hash,const char* destination,
+    const char* identity,outloud_vm_result** output) noexcept {
+    if (!bounded(id) || !bounded(name) || !bounded(hash) || !bounded(destination) || !bounded(identity)) {
+        if (output) { *output=nullptr; } return OUTLOUD_VM_INVALID_ARGUMENT;
+    }
+    return export_operation([&](auto&) { checked_export(VoiceLibrary{},id,name,hash,detail::library_fs::wide(destination),identity); },output);
 }

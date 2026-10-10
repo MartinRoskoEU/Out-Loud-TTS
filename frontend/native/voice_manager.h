@@ -66,7 +66,7 @@ typedef struct outloud_vm_content_v1 {
 
 OUTLOUD_VM_API uint32_t __cdecl outloud_vm_abi_version(void) OUTLOUD_VM_NOEXCEPT;
 // Uses the existing production known-folder root and machine Registry64 scope.
-// No configurable root/scope/mutation export. Each call owns independent state.
+// No configurable root/scope/installed-library mutation export. Each call owns independent state.
 // *result starts NULL. OK/ERROR return an owned result. ERROR has a structured
 // error and no snapshot. Other statuses return no result.
 OUTLOUD_VM_API int32_t __cdecl outloud_vm_read(outloud_vm_result** result) OUTLOUD_VM_NOEXCEPT;
@@ -74,6 +74,16 @@ OUTLOUD_VM_API const outloud_vm_snapshot_v1* __cdecl outloud_vm_result_snapshot(
 OUTLOUD_VM_API const outloud_vm_error_v1* __cdecl outloud_vm_result_error(const outloud_vm_result* result) OUTLOUD_VM_NOEXCEPT;
 OUTLOUD_VM_API const outloud_vm_content_v1* __cdecl outloud_vm_result_content(const outloud_vm_result* result, uint64_t row) OUTLOUD_VM_NOEXCEPT;
 OUTLOUD_VM_API void __cdecl outloud_vm_result_free(outloud_vm_result* result) OUTLOUD_VM_NOEXCEPT;
+// Additive ABI-v1 capability: export only, no installed-library mutation or elevation.
+#define OUTLOUD_VM_CAP_OLV_EXPORT_V1 1u
+OUTLOUD_VM_API uint32_t __cdecl outloud_vm_capabilities(void) OUTLOUD_VM_NOEXCEPT;
+// Inspect a local destination before asking the user to overwrite it. Owned result
+// contains "absent" or a fingerprint; use the same fingerprint in export.
+OUTLOUD_VM_API int32_t __cdecl outloud_vm_export_destination(const char* destination, outloud_vm_result** result) OUTLOUD_VM_NOEXCEPT;
+OUTLOUD_VM_API const char* __cdecl outloud_vm_result_destination(const outloud_vm_result* result) OUTLOUD_VM_NOEXCEPT;
+OUTLOUD_VM_API int32_t __cdecl outloud_vm_export(const char* library_id, const char* expected_name,
+    const char* expected_hash, const char* destination, const char* expected_destination,
+    outloud_vm_result** result) OUTLOUD_VM_NOEXCEPT;
 #ifdef __cplusplus
 }
 #endif

@@ -13,7 +13,7 @@ enum class VoiceLibraryErrorCode {
     invalid_display_name, duplicate_content, import_failed, incompatible_voice,
     corrupt_voice, replace_required, source_io, destination_io, remove_failed,
     internal_failure, library_access_denied, library_security_invalid,
-    voice_in_use, replacement_conflict, replacement_pending, removal_conflict, removal_partial, removal_pending
+    voice_in_use, replacement_conflict, replacement_pending, removal_conflict, removal_partial, removal_pending, export_conflict
 };
 [[nodiscard]] std::string_view voice_library_error_name(VoiceLibraryErrorCode code) noexcept;
 class VoiceLibraryError : public std::runtime_error {
@@ -73,6 +73,14 @@ struct LibraryReplaceResult {
     bool changed = false, cleanup_pending = false;
     std::string detail;
 };
+struct VoiceExportOptions {
+    bool replace_existing = false;
+    std::string expected_display_name, expected_olv_sha256;
+    // "absent" or the native destination fingerprint captured before overwrite confirmation.
+    std::optional<std::string> expected_destination;
+};
+// Read-only, local destination inspection; never creates a file or a library.
+[[nodiscard]] std::string inspect_olv_export_destination(const std::filesystem::path&);
 struct VoiceRemovalResult {
     // Successful removal leaves no active entry. Trash cleanup can be retried.
     bool cleanup_pending = false;
@@ -120,8 +128,12 @@ public:
         std::string_view display_name, DuplicateContentPolicy duplicates = DuplicateContentPolicy::reject);
     [[nodiscard]] LibraryReplaceResult replace_pocket_voice(std::string_view id,
         const std::filesystem::path& source, const VoiceReplaceOptions& options);
+    [[nodiscard]] LibraryReplaceResult replace_olv(std::string_view id,
+        const std::filesystem::path& source, const VoiceReplaceOptions& options);
     [[nodiscard]] OlvInfo export_olv(std::string_view id, const std::filesystem::path& destination,
                                    bool replace_existing = false) const;
+    [[nodiscard]] OlvInfo export_olv(std::string_view id, const std::filesystem::path& destination,
+                                   const VoiceExportOptions&) const;
     [[nodiscard]] LibraryVoice rename_voice(std::string_view id, std::string_view display_name);
     [[nodiscard]] VoiceRemovalResult remove_voice(std::string_view id);
     [[nodiscard]] VoiceRemovalResult remove_voice(std::string_view id, const VoiceRemoveOptions&);

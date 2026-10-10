@@ -82,7 +82,7 @@ internal static class ImportTests
         public void Dispose() { } // In-process transport fake, never starts an elevated/native process.
     }
     private sealed class IgnoreProgress : IProgress<ImportPhase> { public void Report(ImportPhase value) { } }
-    private static byte[] Frame(uint kind, string id, BackendError? error = null, string[]? duplicates = null, VoiceOperation operation = VoiceOperation.Import)
+    internal static byte[] Frame(uint kind, string id, BackendError? error = null, string[]? duplicates = null, VoiceOperation operation = VoiceOperation.Import)
     {
         using var stream = new MemoryStream(); using var writer = new BinaryWriter(stream, new UTF8Encoding(false, true), true);
         writer.Write(ImportProtocol.Magic); writer.Write(ImportProtocol.Version); writer.Write(kind); writer.Write(0u);
@@ -162,6 +162,21 @@ internal static class ImportTests
         pipeLauncher.BadPeer = true;
         pipeResult = await new ElevatedVoiceImportService(pipeLauncher).ImportAsync(request, new IgnoreProgress());
         check(pipeResult.Error?.Code == "launch_or_transport_failed", "Wrong process pipe peer is rejected before sending request.");
+        var olvRequest = new VoiceImportRequest("C:\\fake\\hlas-ž.olv", "OLV Hlas");
+        deniedResult = await new ElevatedVoiceImportService(denied).ImportAsync(olvRequest, new IgnoreProgress());
+        check(deniedResult.Phase == ImportPhase.Cancelled && deniedResult.Operation == VoiceOperation.ImportOlv, "OLV UAC cancellation retains operation without actual elevation.");
+        pipeLauncher = new PipeLauncher { Reply = Frame(1, id, operation: VoiceOperation.ImportOlv) };
+        pipeResult = await new ElevatedVoiceImportService(pipeLauncher).ImportAsync(olvRequest, new IgnoreProgress());
+        check(pipeResult.Phase == ImportPhase.Succeeded && pipeResult.Operation == VoiceOperation.ImportOlv && BitConverter.ToUInt32(pipeLauncher.Request!, 8) == 4, "OLV authenticated fake-process pipe uses additive operation 4.");
+        pipeLauncher.Reply = Frame(3, id, nativeError, operation: VoiceOperation.ImportOlv);
+        pipeResult = await new ElevatedVoiceImportService(pipeLauncher).ImportAsync(olvRequest, new IgnoreProgress());
+        check(pipeResult.Phase == ImportPhase.Partial && pipeResult.Error == nativeError, "OLV registration partial outcome survives pipe.");
+        pipeLauncher.Started = false; pipeLauncher.Reply = Frame(2, "", new("helper", "invalid_request", "Unsupported operation"));
+        pipeResult = await new ElevatedVoiceImportService(pipeLauncher).ImportAsync(olvRequest, new IgnoreProgress());
+        check(pipeResult.Error?.Code == "invalid_request" && pipeResult.Operation == VoiceOperation.ImportOlv, "Older helper rejects new operation without reinterpretation.");
+        pipeLauncher.Started = true; pipeLauncher.Truncate = true;
+        pipeResult = await new ElevatedVoiceImportService(pipeLauncher).ImportAsync(olvRequest, new IgnoreProgress());
+        check(pipeResult.Error?.Code == "outcome_unknown" && pipeResult.Operation == VoiceOperation.ImportOlv, "OLV lost transport has unknown completion.");
         // Import-or-replace routing and notification lifecycle use fake dialogs/services.
         voice = voice with { DisplayName = "Undead Female", OlvSha256 = new string('a', 64) };
         service.Next = new("fake", new[] { voice }); await model.RefreshAsync();

@@ -83,7 +83,10 @@ counts, consistency boundaries and focused validation.
 Import-pocket/import-olv/export/rename/remove/cleanup remain explicit library-only
 operations with their existing validation options and result meanings. They do
 not coordinate registry changes. Use Voice Manager's elevated helper for normal
-Import/Replace/Remove; the normal WPF process remains asInvoker and read-only.
+Import/Replace/Remove of either prepared Pocket or OLV sources. The normal WPF
+process stays asInvoker; its Export Voice action reads the managed library and
+writes only the selected user destination through native export. See the
+[OLV workflow](VOICE_MANAGER_OLV_IMPORT_EXPORT.md).
 Use the separate managed-token CLI for deliberate token diagnostics/reconciliation.
 
 Canonical generated Gnome conditioning assets remain numerical test inputs; the

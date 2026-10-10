@@ -89,6 +89,7 @@ internal static class Program
             var mutable = new List<VoiceRecord> { first }; var immutable = new VoiceSnapshot("fake", mutable); mutable.Clear();
             Check(immutable.Voices.Count == 1, "Snapshot copies mutable input.");
             await ImportTests.Run(Check);
+            await OlvTests.Run(Check);
             await VoiceTesterTests.Run(Check);
             Console.WriteLine($"PASS: {checks} frontend checks (fake services/elevation; no native read/registry/library mutation).");
             return 0;
