@@ -104,7 +104,26 @@ and installed-host validation remain pre-release activities.
 
 This is a development project, not a complete installable distribution. **A03**
 remains packaging, installer/runtime handling, signing, install/uninstall and
-upgrades. **A04** requires project-license decisions, complete notices/attribution,
-and model/voice redistribution review. [RNG notices](RNG_NOTICES.md) cover that
-component only; no complete-product license or blanket asset redistribution
-permission is established or selected here.
+upgrades. Licensing documentation records the selected original-code license and
+third-party attribution; outstanding asset/runtime redistribution questions remain.
+The complete public binary distribution is not yet cleared.
+
+## License
+
+Out Loud is free and open-source. Original project-owned code and contributions
+the project has the necessary rights to license use the [MIT License](LICENSE).
+**Copyright (c) 2026 Nendis.** MIT permits downstream commercial use and redistribution.
+Third-party code retains its own licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)
+and the complete texts and attribution documents in [licenses/](licenses/).
+
+The [Pocket model weights](licenses/Pocket-Model-Attribution.md) and
+[tokenizer vocabulary](licenses/Pocket-Tokenizer-Attribution.md) declare separate
+CC BY 4.0 asset licensing. Additional upstream use-policy/access questions remain
+unresolved, so overall asset bundling is not finally cleared. Unicode-derived
+tokenizer tables retain their [separate data terms](licenses/Unicode-Data.txt).
+
+Users supply their own compatible voice files. Out Loud does not distribute OLV,
+prepared voice safetensors, recordings or sample voices. MIT does not grant rights
+to third-party voices, recordings or speaker likenesses. Microsoft prerequisites
+also retain their own terms; licensing documentation is not blanket binary-release
+clearance.
