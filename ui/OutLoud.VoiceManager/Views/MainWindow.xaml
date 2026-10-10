@@ -3,6 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:views="clr-namespace:OutLoud.VoiceManager.Views"
         Title="Out Loud" Width="1120" Height="780" MinWidth="860" MinHeight="560"
+        Icon="pack://application:,,,/Assets/OutLoud.ico"
         FontFamily="Segoe UI" FontSize="13" UseLayoutRounding="True" SnapsToDevicePixels="True"
         Background="{DynamicResource CanvasBrush}" Foreground="{DynamicResource TextBrush}">
   <Grid>

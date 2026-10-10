@@ -53,6 +53,14 @@ Building neither installs nor registers anything. See the
 [build and validation guide](docs/BUILD_AND_VALIDATION_IMPROVEMENTS.md) for WPF
 properties, output paths, prerequisites and explicit prepared-reference setup.
 
+Voice Manager uses [OutLoud.ico](ui/OutLoud.VoiceManager/Assets/OutLoud.ico) as
+its application and window icon. Builds embed the same source icon into the
+executable and WPF resources; no loose icon file is required at runtime.
+When the production installer is implemented, its Start Menu shortcut should
+target `bin\OutLoud.VoiceManager.exe` and use that executable's icon at index 0.
+An Inno Setup project should reference the existing `OutLoud.ico` source with
+`SetupIconFile`; no installer project exists yet.
+
 Development, after preparing the documented offline references:
 
 ```powershell

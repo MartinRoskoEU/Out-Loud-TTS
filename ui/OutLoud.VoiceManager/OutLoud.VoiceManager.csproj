@@ -10,11 +10,14 @@
     <LangVersion>12.0</LangVersion>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\OutLoud.ico</ApplicationIcon>
     <NativeBuildDirectory Condition="'$(NativeBuildDirectory)' == ''">$(MSBuildThisFileDirectory)..\..\build</NativeBuildDirectory>
     <NativeBridgePath>$(NativeBuildDirectory)\$(Configuration)\OutLoudVoiceManagerNative.dll</NativeBridgePath>
     <MutationHelperPath>$(NativeBuildDirectory)\$(Configuration)\OutLoudVoiceImportHelper.exe</MutationHelperPath>
   </PropertyGroup>
   <ItemGroup>
+    <None Remove="Assets\OutLoud.ico" />
+    <Resource Include="Assets\OutLoud.ico" />
     <None Include="$(MutationHelperPath)" Link="OutLoudVoiceImportHelper.exe" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <None Include="$(NativeBridgePath)" Link="OutLoudVoiceManagerNative.dll"
           CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
