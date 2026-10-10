@@ -39,17 +39,19 @@ performed to create these notices.
 
 | Component / publisher | Verified origin | Terms, relationship and attribution | Complete terms / asset notice |
 | --- | --- | --- | --- |
-| **Pocket TTS model**, Kyutai | `kyutai/pocket-tts`, `983151f13aaeab1b13c1e5e3c2c383d49a9edf3f`, `languages/english/model.safetensors`; [pinned metadata](https://huggingface.co/api/models/kyutai/pocket-tts/revision/983151f13aaeab1b13c1e5e3c2c383d49a9edf3f?blobs=true) | **CC-BY-4.0** declared; OLP contains an unchanged-BF16 inference subset in a new container. Kyutai/verified creator credits, original/output hashes and change notice retained. Weights are not MIT or newly trained by Out Loud. | [Model attribution](licenses/Pocket-Model-Attribution.md), [full CC legal code](licenses/CC-BY-4.0.txt) |
+| **Pocket TTS model**, Kyutai | Historical conversion: `kyutai/pocket-tts`, `983151f13aaeab1b13c1e5e3c2c383d49a9edf3f`, `languages/english/model.safetensors`; [original metadata](https://huggingface.co/api/models/kyutai/pocket-tts/revision/983151f13aaeab1b13c1e5e3c2c383d49a9edf3f?blobs=true). Additional bit-exact public payload source: `kyutai/pocket-tts-without-voice-cloning`, `00eac05ed3d16bdc3f6b5d598874019c34a89214`, same file path; [public metadata](https://huggingface.co/api/models/kyutai/pocket-tts-without-voice-cloning/revision/00eac05ed3d16bdc3f6b5d598874019c34a89214?blobs=true). | **CC-BY-4.0**; 169/169 OLP tensors match the public source exactly. Existing BF16 subset/container and historical source binding are unchanged. Retain Kyutai/creator credits, hashes and change notice. Weights are not MIT or newly trained by Out Loud. | [Model attribution](licenses/Pocket-Model-Attribution.md), [full CC legal code](licenses/CC-BY-4.0.txt), [A04.3 verification](docs/MODEL_DISTRIBUTION_A04_3.md) |
 | **Pocket tokenizer vocabulary**, Kyutai | Separate `kyutai/pocket-tts-without-voice-cloning`, `00eac05ed3d16bdc3f6b5d598874019c34a89214`, `languages/english/tokenizer.json`; [pinned card](https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/raw/00eac05ed3d16bdc3f6b5d598874019c34a89214/README.md) | **CC-BY-4.0** declared; learned vocabulary/scores/configuration converted to native binary. Separate publisher/source/change attribution; vocabulary is not MIT. | [Tokenizer attribution](licenses/Pocket-Tokenizer-Attribution.md), [full CC legal code](licenses/CC-BY-4.0.txt) |
 | **Unicode-derived property/case tables**, Unicode, Inc. | Unicode 15.0.0 via Python 3.12; [historical notice](https://github.com/unicode-org/icu/blob/release-72-1/icu4c/LICENSE) preserved in ICU 72.1 | **Unicode-DFS-2016**, copyright 1991–2022 Unicode, Inc. Generated whitespace/uppercase/digit ranges and uppercase mappings are included in the binary tokenizer; preserve notice. No ICU library is shipped. | [Unicode-Data.txt](licenses/Unicode-Data.txt), exact relevant historical section |
 
-**Asset redistribution remains qualified.** A04 verified the CC BY declarations
-but did not establish the legal effect/scope of Kyutai's additional prohibited-use
-wording or any applicable accepted access agreement. The model and tokenizer may
-have different access/policy scope. These attribution files and the complete CC
-legal code do not settle that question or finally clear installer bundling.
-The CC terms support commercial/free reuse under their grant; this notice does not
-invent additional restrictions or dismiss separate upstream conditions.
+**A04.3 decision A: the existing OLP and binary tokenizer may be bundled with
+their required notices.** The [focused verification](docs/MODEL_DISTRIBUTION_A04_3.md)
+established matching public payload provenance and reviewed the pinned public
+terms. No concrete redistribution prohibition or separate agreement preventing
+bundling was identified. Preserve the public card's prohibited-use policy
+reference; this decision does not authorize harmful or nonconsensual voice use,
+relabel assets MIT, or cancel actual separate agreements. It supersedes the earlier
+pending asset conclusion in A04/A04.2 and the unchanged tokenizer attribution.
+No current model/tokenizer conversion or user-only weight download is required.
 
 ## Microsoft hosting material and runtime prerequisites
 
@@ -89,8 +91,8 @@ data, not a permission to package prepared voice `.safetensors` files.
 
 ## Remaining release qualifications
 
-- Model additional use-policy/access agreement and redistribution implications.
-- Tokenizer policy scope and downstream effect.
+- Retain the model/tokenizer attribution, CC terms, Unicode notice and public
+  use-policy source reference established in A04.3.
 - VC runtime distributor entitlement if binaries are bundled.
 - SignTool permission/design if shipped for classic DLL signing.
 - Exact final apphost/Runtime package versions, terms and subcomponent notices.

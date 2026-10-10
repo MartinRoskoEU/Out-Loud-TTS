@@ -53,16 +53,21 @@ The Pocket vocabulary, Unicode-derived tables and Python conversion tooling have
 distinct roles and terms. Neither table generation nor storage in this binary makes
 the Unicode data MIT or bundles the Python toolchain.
 
-## Unresolved additional policy scope
+## Redistribution assessment
 
-**Overall tokenizer bundling permission is not finally cleared.** The pinned
-repository declares CC BY 4.0 and also carries additional prohibited-use wording.
-A04 did not establish that policy's legal effect, scope over tokenizer data or
-downstream redistribution implications. Its repository was not access-gated at
-inspection; that difference does not itself resolve policy scope.
+**A04.3 decision A: the existing binary tokenizer may be bundled unchanged with
+the required license and attribution materials.**
+[A04.3 verification](../docs/MODEL_DISTRIBUTION_A04_3.md) established public access
+to the pinned source and verified the existing source/binary identities above.
+CC BY 4.0 permits redistribution subject to its attribution and other license
+conditions. No concrete condition preventing bundling or requiring individual
+user downloads was found. No tokenizer conversion or rebuild is required.
 
-The CC grant supports commercial/free reuse with its conditions, but creating this
-attribution and copying the full license does not settle the additional question.
-The intended binary installer must account for both the vocabulary's asset terms
-and the separate Unicode notice, and retain the unresolved qualification until
-applicable policy/access conditions are established.
+Retain Kyutai/source credits, license/disclaimer and conversion notices, together
+with the separate Unicode notice. Preserve the
+[pinned upstream card's prohibited-use policy](https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/raw/00eac05ed3d16bdc3f6b5d598874019c34a89214/README.md)
+reference; this assessment does not authorize harmful or unauthorized use.
+No separate agreement preventing bundling was evidenced in A04.3. Actual separate
+agreements remain independent under CC section 7(b); CC BY 4.0 does not override
+them. This current assessment supersedes the earlier pending tokenizer-policy
+conclusion while preserving the original source and conversion history.

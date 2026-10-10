@@ -5,7 +5,7 @@ Gabriel De Marmiesse, Václav Volhejn, Neil Zeghidour and Alexandre Défossez.
 This credit does not invent a copyright assignment or give Nendis ownership of
 the original weights.
 
-## Source and license
+## Historical conversion source and license
 
 - Repository: [`kyutai/pocket-tts`](https://huggingface.co/kyutai/pocket-tts).
 - Revision: `983151f13aaeab1b13c1e5e3c2c383d49a9edf3f`.
@@ -44,16 +44,37 @@ These identities and changes were verified in
 [A04, sections 6–7](../docs/LICENSING_AND_REDISTRIBUTION_A04.md).
 No asset was regenerated or modified when this attribution was added.
 
-## Unresolved additional policy/access terms
+## Independently verified public matching payload
 
-**Overall model bundling permission is not finally cleared.** The pinned metadata
-declares CC BY 4.0 and also publishes prohibited-use wording. A04 did not establish
-the legal effect of that wording, any applicable accepted access agreement, or its
-redistribution/downstream implications. The pinned raw model card was gated; the
-exact-revision API supplied the verified license/policy evidence.
+[A04.3](../docs/MODEL_DISTRIBUTION_A04_3.md) verified the existing OLP against:
 
-The CC grant permits commercial and free reuse under its conditions. This document
-does not reinterpret the separate policy as a new CC restriction, dismiss it as
-ineffective, or claim it has been resolved. Attribution and inclusion of the full
-CC text do not settle that uncertainty. The model is an intended installer asset
-only after the remaining applicable conditions are established.
+- Public repository: [`kyutai/pocket-tts-without-voice-cloning`](https://huggingface.co/kyutai/pocket-tts-without-voice-cloning).
+- Pinned revision: `00eac05ed3d16bdc3f6b5d598874019c34a89214`.
+- File: `languages/english/model.safetensors`, 219,029,196 bytes.
+- SHA-256: `916ccd2686e9311cb40054893a3c4284393d658825ffc714a276f3e9b152344f`.
+- [Exact metadata](https://huggingface.co/api/models/kyutai/pocket-tts-without-voice-cloning/revision/00eac05ed3d16bdc3f6b5d598874019c34a89214?blobs=true)
+  and [card](https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/raw/00eac05ed3d16bdc3f6b5d598874019c34a89214/README.md):
+  **CC-BY-4.0**, nongated; anonymous checkpoint access verified.
+
+**169/169 included tensors match bit for bit; zero mismatches or missing IDs.**
+Kyutai's [published transformation](https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/raw/00eac05ed3d16bdc3f6b5d598874019c34a89214/remove_voice_cloning_and_push.py)
+zeros 42 `mimi.encoder`-prefix tensors, all excluded from OLP. Other source
+tensors match the historical checkpoint. This is additional verified payload
+provenance, not a claim that the original conversion downloaded this public file.
+The existing OLP bytes, header source hash and compatibility ID remain unchanged.
+
+## Redistribution assessment
+
+**A04.3 decision A: bundle the unchanged OLP with attribution.** The public CC
+grant supports redistribution; no concrete bundling restriction was identified.
+Retain the credits, source links, license/disclaimer and conversion notice above.
+Preserve the public card's prohibited-use policy reference: lawful use and consent
+remain relevant, including for imported voices. The native engine does not
+implement audio-to-voice cloning, but that does not make all impersonation impossible.
+
+The policy is not treated as a redistribution prohibition or declared ineffective.
+No separate agreement preventing bundling was evidenced in public access; actual
+separate agreements remain independent under CC section 7(b). This assessment
+supersedes the earlier pending asset conclusion without rewriting gated-source
+history or claiming that past agreements are cancelled. Installer component
+licensing beyond this asset remains separate.
