@@ -34,6 +34,7 @@ CTestTestfile.cmake
 
 # Generated benchmark / test output
 generated/
+/release/
 *.log
 
 # Generated audio

@@ -1,0 +1,39 @@
+<Project>
+  <!-- Authoritative product metadata. Edit only this version for a release bump. -->
+  <PropertyGroup>
+    <OutLoudProductVersion>0.1.0</OutLoudProductVersion>
+    <OutLoudProductName>Out Loud</OutLoudProductName>
+    <OutLoudProductCopyright>Copyright (c) 2026 Nendis</OutLoudProductCopyright>
+    <OutLoudWindowsVersion>$(OutLoudProductVersion).0</OutLoudWindowsVersion>
+    <Version>$(OutLoudProductVersion)</Version>
+    <VersionPrefix>$(OutLoudProductVersion)</VersionPrefix>
+    <AssemblyVersion>$(OutLoudWindowsVersion)</AssemblyVersion>
+    <FileVersion>$(OutLoudWindowsVersion)</FileVersion>
+    <InformationalVersion>$(OutLoudProductVersion)</InformationalVersion>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+    <Product>$(OutLoudProductName)</Product>
+    <Copyright>$(OutLoudProductCopyright)</Copyright>
+    <Company>Nendis</Company>
+  </PropertyGroup>
+  <Target Name="ValidateOutLoudVersion" BeforeTargets="PrepareForBuild;GenerateAssemblyInfo">
+    <XmlPeek XmlInputPath="$(MSBuildThisFileDirectory)ProductVersion.props" Query="/Project/PropertyGroup/OutLoudProductVersion/text()">
+      <Output TaskParameter="Result" PropertyName="_OutLoudSourceVersion" />
+    </XmlPeek>
+    <XmlPeek XmlInputPath="$(MSBuildThisFileDirectory)ProductVersion.props" Query="/Project/PropertyGroup/OutLoudProductName/text()">
+      <Output TaskParameter="Result" PropertyName="_OutLoudSourceName" />
+    </XmlPeek>
+    <XmlPeek XmlInputPath="$(MSBuildThisFileDirectory)ProductVersion.props" Query="/Project/PropertyGroup/OutLoudProductCopyright/text()">
+      <Output TaskParameter="Result" PropertyName="_OutLoudSourceCopyright" />
+    </XmlPeek>
+    <Error Condition="'$(OutLoudProductVersion)' != '$(_OutLoudSourceVersion)'"
+           Text="Out Loud version must come from ProductVersion.props; overrides are unsupported." />
+    <Error Condition="!$([System.Text.RegularExpressions.Regex]::IsMatch('$(OutLoudProductVersion)', '\A(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\z'))"
+           Text="Out Loud requires canonical MAJOR.MINOR.PATCH versioning." />
+    <Error Condition="$([System.Version]::Parse('$(OutLoudProductVersion)').Major) &gt; 65534 Or $([System.Version]::Parse('$(OutLoudProductVersion)').Minor) &gt; 65534 Or $([System.Version]::Parse('$(OutLoudProductVersion)').Build) &gt; 65534"
+           Text="Out Loud version components must fit Windows and .NET assembly metadata (0..65534)." />
+    <Error Condition="'$(Version)' != '$(OutLoudProductVersion)' Or '$(VersionPrefix)' != '$(OutLoudProductVersion)' Or '$(VersionSuffix)' != '' Or '$(AssemblyVersion)' != '$(OutLoudProductVersion).0' Or '$(FileVersion)' != '$(OutLoudProductVersion).0' Or '$(InformationalVersion)' != '$(OutLoudProductVersion)' Or '$(OutLoudWindowsVersion)' != '$(OutLoudProductVersion).0' Or '$(IncludeSourceRevisionInInformationalVersion)' != 'false'"
+           Text="Out Loud assembly/file/product versions must match ProductVersion.props." />
+    <Error Condition="'$(OutLoudProductName)' != '$(_OutLoudSourceName)' Or '$(OutLoudProductCopyright)' != '$(_OutLoudSourceCopyright)' Or '$(Product)' != '$(OutLoudProductName)' Or '$(Copyright)' != '$(OutLoudProductCopyright)' Or '$(GenerateAssemblyInfo)' == 'false'"
+           Text="Out Loud product metadata and generated assembly information are required." />
+  </Target>
+</Project>

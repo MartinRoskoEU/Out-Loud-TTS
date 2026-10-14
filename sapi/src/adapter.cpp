@@ -2,6 +2,7 @@
 #include "support.hpp"
 #include "asset_diagnostics.hpp"
 #include "error_logger.hpp"
+#include "speech_rate.hpp"
 #include "outloud/orchestration.hpp"
 #include "outloud/pcm16.hpp"
 #include <atomic>
@@ -128,6 +129,8 @@ struct RequestControl {
     ISpTTSEngineSite* site;
     std::stop_source cancellation;
     bool aborted = false;
+    bool rate_initialized = false;
+    long rate = 0;
     unsigned control_errors = 0;
     void control_result(logging::Event event,HRESULT hr,unsigned bit) {
         if (FAILED(hr) && !(control_errors&bit)) {
@@ -137,8 +140,15 @@ struct RequestControl {
     bool poll() {
         const auto actions = site->GetActions(); // always Speak caller thread
         if ((actions & SPVES_ABORT) && !aborted) { aborted = true; cancellation.request_stop(); }
-        // Chatterbox policy: consume controls without waveform transforms/seeking.
-        if (actions & SPVES_RATE) { long value = 0; control_result(logging::Event::rate,site->GetRate(&value),1); }
+        // Read initial site rate even when SAPI has no pending change action.
+        if (!rate_initialized || (actions & SPVES_RATE)) {
+            long value = 0;
+            const auto hr = site->GetRate(&value);
+            control_result(logging::Event::rate,hr,1);
+            if (SUCCEEDED(hr)) { rate = std::clamp(value,-10L,10L); }
+            rate_initialized = true;
+        }
+        // Existing volume/skip policy remains unchanged.
         if (actions & SPVES_VOLUME) { USHORT value = 100; control_result(logging::Event::volume,site->GetVolume(&value),2); }
         if (actions & SPVES_SKIP) {
             SPVSKIPTYPE type{}; long count = 0;
@@ -219,6 +229,10 @@ HRESULT write_frame(RequestControl& control, std::span<const std::int16_t> pcm) 
 HRESULT stream(std::unique_ptr<Resident>& resident, const Configuration& configuration,
         std::string_view text, RequestControl& control) {
     Delivery d(control.cancellation.get_token());
+    SpeechRate speech_rate;
+    const auto output = [&](std::span<const std::int16_t> pcm) {
+        return write_frame(control,pcm);
+    };
     std::stop_callback wake(d.cancellation,[&d] {
         { std::lock_guard lock(d.mutex); }
         d.changed.notify_all();
@@ -260,7 +274,7 @@ HRESULT stream(std::unique_ptr<Resident>& resident, const Configuration& configu
             if (d.done) { break; }
             if (!d.ready) { continue; }
             lock.unlock();
-            const auto hr = control.aborted ? S_OK : write_frame(control,d.pcm);
+            const auto hr = control.aborted ? S_OK : speech_rate.write(d.pcm,control.rate,output);
             lock.lock(); d.ready = false;
             if (hr!=S_OK) { d.output_error = hr; }
             d.changed.notify_one();
@@ -281,6 +295,10 @@ HRESULT stream(std::unique_ptr<Resident>& resident, const Configuration& configu
     if (d.native_status==SynthesisStatus::cancelled && !control.aborted) {
         logging::error({logging::Event::synthesis,E_ABORT,0,logging::Component::native,logging::Kind::unexpected_cancellation});
         return E_ABORT;
+    }
+    // Abort/errors discard the Sonic tail; only successful synthesis flushes it.
+    if (!control.poll()) {
+        return logged_result(logging::Event::write,speech_rate.finish(output));
     }
     return S_OK;
 }

@@ -1,0 +1,17 @@
+Pocket TTS - Kyutai Prohibited Use Policy
+
+Publisher: Kyutai
+Repository: kyutai/pocket-tts-without-voice-cloning
+Revision: 00eac05ed3d16bdc3f6b5d598874019c34a89214
+Source: https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/raw/00eac05ed3d16bdc3f6b5d598874019c34a89214/README.md
+Section: Prohibited use
+Policy text SHA-256 (UTF-8, without a trailing newline): 2af16e4028225963083cddc7d9d964e2cd49545653a6d19ef214703d5343651f
+
+The following paragraph is reproduced verbatim from the pinned model card.
+This upstream use policy is distinct from the CC BY 4.0 asset license.
+It is not a restriction written into CC BY 4.0 and does not change its terms.
+Actual separate agreements remain independent.
+
+BEGIN UPSTREAM POLICY
+Use of our model must comply with all applicable laws and regulations and must not result in, involve, or facilitate any illegal, harmful, deceptive, fraudulent, or unauthorized activity. Prohibited uses include, without limitation, voice impersonation or cloning without explicit and lawful consent; misinformation, disinformation, or deception (including fake news, fraudulent calls, or presenting generated content as genuine recordings of real people or events); and the generation of unlawful, harmful, libelous, abusive, harassing, discriminatory, hateful, or privacy-invasive content. We disclaim all liability for any non-compliant use.
+END UPSTREAM POLICY

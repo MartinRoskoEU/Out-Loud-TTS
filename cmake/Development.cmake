@@ -155,14 +155,14 @@ endif()
 
 add_executable(outloud-sapi-check sapi/tests/host.cpp)
 target_include_directories(outloud-sapi-check PRIVATE sapi/src engine/include engine/src tests)
-target_link_libraries(outloud-sapi-check PRIVATE outloud_assets outloud_text outloud_voice_library ole32 oleaut32 sapi uuid)
+target_link_libraries(outloud-sapi-check PRIVATE outloud_assets outloud_text outloud_voice_library outloud_sonic ole32 oleaut32 sapi uuid)
 target_compile_definitions(outloud-sapi-check PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
 target_compile_options(outloud-sapi-check PRIVATE /W4 /WX /utf-8 /permissive- /fp:precise)
 
 # Error logger isolation: only this private DLL accepts test log paths/faults.
 # Production DLL keeps exactly its two original COM exports.
 add_library(outloud-sapi-logger-test SHARED sapi/src/adapter.cpp sapi/src/error_logger.cpp sapi/tests/error_logger.def)
-target_link_libraries(outloud-sapi-logger-test PRIVATE outloud_orchestration ole32 oleaut32 sapi uuid shell32)
+target_link_libraries(outloud-sapi-logger-test PRIVATE outloud_orchestration outloud_sonic ole32 oleaut32 sapi uuid shell32)
 target_compile_definitions(outloud-sapi-logger-test PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN OUTLOUD_ERROR_LOGGER_TEST=1 OUTLOUD_ERROR_LOGGER_TEST_DLL=1)
 target_compile_options(outloud-sapi-logger-test PRIVATE /W4 /WX /utf-8 /permissive- /fp:precise)
 add_executable(outloud-error-logger-tests sapi/tests/error_logger_test.cpp sapi/src/error_logger.cpp)

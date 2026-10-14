@@ -1,0 +1,19 @@
+{
+  "schema": 1,
+  "target": "bin/OutLoudPocketSAPI.dll",
+  "scope": "LocalMachine",
+  "stores": "My,Root",
+  "key_provider": "Microsoft Software Key Storage Provider",
+  "key_algorithm": "RSA",
+  "key_bits": 3072,
+  "file_digest": "SHA256",
+  "certificate_signature": "RSA-SHA256",
+  "code_signing_eku": "1.3.6.1.5.5.7.3.3",
+  "certificate_years": 5,
+  "key_export_policy": "nonexportable",
+  "key_access": "elevated Administrators and SYSTEM only",
+  "ownership_path": "configuration/signing.ini",
+  "pending_path": "configuration/signing.pending.ini",
+  "vendor_signatures": "preserve system Microsoft VC runtimes; never locally sign them",
+  "require_elevated_machine_authority": true
+}

@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <filesystem>
 #include <string>
+#include "log_ownership.hpp"
 #ifdef OUTLOUD_ERROR_LOGGER_TEST
 #include <atomic>
 #include <mutex>
@@ -133,6 +134,9 @@ void append(const std::filesystem::path& directory,const char* record,DWORD byte
 #endif
     // Only known directories/files are visited; no enumeration or archive scan.
     std::filesystem::create_directories(directory);
+#ifndef OUTLOUD_ERROR_LOGGER_TEST
+    bind_installed_logs(directory);
+#endif
     const auto current=directory/L"engine.log", one=directory/L"engine.1.log", two=directory/L"engine.2.log";
     if (!bounded_archive(one) || !bounded_archive(two)) { return; }
     Handle file{CreateFileW(current.c_str(),GENERIC_READ|GENERIC_WRITE,FILE_SHARE_READ,nullptr,

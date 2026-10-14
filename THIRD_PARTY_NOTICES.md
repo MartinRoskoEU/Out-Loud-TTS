@@ -7,15 +7,16 @@ Out Loud's free distribution policy does not narrow that grant.
 
 Third-party code, model weights, vocabulary, Unicode data and vendor binaries retain
 their own licenses and ownership. The project MIT notice does not replace them.
-This document records the verified material identified by
-[A04](docs/LICENSING_AND_REDISTRIBUTION_A04.md) and its focused
-[A04.1 follow-up](docs/FLOWSAMPLER_PROVENANCE_A04_1.md). It is not a claim that a
-complete public binary distribution has been cleared.
+This document accompanies the Out Loud 0.1.0 installer. Source provenance is
+recorded in [A04](docs/LICENSING_AND_REDISTRIBUTION_A04.md) and its focused
+[A04.1 follow-up](docs/FLOWSAMPLER_PROVENANCE_A04_1.md); the distribution scope
+below describes the current package.
 
 ## Reference implementations and native adaptations
 
 | Component / original author | Verified version or revision; authoritative source | Relationship, license and attribution | Complete terms |
 | --- | --- | --- | --- |
+| **Sonic**, Bill Cox | `b93885dcb70aae50c6f76b0fe4e0868f029a077e`; [upstream source](https://github.com/waywardgeek/sonic/tree/b93885dcb70aae50c6f76b0fe4e0868f029a077e) | Unmodified C sources vendored in `third_party/sonic`, statically linked into the SAPI engine for pitch-preserving speech speed adjustment. **Apache-2.0**; source attribution **Copyright 2010 Bill Cox**; upstream README also credits Copyright 2010, 2011 Bill Cox. Preserve supplied source notices and license. | [Sonic-Apache-2.0.txt](licenses/Sonic-Apache-2.0.txt), exact upstream license; original README and LICENSE retained with vendored sources |
 | **Pocket TTS**, Kyutai | 3.3.0; `3dbee45d343d7dddd0d105468d17f8dcba14db3e`; [upstream license](https://github.com/kyutai-labs/pocket-tts/blob/3dbee45d343d7dddd0d105468d17f8dcba14db3e/LICENSE) | Technical reference for native inference/preparation. **MIT**; preserve its supplied permission/credits. The pinned license contains no holder/year line; none was invented. | [Pocket-TTS-MIT.txt](licenses/Pocket-TTS-MIT.txt), exact upstream text |
 | **MAR**, Tianhong Li | `fe470ac24afbee924668d8c5c83e9fec60af3a73`; [license](https://github.com/LTH14/mar/blob/fe470ac24afbee924668d8c5c83e9fec60af3a73/LICENSE), [referenced sampler](https://github.com/LTH14/mar/blob/fe470ac24afbee924668d8c5c83e9fec60af3a73/models/diffloss.py) | Pocket's sampler explicitly credits this source. Retain the **MIT** attribution, **Copyright (c) 2024 Tianhong Li**, for applicable inherited material; the text is included conservatively for that reference chain. | [MAR-MIT.txt](licenses/MAR-MIT.txt), exact upstream text |
 | **PyTorch RNG-derived implementation**, PyTorch/Caffe/Caffe2 contributors | Local reference `2.14.1+cpu`, source commit `5c4886908584029761b579af026dcfb627c84070`; [license](https://github.com/pytorch/pytorch/blob/5c4886908584029761b579af026dcfb627c84070/LICENSE) | `production_noise.cpp` is an altered scalar subset. Relevant root license **BSD-3-Clause**; preserve the complete contributor list, conditions and disclaimer. No LibTorch runtime/wheel is shipped. | [RNG_NOTICES.md — PyTorch](RNG_NOTICES.md#pytorch) |
@@ -57,9 +58,10 @@ No current model/tokenizer conversion or user-only weight download is required.
 
 | Component / author | Verified source or version | Relationship / license qualification | Complete terms and release action |
 | --- | --- | --- | --- |
-| **.NET apphost**, .NET Foundation and Contributors | [Runtime source license v10.0.12](https://github.com/dotnet/runtime/blob/v10.0.12/LICENSE.TXT); current project targets .NET 10 Windows x64 | Framework-dependent WPF `.exe` includes hosting material even without a bundled Desktop Runtime. Source license **MIT**; copyright .NET Foundation and Contributors. Available SDK/runtime versions are not conclusive provenance for every existing/future apphost binary. | [DotNet-AppHost-MIT.txt](licenses/DotNet-AppHost-MIT.txt), exact pinned runtime MIT notice. A03 must pin the actual host pack and applicable additional notices. |
+| **.NET apphost**, .NET Foundation and Contributors | [Runtime source license v10.0.12](https://github.com/dotnet/runtime/blob/v10.0.12/LICENSE.TXT); production build pins `Microsoft.NETCore.App.Host.win-x64` **10.0.12** and records the selected apphost path/hash | Framework-dependent WPF `.exe` includes hosting material even without a bundled Desktop Runtime. **MIT**; copyright .NET Foundation and Contributors. | [DotNet-AppHost-MIT.txt](licenses/DotNet-AppHost-MIT.txt), exact pinned runtime MIT notice |
 | **.NET 10 Desktop Runtime / WPF**, Microsoft, .NET Foundation and Contributors | [.NET source license](https://github.com/dotnet/runtime/blob/v10.0.12/LICENSE.TXT), [WPF source license](https://github.com/dotnet/wpf/blob/v10.0.0/LICENSE.TXT) | Runtime prerequisite for the framework-dependent frontend. Source licenses are MIT; a selected official binary/runtime package can have additional licenses, Microsoft package terms and ThirdPartyNotices. No runtime package is copied here. | Preserve exact selected package's terms/ThirdPartyNotices if redistributed. This apphost notice is not a complete future Desktop Runtime license inventory. |
-| **Microsoft VC release x64 runtimes**, Microsoft | Observed redist tree 14.44.35112; [VS 2022 redist list](https://learn.microsoft.com/en-us/visualstudio/releases/2022/redistribution) and [VC guidance](https://learn.microsoft.com/en-us/cpp/windows/redistributing-visual-cpp-files?view=msvc-170) | Native engine imports `msvcp140`, `msvcp140_atomic_wait`, `vcruntime140`, `vcruntime140_1`. **Separate Microsoft binary terms**, not project MIT. Owner redistribution entitlement is unresolved if bundling is chosen. | A03 must establish an authorized package/grant or use a user-installed official prerequisite; preserve required package terms and vendor signatures. |
+| **Microsoft VC release x64 runtimes**, Microsoft | Toolchain-derived runtime floor; [VC guidance](https://learn.microsoft.com/en-us/cpp/windows/redistributing-visual-cpp-files?view=msvc-170) | Native engine imports `msvcp140`, `msvcp140_atomic_wait`, `vcruntime140`, `vcruntime140_1`. **Separate Microsoft binary terms**, not project MIT. No VC runtime DLL or redistributable installer is bundled. | Setup uses compatible system-installed prerequisites or offers a consented, hash- and signature-checked download directly from Microsoft. Microsoft package terms remain applicable. |
+| **Inno Setup**, Jordan Russell and Martijn Laan | Inno Setup 7; exact compiler version recorded in the installer build record; [upstream license](https://github.com/jrsoftware/issrc/blob/main/license.txt) | Setup/uninstaller built with unmodified Inno components. Copyright (C) 1997-2026 Jordan Russell; portions Copyright (C) 2000-2026 Martijn Laan. Existing compiler-supplied copyright notices and website addresses remain intact. | Inno Setup license; no Inno compiler, SDK or signing utility is bundled as an application file |
 
 Microsoft STL object portions arise from compiler headers identified as
 **Apache-2.0 WITH LLVM-exception** (MSVC 14.44.35207); the
@@ -67,18 +69,18 @@ Microsoft STL object portions arise from compiler headers identified as
 provide the embedded-object exception described in A04. No STL source is vendored;
 do not confuse its source license with proprietary VC runtime binary terms.
 Windows SAPI/COM, UCRT and ordinary OS DLLs are supplied by Windows, not redistributed
-in this documentation task. XAML refers to installed Windows fonts; no font file is bundled.
+in this installer. XAML refers to installed Windows fonts; no font file is bundled.
 
 SignTool and Windows SDK tools are not bundled. The SDK redistribution grant identified
 in A04 is MSIX-purpose-limited and does not establish permission to ship SignTool
-for ordinary DLL signing. A03 must settle its signing-tool approach and runtime
-handling; publishing MIT notices does not authorize copying proprietary tools/DLLs.
+for ordinary DLL signing. Installation-owned engine signing uses the native
+Windows signing mechanism; it does not redistribute SignTool or publisher-sign setup.
 
 ## Excluded developer dependencies and voice content
 
 The 50 pinned Python dependencies reviewed in A04, Python/PyTorch environments,
 SDKs, reference fixtures and development checkers are preparation/build/test tooling,
-not the planned public installer payload. Their complete wheel license collections
+not the public installer payload. Their complete wheel license collections
 are not copied here. If a developer-tool bundle is later distributed, its actual
 dependencies require a separate notice/package review.
 
@@ -89,17 +91,20 @@ or speaker likenesses. File validation/conversion does not establish consent or 
 The inference model's `.safetensors` source checkpoint is separately identified model
 data, not a permission to package prepared voice `.safetensors` files.
 
-## Remaining release qualifications
+## Distribution scope for 0.1.0
 
-- Retain the model/tokenizer attribution, CC terms, Unicode notice and public
-  use-policy source reference established in A04.3.
-- VC runtime distributor entitlement if binaries are bundled.
-- SignTool permission/design if shipped for classic DLL signing.
-- Exact final apphost/Runtime package versions, terms and subcomponent notices.
-- A production-only installer file allowlist excluding standalone and checker-embedded
-  voice/test data. Current development staging is not the public package.
-- Contributor/third-party rights for material not actually owned or licensable by Nendis.
+The explicit production payload includes the MIT license, this notice, RNG
+notices, Sonic's full Apache 2.0 license, Kyutai attribution/CC terms and verbatim
+prohibited-use policy, Unicode notice, apphost MIT notice, and generated complete
+installation terms. Setup requires interactive license acceptance and separate
+acknowledgment of the Kyutai policy before prerequisite or application installation.
+
+No voice data, research fixtures, Python environment, Microsoft runtime package,
+runtime DLL, SDK or SignTool is bundled. Required shared Microsoft runtimes are
+detected or downloaded directly from Microsoft only after consent, and retain
+their own package licenses. The compiler-selected apphost identity and the exact
+payload hashes are recorded in the build manifests.
 
 The copyright holder and year for original project material are owner-confirmed.
-Other rights questions are not silently resolved by that declaration. No installer
-has been implemented or public binary release cleared by this notice work.
+Third-party license compliance does not grant consent to use another person's
+voice or recordings, or override actual separate agreements.

@@ -1,137 +1,127 @@
-# Out Loud Pocket TTS
+# Out Loud 0.1.0
 
-Out Loud provides offline English narration for the Out Loud World of Warcraft
-addon through a native Pocket TTS engine and Windows SAPI5. Its x64 WPF Voice
-Manager imports prepared Pocket and `.olv` voices, replaces/removes them, exports
-portable `.olv` voice files, tests speech and exports test audio to WAV.
+Offline English text-to-speech for the Out Loud World of Warcraft addon, powered
+by Pocket TTS and Windows SAPI5. The included Voice Manager imports, tests,
+exports and removes compatible voices.
 
-The supported production library is machine-wide, normally
-`C:\ProgramData\OutLoud\VoiceLibrary`. Voices have immutable library IDs and
-HKLM Registry64 SAPI tokens. SAPI display names match validated names entered in
-Voice Manager; token IDs retain `OutLoud_Pocket_<library_id>` and Vendor `Out Loud`.
+## Requirements
 
-```mermaid
-flowchart LR
-    M[Compatible Pocket model .olp] --> N[Native CPU inference]
-    V[Managed voice .olv] --> N
-    T[Tokenizer .bin] --> N
-    N --> S[Windows SAPI5]
-    S --> W[World of Warcraft / Out Loud addon]
-    P[Separately prepared Pocket voice state] --> I[Voice Manager Import or Replace]
-    I --> H[Confirmed operation: elevated native helper]
-    H --> L[Machine Voice Library]
-    L --> V
-    H --> K[Managed HKLM voice token]
-    K --> S
-```
+- **Windows 11, native x64**, build 22000 or later. Windows 10, ARM64,
+  32-bit Windows and Windows Server are unsupported.
+- Administrator approval for installation and voice imports/removals.
+- Microsoft Visual C++ v14 Runtime x64 (14.44.35211.0 or newer) and
+  **.NET 10 Desktop Runtime x64**. Setup checks these and offers to download
+  and install missing prerequisites from Microsoft with your consent.
+- Your own compatible Out Loud `.olv` or prepared Pocket `.safetensors` voice.
+  **No voices or recordings are bundled.** Ordinary audio files cannot be imported.
+- The Out Loud addon, installed separately, for World of Warcraft narration.
 
-The engine implements the fixed Pocket TTS 3.3.0 English synthesis contract:
-FlowLM, FlowSampler, production RNG and Mimi, portable/optional AVX2 CPU kernels,
-and mono 24 kHz streaming audio. Python/PyTorch and the upstream Pocket package
-are separate preparation/reference tools, not production inference dependencies.
-This repository does not contain the WoW addon source or a raw-audio Voice Creator.
+The English model and tokenizer are included. Speech runs locally on the CPU;
+no GPU, Python, cloud service or internet connection is required for synthesis.
+Internet access is needed if setup must download missing Microsoft runtimes.
 
-## Build and validation
+## Install
 
-Native builds require Windows x64, CMake 3.24+, Visual Studio 2022 MSVC C++20 tools
-and a Windows SDK. WPF requires the .NET 10 SDK on Windows; projects target
-`net10.0-windows`. To run, the frontend needs x64 .NET/WindowsDesktop runtimes;
-native components need Windows SAPI5, UCRT and Microsoft VC runtime DLLs.
-Compatible model/tokenizer/voice files are separate runtime requirements.
+1. Download `OutLoud-Setup-0.1.0.exe` from
+   [GitHub Releases](https://github.com/MartinRoskoEU/Out-Loud-TTS/releases).
+   Compare its SHA-256 with the release checksum if you want to verify the download:
 
-Production builds need no generated neural/tokenizer reference fixtures:
+   ```powershell
+   Get-FileHash .\OutLoud-Setup-0.1.0.exe -Algorithm SHA256
+   ```
 
-```powershell
-cmake -S . -B build-production -A x64 -DBUILD_TESTING=OFF -DOUTLOUD_BUILD_DEVELOPMENT_TOOLS=OFF
-cmake --build build-production --config Release --parallel --target OutLoudPocketSAPI OutLoudVoiceManagerNative OutLoudVoiceImportHelper outloud-voice-import outloud-voice-library outloud-sapi-voices
-.\ui\build.ps1
-```
+2. Close World of Warcraft, Voice Manager and other applications using Out Loud.
+3. Run setup and approve the Windows administrator prompt. Read and accept the
+   licenses and acknowledge the separate Kyutai prohibited-use policy. Approve
+   missing Microsoft prerequisites if needed; if a restart is requested, restart
+   manually and run setup again.
+4. Complete setup, then open **Out Loud** from the Start menu. The default
+   application directory is `C:\Program Files\OutLoud`.
 
-These produce workspace binaries. The UI build consumes the production bridge
-and helper and runs its existing fake-service checks without launching the app.
-Building neither installs nor registers anything. See the
-[build and validation guide](docs/BUILD_AND_VALIDATION_IMPROVEMENTS.md) for WPF
-properties, output paths, prerequisites and explicit prepared-reference setup.
+The installer is publisher-unsigned. Setup separately requests consent for an
+installation-specific machine signing certificate used by the SAPI engine.
+That local engine certificate does not publisher-sign the downloaded installer.
 
-Voice Manager uses [OutLoud.ico](ui/OutLoud.VoiceManager/Assets/OutLoud.ico) as
-its application and window icon. Builds embed the same source icon into the
-executable and WPF resources; no loose icon file is required at runtime.
-When the production installer is implemented, its Start Menu shortcut should
-target `bin\OutLoud.VoiceManager.exe` and use that executable's icon at index 0.
-An Inno Setup project should reference the existing `OutLoud.ico` source with
-`SetupIconFile`; no installer project exists yet.
+Updates use the existing installation directory and preserve managed voices,
+settings, SAPI registration and installation identity. Setup supports changes to
+the managed file list, including the earlier 23-file development installation
+updating to this 24-file package. It verifies the recorded files before replacing
+or retiring them and retains originals for checked rollback. Unknown or modified
+files are never silently overwritten or deleted.
 
-Development, after preparing the documented offline references:
+## Use
 
-```powershell
-cmake -S . -B build -A x64 -DBUILD_TESTING=ON
-cmake --build build --config Release --parallel
-.\scripts\validate.ps1
-.\scripts\validate.ps1 -Mode Correctness -List
-.\scripts\validate.ps1 -Mode Correctness
-```
+1. In Voice Manager, choose **Import Voice**, select a compatible voice file and
+   confirm its name. Import requests administrator approval.
+2. Select the imported voice and open the **Tester** to synthesize speech.
+   **Export WAV** saves synthesized audio; **Export Voice** saves a portable
+   `.olv` backup outside the managed library.
+3. Restart World of Warcraft if it was open during import, then select the
+   imported voice in the Out Loud addon's voice settings.
 
-Defaults: `BUILD_TESTING=ON`, `OUTLOUD_BUILD_DEVELOPMENT_TOOLS=OFF`,
-`OUTLOUD_ENABLE_AVX2=ON`. Enable development tools explicitly for research,
-listening, baseline comparisons and profiling. Fast validation runs small ordinary
-regressions. `Correctness -List` lists without executing; `Correctness` is the
-broader opt-in numerical/integration run requiring references and prebuilt frontend
-checks. Missing requirements fail visibly. Validation never builds, exports,
-downloads, elevates or benchmarks.
+SAPI speech rates from **-10 to +10** are supported using Sonic's pitch-preserving
+speed adjustment: approximately **0.333x**, **1x**, and **3x** at -10, 0 and +10.
+Rate 0 preserves the original generated PCM and direct streaming path.
+Fragment-specific XML rate adjustments are not supported in this release.
 
-## Current guides and historical evidence
+Managed voices are shared across Windows users and normally stored in
+`C:\ProgramData\OutLoud\VoiceLibrary`. Use Voice Manager to manage them instead
+of editing library files or registry entries. The app prepares no voices from
+raw recordings; use voices you have the rights and consent to use.
 
-| Current topic | Guide |
-| --- | --- |
-| Runtime architecture, ownership and numerical limits | [Native architecture](docs/ARCHITECTURE.md) |
-| Native operational error records and privacy | [Error logging](docs/NATIVE_ERROR_LOGGING.md) |
-| Voice Manager operations, testing and recovery | [Voice Manager guide](docs/VOICE_MANAGER_GUIDE.md) |
-| Storage and machine security | [Voice Library](docs/VOICE_LIBRARY.md), [machine library](docs/MACHINE_VOICE_LIBRARY.md) |
-| Token identity and diagnostics | [Managed SAPI voices](docs/MULTI_VOICE_SAPI.md) |
-| Manual shared-engine staging/signing/registration | [SAPI adapter and deployment](docs/SAPI_ADAPTER.md) |
-| Binary containers and prepared-voice conversion | [OLP/OLV format](docs/NATIVE_ASSETS.md), [native importer](docs/VOICE_IMPORT.md) |
-| Build and validation procedures | [A11/A12 guide](docs/BUILD_AND_VALIDATION_IMPROVEMENTS.md) |
+## Uninstall
 
-Milestone records retain historical commands, measurements and conclusions.
-[A17](docs/DOCUMENTATION_FINALIZATION_A17.md) classifies the documents and records
-current-source checks. Optimization evidence remains in
-[A06](docs/PERFORMANCE_OPTIMIZATION_A06.md), [A08](docs/PERFORMANCE_OPTIMIZATION_A08.md)
-and [A09](docs/PERFORMANCE_OPTIMIZATION_A09.md).
+**Uninstall permanently deletes all managed voices, managed settings and owned
+application data for this installation, including the shared voice library.**
+There is no keep-voices option. Export any voices you want to retain to a location
+outside the managed library before proceeding.
 
-## Development and distribution status
+Close Out Loud, World of Warcraft and other SAPI clients. In Windows
+**Settings > Apps > Installed apps**, choose **Out Loud > Uninstall**, approve
+administrator access and confirm the permanent-deletion warning.
 
-Native synthesis, SAPI and Voice Manager workflows are implemented; the user
-reports working installed SAPI/WoW integration. Latest workspace optimizations
-have focused validation but have not been deployed and tested through installed
-WoW/SAPI. No post-optimization end-to-end WoW performance result is claimed.
+Complete uninstall removes the application/model/tokenizer files, owned SAPI
+voice and engine registrations, shortcuts, installation metadata, owned logs,
+and the installation-specific certificate and private key. Shared Microsoft
+runtimes, unrelated SAPI voices, original import files and backups outside managed
+storage remain.
 
-A11/A12 recorded successful production/WPF Release x64 builds and **4/4 fast
-checks**. Its **31 broader entries were listed, not executed**. Debug and
-AVX2-disabled builds remain unverified in that phase. Explicit broader correctness
-and installed-host validation remain pre-release activities.
-
-This is a development project, not a complete installable distribution. **A03**
-remains packaging, installer/runtime handling, signing, install/uninstall and
-upgrades. Licensing documentation records the selected original-code license and
-third-party attribution; outstanding asset/runtime redistribution questions remain.
-The complete public binary distribution is not yet cleared.
+If setup or uninstall reports a lock or recovery problem, follow its message and
+rerun the same setup or uninstaller after resolving it. Do not manually delete
+installation files or protected recovery records. See
+[complete uninstall behavior](installer/inno/UNINSTALL.md) for ownership and
+recovery details.
 
 ## License
 
-Out Loud is free and open-source. Original project-owned code and contributions
-the project has the necessary rights to license use the [MIT License](LICENSE).
-**Copyright (c) 2026 Nendis.** MIT permits downstream commercial use and redistribution.
-Third-party code retains its own licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)
-and the complete texts and attribution documents in [licenses/](licenses/).
+Original Out Loud code is licensed under [MIT](LICENSE).
+**Copyright (c) 2026 Nendis.** Third-party components retain their own licenses;
+see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and [licenses/](licenses/).
 
-The [Pocket model weights](licenses/Pocket-Model-Attribution.md) and
-[tokenizer vocabulary](licenses/Pocket-Tokenizer-Attribution.md) declare separate
-CC BY 4.0 asset licensing. Additional upstream use-policy/access questions remain
-unresolved, so overall asset bundling is not finally cleared. Unicode-derived
-tokenizer tables retain their [separate data terms](licenses/Unicode-Data.txt).
+The bundled Kyutai model and tokenizer use **CC BY 4.0** with their supplied
+attributions. Kyutai's [prohibited-use policy](licenses/Pocket-Prohibited-Use-Policy.txt)
+is presented separately during setup. Sonic is licensed under **Apache 2.0**.
+These licenses do not grant rights to another person's voice or recordings.
 
-Users supply their own compatible voice files. Out Loud does not distribute OLV,
-prepared voice safetensors, recordings or sample voices. MIT does not grant rights
-to third-party voices, recordings or speaker likenesses. Microsoft prerequisites
-also retain their own terms; licensing documentation is not blanket binary-release
-clearance.
+## Development
+
+See [production build instructions](installer/inno/BUILD.md),
+[versioning](installer/inno/VERSIONING.md),
+[architecture](docs/ARCHITECTURE.md), and the
+[Voice Manager guide](docs/VOICE_MANAGER_GUIDE.md).
+The authoritative product version is [ProductVersion.props](ProductVersion.props).
+
+Production packaging uses the existing scripts:
+
+```powershell
+.\installer\inno\build-stage.ps1 -StageDirectory "$PWD\generated\installer\stages\release-0.1.0"
+.\installer\inno\verify-stage.ps1 -StageDirectory "$PWD\generated\installer\stages\release-0.1.0"
+.\installer\inno\build-installer.ps1 -StageDirectory "$PWD\generated\installer\stages\release-0.1.0"
+```
+
+Use a new stage directory for each build. Build tools require CMake 3.24+,
+Visual Studio 2022 C/C++ tools and Windows SDK, .NET 10 SDK, Inno Setup 7.0.2+,
+and the pinned offline model/tokenizer inputs. Packaging builds Release x64,
+validates the explicit payload and copies the verified installer to
+`release/OutLoud-Setup-0.1.0.exe`. It does not execute setup or publish to GitHub.
+`release/`, generated artifacts and user voice files remain excluded from Git.

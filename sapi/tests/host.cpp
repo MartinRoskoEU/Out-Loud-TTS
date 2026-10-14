@@ -2,6 +2,7 @@
 #include "support.hpp"
 #include "token.hpp"
 #include "residency.hpp"
+#include "speech_rate.hpp"
 #include "scratch.hpp"
 #include "outloud/pcm16.hpp"
 #include "outloud/cancellation.hpp"
@@ -70,6 +71,9 @@ public:
         affinity(); ++actions;
         DWORD flags = 0;
         if (controls && !controls_reported) { flags = SPVES_SKIP|SPVES_RATE|SPVES_VOLUME; controls_reported = true; }
+        if (next_rate_change<rate_changes.size() && bytes>=rate_changes[next_rate_change].first) {
+            rate = rate_changes[next_rate_change++].second; flags |= SPVES_RATE;
+        }
         const bool byte_abort = bytes>=abort_bytes && (!late_abort || ++end_polls>=2);
         if (entry_abort || byte_abort || bookmarks.size()>=abort_events ||
             (timed_abort && Clock::now()-begun>=std::chrono::milliseconds(20))) {
@@ -81,7 +85,7 @@ public:
         }
         return flags;
     }
-    HRESULT STDMETHODCALLTYPE GetRate(long* out) override { affinity(); ++rates; if (!out) { return E_POINTER; } *out = 2; return S_OK; }
+    HRESULT STDMETHODCALLTYPE GetRate(long* out) override { affinity(); ++rates; if (!out) { return E_POINTER; } *out = rate; return S_OK; }
     HRESULT STDMETHODCALLTYPE GetVolume(USHORT* out) override { affinity(); ++volumes; if (!out) { return E_POINTER; } *out = 50; return S_OK; }
     HRESULT STDMETHODCALLTYPE GetSkipInfo(SPVSKIPTYPE* type,long* count) override { affinity(); ++skips; *type = SPVST_SENTENCE; *count = 1; return S_OK; }
     HRESULT STDMETHODCALLTYPE CompleteSkip(long count) override { affinity(); ++skip_completions; return count==0 ? S_OK : E_UNEXPECTED; }
@@ -92,12 +96,15 @@ public:
         ++calls;
         if (mode==Mode::failed) { return E_ACCESSDENIED; }
         if (mode==Mode::stopped) { return SP_AUDIO_STOPPED; }
-        if (!remaining) { ++frames; remaining = 3840; }
+        if (!remaining) { ++frames; remaining = variable_frames ? count : 3840; }
         if (count!=remaining) { return E_UNEXPECTED; }
         *written = mode==Mode::partial ? std::min(count,ULONG{126}) : mode==Mode::zero ? 0 : mode==Mode::odd ? 1 : mode==Mode::oversized ? count+2 : count;
         if (*written<=count && *written%2==0) {
             if (!pcm.empty()) {
-                if (bytes+*written>pcm.size()) { return E_UNEXPECTED; }
+                if (bytes+*written>pcm.size()) {
+                    if (!variable_frames) { return E_UNEXPECTED; }
+                    pcm.resize(static_cast<std::size_t>(bytes+*written));
+                }
                 const auto* input = static_cast<const std::uint8_t*>(data);
                 std::copy(input,input+*written,pcm.begin()+static_cast<std::size_t>(bytes));
             }
@@ -119,6 +126,10 @@ public:
     bool wrong_thread = false;
     bool entry_abort = false, timed_abort = false, abort_observable = false, write_after_abort = false;
     bool controls = false, controls_reported = false;
+    bool variable_frames = false;
+    long rate = 0;
+    std::vector<std::pair<std::uint64_t,long>> rate_changes;
+    std::size_t next_rate_change = 0;
     bool late_abort = false;
     ULONG end_polls = 0;
     std::uint64_t abort_bytes = UINT64_MAX;
@@ -321,16 +332,119 @@ void real_host_checks(IClassFactory* factory,const TestToken& configuration,std:
 }
 }
 #include "stabilization_checks.hpp"
+struct SonicReference {
+    std::vector<std::uint8_t> pcm;
+    std::uint64_t before_flush_bytes = 0;
+};
+SonicReference sonic_reference(std::span<const std::int16_t> input,long rate) {
+    SonicReference result;
+    const auto append = [&](std::span<const std::int16_t> pcm) {
+        const auto* bytes = reinterpret_cast<const std::uint8_t*>(pcm.data());
+        result.pcm.insert(result.pcm.end(),bytes,bytes+pcm.size_bytes());
+    };
+    // Direct upstream API is the oracle for continuity and complete tail delivery.
+    const auto stream = sonicCreateStream(24000,1);
+    check(stream!=nullptr,"Reference Sonic allocation failed");
+    try {
+        sonicSetSpeed(stream,outloud::sapi::rate_tempo(rate));
+        const auto drain = [&] {
+            std::array<std::int16_t,1920> output;
+            int count = 0;
+            while ((count=sonicReadShortFromStream(stream,output.data(),static_cast<int>(output.size())))>0) {
+                append({output.data(),static_cast<std::size_t>(count)});
+            }
+        };
+        for (std::size_t offset=0;offset<input.size();offset+=1920) {
+            const auto block = input.subspan(offset,std::min(std::size_t{1920},input.size()-offset));
+            check(sonicWriteShortToStream(stream,block.data(),static_cast<int>(block.size()))!=0,"Reference Sonic write failed");
+            drain();
+        }
+        result.before_flush_bytes=result.pcm.size();
+        check(sonicFlushStream(stream)!=0,"Reference Sonic flush failed"); drain();
+    } catch (...) { sonicDestroyStream(stream); throw; }
+    sonicDestroyStream(stream);
+    return result;
+}
+void rate_checks(ISpTTSEngine* engine,const WAVEFORMATEX* wave,SPVTEXTFRAG* fragments,const wchar_t* reference_path) {
+    std::ifstream reference(reference_path,std::ios::binary);
+    std::vector<float> floats(326400);
+    reference.read(reinterpret_cast<char*>(floats.data()),static_cast<std::streamsize>(floats.size()*sizeof(float)));
+    check(reference.gcount()==static_cast<std::streamsize>(floats.size()*sizeof(float)) && reference.peek()==EOF,
+          "Rate reference missing or wrong shape");
+    std::vector<std::int16_t> original(floats.size()); outloud::convert_pcm16(floats,original);
+    const auto* original_bytes = reinterpret_cast<const std::uint8_t*>(original.data());
+    std::uint64_t fast_before_flush = 0;
+    for (const long rate : {-10L,0L,10L}) {
+        Site site(rate==10 ? Mode::partial : Mode::normal,true);
+        site.rate=rate; site.variable_frames=rate!=0;
+        speak(engine,wave,fragments,site); site.pcm.resize(static_cast<std::size_t>(site.bytes));
+        check(site.rates==1 && site.bytes && !site.remaining,"Initial site rate/output delivery differs");
+        if (!rate) {
+            validate(site); check(site.calls==170,"Zero rate changed direct frame delivery");
+            check(site.bytes==original.size()*2 && std::memcmp(site.pcm.data(),original.data(),site.pcm.size())==0,
+                  "Zero rate is not bit-identical to original native PCM16");
+        } else {
+            const auto expected = sonic_reference(original,rate);
+            check(site.pcm==expected.pcm,"SAPI rate PCM differs from continuous Sonic including flushed tail");
+            const double ratio = double(site.bytes)/(original.size()*2);
+            check(rate<0 ? ratio>2.9 && ratio<3.1 : ratio>.32 && ratio<.35,"Rate duration differs from requested tempo");
+            if (rate>0) { fast_before_flush=expected.before_flush_bytes; }
+        }
+        std::cout << "Rate " << rate << ": " << site.bytes/2 << " samples, " << double(site.bytes)/48000.0
+                  << " seconds; initial rate, caller thread, completion and PCM checks passed\n";
+    }
+
+    // A return to zero must deliver the old buffered tail once, then the exact
+    // raw suffix. Repeated finish calls must not duplicate that tail.
+    const auto prefix = std::span<const std::int16_t>(original).first(20*1920);
+    auto expected_transition = sonic_reference(prefix,-10).pcm;
+    expected_transition.insert(expected_transition.end(),original_bytes+prefix.size_bytes(),original_bytes+original.size()*2);
+    std::vector<std::uint8_t> transition;
+    outloud::sapi::SpeechRate processor;
+    const auto sink = [&](std::span<const std::int16_t> pcm) {
+        const auto* bytes = reinterpret_cast<const std::uint8_t*>(pcm.data());
+        transition.insert(transition.end(),bytes,bytes+pcm.size_bytes()); return S_OK;
+    };
+    for (std::size_t offset=0;offset<original.size();offset+=1920) {
+        hr(processor.write(std::span<const std::int16_t>(original).subspan(offset,1920),offset<prefix.size() ? -10 : 0,sink),
+           "Rate-to-zero transition failed");
+    }
+    hr(processor.finish(sink),"Transition finish failed"); hr(processor.finish(sink),"Repeated finish failed");
+    check(transition==expected_transition,"Return to zero lost/duplicated buffered tail or changed raw suffix");
+
+    Site changing(Mode::partial,true); changing.variable_frames=true;
+    changing.rate_changes={{20*3840,-10},{30*3840,10},{40*3840,0}};
+    speak(engine,wave,fragments,changing); changing.pcm.resize(static_cast<std::size_t>(changing.bytes));
+    check(changing.next_rate_change==3 && changing.rates==4 && !changing.remaining && changing.bytes>=3840,
+          "Live SAPI rate changes not consumed");
+    check(std::memcmp(changing.pcm.data()+changing.pcm.size()-3840,original_bytes+original.size()*2-3840,3840)==0,
+          "Live return to zero changed the final raw frame");
+    std::cout << "PASS: live 0 -> -10 -> +10 -> 0, partial writes and exact buffered-tail transition\n";
+
+    for (const long rate : {-10L,10L}) {
+        Site aborted(Mode::partial,false); aborted.variable_frames=true; aborted.rate=rate;
+        // Slow: abort during ordinary delivery. Fast: abort during final flush.
+        aborted.abort_bytes=rate<0 ? 126 : fast_before_flush+2;
+        speak(engine,wave,fragments,aborted);
+        check(aborted.abort_observations && !aborted.write_after_abort &&
+              (rate<0 ? aborted.bytes==126 : aborted.bytes>fast_before_flush),"Sonic cancellation wrote after abort or missed flush");
+    }
+    Site recovered(Mode::normal,true); speak(engine,wave,fragments,recovered); validate(recovered);
+    check(std::memcmp(recovered.pcm.data(),original.data(),recovered.pcm.size())==0,"Cancellation leaked Sonic state into next Speak");
+    std::cout << "PASS: cancellation during delivery/final flush and bit-identical zero-rate recovery\n";
+}
+
 int wmain(int argc,wchar_t** argv) {
     HMODULE module = nullptr; WAVEFORMATEX* wave = nullptr;
     try {
         if (argc==2 && std::wstring_view(argv[1])==L"--input-check") { collection_checks(); return 0; }
         if (argc==3 && std::wstring_view(argv[1])==L"--diagnostics-check") { diagnostic_checks(argv[2]); return 0; }
-        check(argc==6 || argc==7,"Usage: outloud-sapi-check DLL model.olp tokenizer.bin voice.olv native-reference.f32 [bench|observe]");
+        check(argc==6 || argc==7,"Usage: outloud-sapi-check DLL model.olp tokenizer.bin voice.olv native-reference.f32 [bench|observe|rate]");
         const bool benchmark = argc==7 && std::wstring_view(argv[6])==L"bench";
         const bool observation = argc==7 && std::wstring_view(argv[6])==L"observe";
-        check(argc==6 || benchmark || observation,"Unknown mode");
-        text_checks();
+        const bool rate_only = argc==7 && std::wstring_view(argv[6])==L"rate";
+        check(argc==6 || benchmark || observation || rate_only,"Unknown mode");
+        if (!rate_only) { text_checks(); }
         const auto path = std::filesystem::absolute(argv[1]);
         module = LoadLibraryExW(path.c_str(),nullptr,LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR|LOAD_LIBRARY_SEARCH_SYSTEM32);
         check(module!=nullptr,"Cannot load adapter DLL");
@@ -365,7 +479,9 @@ int wmain(int argc,wchar_t** argv) {
         std::array<double,3> first_times{}, totals{};
         struct AbortResult { const char* name; std::uint64_t bytes; ULONG writes, observations; double latency; };
         std::vector<AbortResult> abort_results;
-        if (benchmark || observation) {
+        if (rate_only) {
+            rate_checks(engine.p,wave,&first,argv[5]);
+        } else if (benchmark || observation) {
             Site warm(Mode::normal,false); speak(engine.p,wave,&first,warm); validate(warm);
             for (std::size_t i = 0; i < (observation ? 1u : 3u); ++i) {
                 Site site(Mode::normal,false); speak(engine.p,wave,&first,site); validate(site);
@@ -420,8 +536,9 @@ int wmain(int argc,wchar_t** argv) {
                 std::cout << "Abort " << c.name << ": " << aborted.bytes << " bytes, quiesced in " << aborted.abort_latency_ms << " ms\n";
                 recover();
             }
-            Site controls(Mode::normal,true); controls.controls = true; speak(engine.p,wave,&first,controls); validate(controls);
-            check(controls.rates==1 && controls.volumes==1 && controls.skips==1 && controls.skip_completions==1 && controls.pcm==a.pcm,
+            Site controls(Mode::normal,true); controls.controls = true; controls.rate=2; controls.variable_frames=true;
+            speak(engine.p,wave,&first,controls);
+            check(controls.rates==1 && controls.volumes==1 && controls.skips==1 && controls.skip_completions==1 && controls.bytes<a.bytes,
                   "Skip/rate/volume policy differs");
             auto unsupported = fragment(L"Text"); unsupported.State.eAction = SPVA_Pronounce;
             Site unused(Mode::normal,false); speak(engine.p,wave,&unsupported,unused,E_NOTIMPL); check(!unused.calls,"Unsupported fragment produced audio");
@@ -438,6 +555,10 @@ int wmain(int argc,wchar_t** argv) {
         check(unload()==S_FALSE,"Server lock not counted"); hr(factory->LockServer(FALSE),"Unlock failed");
         check(factory->LockServer(FALSE)==E_UNEXPECTED,"Unbalanced unlock accepted"); factory.reset(); hr(unload(),"Module not unloadable after release");
         FreeLibrary(module); module = nullptr;
+        if (rate_only) {
+            std::cout << "PASS: focused SAPI rate checks; registration-free, no installation or registry mutations\n";
+            return 0;
+        }
         const auto directory = std::filesystem::absolute(argv[2]).parent_path().parent_path()/"perf";
         std::filesystem::create_directories(directory);
         std::ofstream report(directory/(observation ? "2n-normal-observation.json" : benchmark ? "2m-sapi-benchmark.json" : "2o-bugfix-sapi-check.json"));

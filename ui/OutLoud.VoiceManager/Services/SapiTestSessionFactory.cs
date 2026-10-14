@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Runtime.InteropServices;
 using OutLoud.VoiceManager.Models;
+using OutLoud.VoiceManager.NativeInterop;
 
 namespace OutLoud.VoiceManager.Services;
 
@@ -50,7 +51,7 @@ public sealed class SapiTestSessionFactory : ISapiTestSessionFactory
             if (!string.Equals((string)token.Id, request.TokenId, StringComparison.OrdinalIgnoreCase) ||
                 (string)key.GetStringValue("LibraryId") != request.Voice.LibraryId ||
                 (string)key.GetStringValue("OutLoudManagedOwner") != "OutLoud.ManagedVoice.1" ||
-                !string.Equals((string)key.GetStringValue("CLSID"), "{F38C3398-3552-43B9-8350-7DD301327D70}", StringComparison.OrdinalIgnoreCase) ||
+                !string.Equals((string)key.GetStringValue("CLSID"), SapiIdentity.EngineClsid, StringComparison.OrdinalIgnoreCase) ||
                 !Path.IsPathFullyQualified(request.LibraryRoot) ||
                 !string.Equals(Path.GetFullPath((string)key.GetStringValue("VoicePath")), Path.GetFullPath(Path.Combine(request.LibraryRoot, "voices", request.Voice.LibraryId, "voice.olv")), StringComparison.OrdinalIgnoreCase))
                 throw new VoiceTestException(new("token_identity_changed", "The installed managed SAPI token changed. Refresh the Voice Library before testing.", Stage: stage));

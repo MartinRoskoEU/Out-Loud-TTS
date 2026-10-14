@@ -1,0 +1,19 @@
+<Project>
+  <!-- Native and managed production consumers use the same authoritative header. -->
+  <PropertyGroup>
+    <SapiIdentityHeader>$(MSBuildThisFileDirectory)..\sapi\src\identity.hpp</SapiIdentityHeader>
+  </PropertyGroup>
+  <Target Name="GenerateSapiIdentity" BeforeTargets="CoreCompile">
+    <PropertyGroup>
+      <_SapiHeader>$([System.IO.File]::ReadAllText('$(SapiIdentityHeader)'))</_SapiHeader>
+      <_SapiClsid>$([System.Text.RegularExpressions.Regex]::Match('$(_SapiHeader)', '\{[0-9A-Fa-f-]{36}\}').Value)</_SapiClsid>
+      <_SapiGeneratedFile>$(IntermediateOutputPath)SapiIdentity.g.cs</_SapiGeneratedFile>
+    </PropertyGroup>
+    <Error Condition="'$(_SapiClsid)' == ''" Text="The authoritative SAPI CLSID is missing from sapi/src/identity.hpp." />
+    <WriteLinesToFile File="$(_SapiGeneratedFile)" Overwrite="true" WriteOnlyWhenDifferent="true" Encoding="UTF-8"
+      Lines="namespace OutLoud.VoiceManager.NativeInterop { internal static class SapiIdentity { internal const string EngineClsid = &quot;$(_SapiClsid)&quot;%3B } }" />
+    <ItemGroup>
+      <Compile Include="$(_SapiGeneratedFile)" />
+    </ItemGroup>
+  </Target>
+</Project>

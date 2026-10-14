@@ -1,0 +1,23 @@
+{
+  "schema": 1,
+  "introduction": "installer/inno/consent-introduction.txt",
+  "agreement_path": "licenses/OutLoud-Installation-Terms.txt",
+  "policy_path": "licenses/Pocket-Prohibited-Use-Policy.txt",
+  "policy_source": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/raw/00eac05ed3d16bdc3f6b5d598874019c34a89214/README.md",
+  "policy_revision": "00eac05ed3d16bdc3f6b5d598874019c34a89214",
+  "policy_text_sha256": "2af16e4028225963083cddc7d9d964e2cd49545653a6d19ef214703d5343651f",
+  "documents": [
+    "licenses/Pocket-Prohibited-Use-Policy.txt",
+    "LICENSE",
+    "licenses/Pocket-Model-Attribution.md",
+    "licenses/Pocket-Tokenizer-Attribution.md",
+    "licenses/CC-BY-4.0.txt",
+    "THIRD_PARTY_NOTICES.md",
+    "RNG_NOTICES.md",
+    "licenses/Pocket-TTS-MIT.txt",
+    "licenses/MAR-MIT.txt",
+    "licenses/DotNet-AppHost-MIT.txt",
+    "licenses/Unicode-Data.txt",
+    "licenses/Sonic-Apache-2.0.txt"
+  ]
+}

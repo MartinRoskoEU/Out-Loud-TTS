@@ -25,4 +25,5 @@
     <None Include="$(NativeBuildDirectory)\$(Configuration)\OutLoudVoiceImportHelper.exe" Link="OutLoudVoiceImportHelper.exe" CopyToOutputDirectory="PreserveNewest" />
     <Compile Include="..\OutLoud.VoiceManager\NativeInterop\*.cs" Link="NativeInterop\%(Filename)%(Extension)" />
   </ItemGroup>
+  <Import Project="..\SapiIdentity.targets" />
 </Project>

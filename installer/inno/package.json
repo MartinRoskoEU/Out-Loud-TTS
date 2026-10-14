@@ -1,0 +1,48 @@
+{
+  "schema": 1,
+  "product_id": "OutLoud",
+  "product_name": "Out Loud",
+  "publisher": "Nendis",
+  "apphost_pack_version": "10.0.12",
+  "supported_platform": { "nt_major": 10, "nt_minor": 0, "minimum_build": 22000, "product_type": 1, "machine": "8664", "name": "Windows 11 x64" },
+  "engine_clsid": "{F38C3398-3552-43B9-8350-7DD301327D70}",
+  "files": [
+    { "path": "bin/OutLoudPocketSAPI.dll", "source": "native", "name": "OutLoudPocketSAPI.dll", "pe": true },
+    { "path": "bin/OutLoudVoiceManagerNative.dll", "source": "native", "name": "OutLoudVoiceManagerNative.dll", "pe": true },
+    { "path": "bin/OutLoudVoiceImportHelper.exe", "source": "native", "name": "OutLoudVoiceImportHelper.exe", "pe": true },
+    { "path": "bin/outloud-sapi-voices.exe", "source": "native", "name": "outloud-sapi-voices.exe", "pe": true },
+    { "path": "bin/OutLoud.VoiceManager.exe", "source": "managed", "name": "OutLoud.VoiceManager.exe", "pe": true },
+    { "path": "bin/OutLoud.VoiceManager.dll", "source": "managed", "name": "OutLoud.VoiceManager.dll", "pe": true },
+    { "path": "bin/OutLoud.VoiceManager.deps.json", "source": "managed", "name": "OutLoud.VoiceManager.deps.json", "pe": false },
+    { "path": "bin/OutLoud.VoiceManager.runtimeconfig.json", "source": "managed", "name": "OutLoud.VoiceManager.runtimeconfig.json", "pe": false },
+    { "path": "runtime/pocket-english.olp", "source": "model", "name": "pocket-english.olp", "pe": false, "bytes": 199449856, "sha256": "30889426a3bed523e725baafe70ec9064044898aa203975980741be1f3d70406" },
+    { "path": "runtime/pocket-english-tokenizer.bin", "source": "tokenizer", "name": "pocket-english-tokenizer.bin", "pe": false, "bytes": 93325, "sha256": "45ffaf8c702dbb6c954bd54280d83ea00f8bf1d47692aca37e078c8deb26935a" },
+    { "path": "LICENSE", "source": "repository", "name": "LICENSE", "pe": false },
+    { "path": "THIRD_PARTY_NOTICES.md", "source": "repository", "name": "THIRD_PARTY_NOTICES.md", "pe": false },
+    { "path": "RNG_NOTICES.md", "source": "repository", "name": "RNG_NOTICES.md", "pe": false },
+    { "path": "licenses/CC-BY-4.0.txt", "source": "repository", "name": "licenses/CC-BY-4.0.txt", "pe": false },
+    { "path": "licenses/DotNet-AppHost-MIT.txt", "source": "repository", "name": "licenses/DotNet-AppHost-MIT.txt", "pe": false },
+    { "path": "licenses/MAR-MIT.txt", "source": "repository", "name": "licenses/MAR-MIT.txt", "pe": false },
+    { "path": "licenses/Pocket-Model-Attribution.md", "source": "repository", "name": "licenses/Pocket-Model-Attribution.md", "pe": false },
+    { "path": "licenses/Pocket-Tokenizer-Attribution.md", "source": "repository", "name": "licenses/Pocket-Tokenizer-Attribution.md", "pe": false },
+    { "path": "licenses/Pocket-TTS-MIT.txt", "source": "repository", "name": "licenses/Pocket-TTS-MIT.txt", "pe": false },
+    { "path": "licenses/Unicode-Data.txt", "source": "repository", "name": "licenses/Unicode-Data.txt", "pe": false },
+    { "path": "licenses/Sonic-Apache-2.0.txt", "source": "repository", "name": "licenses/Sonic-Apache-2.0.txt", "pe": false },
+    { "path": "licenses/Pocket-Prohibited-Use-Policy.txt", "source": "repository", "name": "licenses/Pocket-Prohibited-Use-Policy.txt", "pe": false },
+    { "path": "licenses/OutLoud-Installation-Terms.txt", "source": "consent", "name": "licenses/OutLoud-Installation-Terms.txt", "pe": false },
+    { "path": "bin/OutLoudInstallSigning.exe", "source": "installer-native", "name": "OutLoudInstallSigning.exe", "pe": true }
+  ],
+  "external_prerequisites": [
+    "System-installed Microsoft VC v14 x64 runtime compatible with the selected MSVC toolset",
+    "Microsoft .NET 10 Desktop Runtime x64"
+  ],
+  "deferred_release_requirements": [
+    "Live prerequisite installer validation and runtime package redistribution entitlement; gated acquisition and installation are implemented",
+    "Live validation of gated local certificate/signing support, machine trust scope and WoW: Forever compatibility",
+    "Transaction integration, installation-owned certificate/key recovery and confirmed uninstall cleanup",
+    "Live validation of checked production SAPI COM registration and installer-bound ownership",
+    "Upgrade voice preservation, rollback and interruption recovery",
+    "Full uninstall: owned token removal and explicitly warned/confirmed managed-library deletion",
+    "Live wizard validation of implemented interactive license and separate Kyutai policy acknowledgment"
+  ]
+}

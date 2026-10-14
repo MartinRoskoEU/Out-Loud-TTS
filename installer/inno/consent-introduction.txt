@@ -1,0 +1,30 @@
+OUT LOUD - SOFTWARE LICENSES AND KYUTAI ACCEPTABLE USE
+
+Read the documents below before continuing. Select the acceptance option only
+if you accept the applicable software and asset licenses and acknowledge the
+separate Kyutai Prohibited Use Policy. Declining prevents installation.
+
+1. OUT LOUD SOFTWARE
+Out Loud's original software is licensed under MIT.
+Copyright (c) 2026 Nendis. The complete MIT grant and disclaimer follow.
+Third-party components retain their own notices and licenses.
+
+2. POCKET TTS MODEL AND TOKENIZER
+Kyutai publishes the bundled Pocket TTS model and tokenizer under Creative
+Commons Attribution 4.0 International (CC BY 4.0). Required credits, pinned
+source provenance, conversion information and the complete CC legal code follow.
+These assets are not licensed under Out Loud's MIT license. Unicode data retains
+its separate notice. No user voice or recording is included or licensed here.
+
+3. KYUTAI PROHIBITED USE POLICY - SEPARATE FROM CC BY 4.0
+The next document reproduces Kyutai's actual pinned policy without alteration.
+Its prohibited-use requirements are not restrictions contained in CC BY 4.0.
+This acknowledgment does not rewrite either license, cancel separate applicable
+agreements, or grant rights to another person's voice or recordings.
+
+Acceptance here is separate from the later optional consent to download and
+install required shared Microsoft runtimes. Accepting these documents alone
+does not authorize prerequisite installation. Silent setup is unsupported.
+
+The same complete legal materials will be available in the application directory
+after installation: LICENSE, THIRD_PARTY_NOTICES.md, RNG_NOTICES.md and licenses/.

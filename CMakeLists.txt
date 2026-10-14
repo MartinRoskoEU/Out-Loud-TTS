@@ -1,9 +1,14 @@
 cmake_minimum_required(VERSION 3.24)
-project(outloud_pocket_text VERSION 0.1.0 LANGUAGES CXX)
+include(cmake/OutLoudVersion.cmake)
+outloud_read_product_version("${CMAKE_CURRENT_SOURCE_DIR}/ProductVersion.props")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/ProductVersion.props")
+project(outloud_pocket_text VERSION "${OUTLOUD_PRODUCT_VERSION}" LANGUAGES C CXX)
 
 if(NOT WIN32 OR NOT MSVC OR NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
     message(FATAL_ERROR "The native Pocket engine targets Windows x64 with MSVC (Visual Studio 2022).")
 endif()
+
+enable_language(RC)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -101,8 +106,14 @@ target_link_libraries(outloud_orchestration PUBLIC outloud_workers outloud_text)
 target_compile_options(outloud_orchestration PRIVATE /W4 /WX /utf-8 /permissive- /fp:precise)
 
 # Thin SAPI adapter; all native project libraries remain statically linked.
+# Unmodified waywardgeek/sonic at b93885dcb70aae50c6f76b0fe4e0868f029a077e.
+# Vendored sources keep builds offline and add no Sonic runtime DLL.
+add_library(outloud_sonic STATIC third_party/sonic/sonic.c)
+target_include_directories(outloud_sonic PUBLIC third_party/sonic)
+target_compile_options(outloud_sonic PRIVATE /W3 /utf-8 /fp:precise)
+
 add_library(OutLoudPocketSAPI SHARED sapi/src/adapter.cpp sapi/src/error_logger.cpp sapi/src/OutLoudPocketSAPI.def)
-target_link_libraries(OutLoudPocketSAPI PRIVATE outloud_orchestration ole32 oleaut32 sapi uuid shell32)
+target_link_libraries(OutLoudPocketSAPI PRIVATE outloud_orchestration outloud_sonic ole32 oleaut32 sapi uuid shell32 advapi32)
 target_compile_definitions(OutLoudPocketSAPI PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
 target_compile_options(OutLoudPocketSAPI PRIVATE /W4 /WX /utf-8 /permissive- /fp:precise)
 
@@ -136,6 +147,9 @@ target_link_libraries(outloud-sapi-voices PRIVATE outloud_sapi_voices)
 target_compile_options(outloud-sapi-voices PRIVATE /W4 /WX /utf-8 /permissive-)
 
 # No generated reference headers or research targets enter production builds.
+foreach(target OutLoudPocketSAPI OutLoudVoiceManagerNative OutLoudVoiceImportHelper outloud-sapi-voices outloud-voice-import outloud-voice-library)
+    outloud_add_version_resource("${target}" "${target}")
+endforeach()
 if(BUILD_TESTING OR OUTLOUD_BUILD_DEVELOPMENT_TOOLS)
     include(cmake/Development.cmake)
 endif()
