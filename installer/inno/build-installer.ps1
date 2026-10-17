@@ -6,6 +6,9 @@ param(
     [string]$CompilerPath = 'C:\Program Files\Inno Setup 7\ISCC.exe'
 )
 . (Join-Path $PSScriptRoot 'production-common.ps1')
+. (Join-Path $PSScriptRoot 'build-components.ps1')
+$artifactLock = Enter-OutLoudArtifactLock
+try {
 $stage = [IO.Path]::GetFullPath($StageDirectory)
 $stageParent = [IO.Path]::GetFullPath((Join-Path $ProductionRepository 'generated/installer/stages')).TrimEnd('\')
 if (-not $stage.StartsWith($stageParent + '\', [StringComparison]::OrdinalIgnoreCase)) { throw 'Use a verified workspace production stage.' }
@@ -28,6 +31,9 @@ if (-not $output.StartsWith($outputParent + '\', [StringComparison]::OrdinalIgno
 }
 Assert-ProductionPlainPath $output
 [void](New-Item -ItemType Directory -Path $output)
+# This intent survives a failed/interrupted compiler and pins its input stage.
+[ordered]@{ owner = 'OutLoud installer workflow'; status = 'compiling'; stage = $stage } |
+    ConvertTo-Json | Set-Content -LiteralPath (Join-Path $output 'build-input.json') -Encoding UTF8
 # Compile only. No IDE-configured signer, installer execution or certificate use.
 & $CompilerPath --no-ide-signtools ('/DStageRoot=' + $stage) ('/O' + $output) (Join-Path $PSScriptRoot 'OutLoud.iss') | Out-Host
 if ($LASTEXITCODE -ne 0) { throw "Inno compilation failed; diagnostic output retained at $output" }
@@ -59,3 +65,4 @@ if ($signature.Status -ne 'NotSigned') { throw 'Unexpected installer signature. 
 Write-Output "BUILT $installer"
 & (Join-Path $PSScriptRoot 'publish-installer.ps1') -BuildDirectory $output
 Write-Output 'Public release installer prepared for final manual approval. Publisher unsigned; setup was not executed.'
+} finally { Exit-OutLoudArtifactLock $artifactLock }

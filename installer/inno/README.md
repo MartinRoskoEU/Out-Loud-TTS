@@ -71,9 +71,36 @@ Build behavior:
    the build. Move the completed stage into the requested new destination.
 
 SDK first-run ASP.NET certificate generation is disabled for .NET invocations.
-Stages and build directories are ignored by Git. Failures retain partial build/
-stage output for diagnosis; no recursive cleanup or replacement of older stages
-occurs in the build workflow. A missing local SDK pack fails; it is not downloaded.
+Stages and build directories are ignored by Git. A verified completed stage no
+longer needs its private intermediate publish tree; that tree is removed after
+staging succeeds. Failed or interrupted build/stage output remains for diagnosis.
+A missing local SDK pack fails; it is not downloaded.
+
+Successful publication writes `publication-record.json` with complete stage and
+compiler-output inventories. Retention keeps the current publication and one
+previous successful pair, ordered by recorded publication time. It also preserves
+any pair referenced by external generated evidence or diagnostic code, and every
+stage referenced by a retained installer/build-input/publication record. A failed
+compiler's `build-input.json` pins its stage. New workflow operations share a
+workspace mutex; interruption releases the mutex but does not authorize deletion
+of incomplete artifacts. Unmarked legacy artifacts are never automatically adopted.
+
+Re-publication keeps one distinct workflow-owned rollback EXE per output, plus
+externally referenced backups; duplicate copies of the current EXE are removed.
+Unknown files, changed hashes, locked files, malformed records and reparse points
+refuse cleanup. Deletion checks absolute containment, inventories every file, and
+removes files then empty directories without recursive traversal. Cleanup receipts
+remain under `generated/installer/cleanup-receipts/`. Cleanup failures warn and
+preserve remaining artifacts without undoing an already verified publication.
+Retention never operates on `release/`, canonical assets, development fixtures,
+installed state, signing keys, or voice data. Evidence and incomplete builds may
+exceed the normal two-pair bound and require explicit review.
+
+Focused synthetic checks (no build, installer execution, signing or live state):
+
+```powershell
+.\installer\inno\test-artifact-retention.ps1
+```
 
 ## Structure and inventory
 

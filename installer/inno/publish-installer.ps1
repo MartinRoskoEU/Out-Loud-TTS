@@ -2,6 +2,9 @@
 [CmdletBinding()]
 param([Parameter(Mandatory = $true)][string]$BuildDirectory)
 . (Join-Path $PSScriptRoot 'production-common.ps1')
+. (Join-Path $PSScriptRoot 'build-components.ps1')
+$artifactLock = Enter-OutLoudArtifactLock
+try {
 $output = [IO.Path]::GetFullPath($BuildDirectory).TrimEnd('\', '/')
 $outputParent = Join-Path $ProductionRepository 'generated/installer/compiler-output'
 if (-not $output.StartsWith($outputParent + '\', [StringComparison]::OrdinalIgnoreCase)) { throw 'Use a recorded workspace installer build.' }
@@ -37,6 +40,18 @@ if ($numericFile -cne $product.file_version -or $numericProduct -cne $product.fi
     $info.ProductName.Trim() -cne $product.product_name -or $info.LegalCopyright.Trim() -cne $product.copyright -or
     (Get-AuthenticodeSignature -LiteralPath $installer).Status -ne 'NotSigned') { throw 'Installer product/signature identity differs.' }
 
+$ownedPublicationFiles = @()
+$previousPublication = $null
+$publicationRecordPath = Join-Path $output 'publication-record.json'
+if (Test-Path -LiteralPath $publicationRecordPath) {
+    Assert-ProductionPlainPath $publicationRecordPath
+    $previousPublication = Get-Content -LiteralPath $publicationRecordPath -Raw | ConvertFrom-Json
+    if ($previousPublication.owner -cne 'OutLoud installer workflow' -or $previousPublication.output -cne $output -or
+        $previousPublication.stage -cne $stage -or $previousPublication.status -cne 'published') { throw 'Previous publication ownership differs.' }
+    Assert-OutLoudArtifactInventory $output $previousPublication.output_inventory @('publication-record.json')
+    $ownedPublicationFiles = @($previousPublication.output_inventory.files | ForEach-Object { Resolve-ProductionPath $output $_.path })
+}
+
 $release = Join-Path $ProductionRepository 'release'
 Assert-ProductionPlainPath $release
 if (-not (Test-Path -LiteralPath $release)) { [void](New-Item -ItemType Directory -Path $release) }
@@ -59,6 +74,7 @@ try {
         else { [IO.File]::Move($temporary, $destination) }
         $promoted = $true
         if ((Get-ProductionHash $destination) -cne $record.sha256) { throw 'Published installer SHA-256 differs.' }
+        if ($previous) { $ownedPublicationFiles += $backup }
     } catch {
         # Retain/restore the previous EXE if replacement or final verification fails.
         if (Test-Path -LiteralPath $backup) {
@@ -68,18 +84,32 @@ try {
         throw
     }
     # Only after verified publication, archive older versioned installers outside
-    # release/. Preserve unrelated entries and never recursively delete anything.
+    # release/. Preserve unrelated entries. Artifact retention runs only after
+    # verified publication and never operates on release/ itself.
     foreach ($old in Get-ChildItem -LiteralPath $release -File -Force) {
         if ($old.Name -cne $product.installer_filename -and $old.Name -cmatch '^OutLoud-Setup-\d+\.\d+\.\d+\.exe$') {
             try {
                 Assert-ProductionPlainPath $old.FullName
-                [IO.File]::Move($old.FullName, (Join-Path $output ('release-obsolete-' + $serial + '-' + $old.Name)))
+                $archive = Join-Path $output ('release-obsolete-' + $serial + '-' + $old.Name)
+                [IO.File]::Move($old.FullName, $archive)
+                $ownedPublicationFiles += $archive
             } catch { Write-Warning "Published the current installer, but preserved an obsolete release file: $($old.FullName). $($_.Exception.Message)" }
         }
     }
     Write-Output "PUBLISHED $destination"
     Write-Output "SHA-256 $($record.sha256)"
+    try {
+        Write-OutLoudPublicationRecord $output $stage $ownedPublicationFiles
+        # Re-publication of the same output must not accumulate a new full EXE
+        # backup every time. Keep this publication's previous release, and retain
+        # externally referenced backups. Unrecorded legacy files are never pruned.
+        Remove-OutLoudPublicationBackups $output $ownedPublicationFiles $record.sha256
+        $ownedPublicationFiles = @($ownedPublicationFiles | Where-Object { Test-Path -LiteralPath $_ })
+        Write-OutLoudPublicationRecord $output $stage $ownedPublicationFiles
+        Invoke-OutLoudArtifactRetention $output
+    } catch { Write-Warning "Publication succeeded; automatic artifact cleanup retained uncertain artifacts: $($_.Exception.Message)" }
 } finally {
     try { if (Test-Path -LiteralPath $temporary) { [IO.File]::Delete($temporary) } }
     finally { $lock.Dispose() }
 }
+} finally { Exit-OutLoudArtifactLock $artifactLock }

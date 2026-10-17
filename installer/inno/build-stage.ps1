@@ -6,6 +6,9 @@ param(
     [string]$TokenizerPath
 )
 . (Join-Path $PSScriptRoot 'production-common.ps1')
+. (Join-Path $PSScriptRoot 'build-components.ps1')
+$artifactLock = Enter-OutLoudArtifactLock
+try {
 $policy = Get-ProductionPolicy
 $destination = [IO.Path]::GetFullPath($StageDirectory)
 $stageParent = Join-Path $ProductionRepository 'generated/installer/stages'
@@ -36,7 +39,6 @@ try {
 } finally { $env:DOTNET_GENERATE_ASPNET_CERTIFICATE = $previousCertificateSetting }
 $sourceIdentity = Get-ProductionSourceIdentity
 $buildWork = Join-Path $ProductionRepository ('generated/installer/builds/' + [Guid]::NewGuid().ToString('N'))
-. (Join-Path $PSScriptRoot 'build-components.ps1')
 $built = Build-OutLoudComponents -Components Both -WorkDirectory $buildWork -IncludeManagementCli
 $native = $built.native
 $publish = $built.publish
@@ -150,11 +152,17 @@ $sourceAfter = Get-ProductionSourceIdentity
 if ($sourceAfter.head -ne $sourceIdentity.head -or $sourceAfter.tree_sha256 -ne $sourceIdentity.tree_sha256) {
     throw 'Source inputs changed during the build; partial stage retained, no final stage published.'
 }
-# Failed stages are retained as .partial-* for diagnosis; no recursive deletion is used.
+# Failed/interrupted stages remain for diagnosis. Only this run's completed,
+# fully copied intermediate tree is disposable after verified stage publication.
 Assert-ProductionPlainPath $destination
 if (Test-Path -LiteralPath $destination) { throw 'Destination appeared during staging; nothing replaced.' }
 [void](New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($destination)) -Force)
 Move-Item -LiteralPath $temporary -Destination $destination
+try {
+    $workInventory = Get-OutLoudArtifactInventory $buildWork
+    Remove-OutLoudOwnedArtifact $buildWork $workInventory 'completed intermediate copied into verified stage'
+} catch { Write-Warning "Stage succeeded; intermediate artifacts retained: $($_.Exception.Message)" }
 Write-Output "STAGED Out Loud ${version}: $($verified.files) files at $destination"
 Write-Output 'Public release stage verified. No installer was compiled or executed.'
 return $destination
+} finally { Exit-OutLoudArtifactLock $artifactLock }
