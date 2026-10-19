@@ -26,6 +26,7 @@ std::string_view voice_import_error_name(VoiceImportErrorCode code) noexcept {
     OUTLOUD_ERROR_NAME(compatibility_required); OUTLOUD_ERROR_NAME(source_identity_mismatch);
     OUTLOUD_ERROR_NAME(invalid_destination); OUTLOUD_ERROR_NAME(destination_io);
     OUTLOUD_ERROR_NAME(olv_validation); OUTLOUD_ERROR_NAME(internal_failure);
+    OUTLOUD_ERROR_NAME(incompatible_dsm_profile);
 #undef OUTLOUD_ERROR_NAME
     }
     return "internal_failure";
@@ -37,6 +38,9 @@ using Json = detail::voice_json::Value;
 constexpr std::uint64_t maximum_payload = 1024ULL * 1024 * 1024;
 constexpr std::uint64_t maximum_header = 64 * 1024;
 constexpr std::uint64_t bytes_per_position = 6 * 2 * 16 * 64 * 4;
+constexpr std::uint64_t maximum_prefix = maximum_payload / bytes_per_position;
+// Legacy F32 current_end[N] markers are source-only, not part of the OLV payload.
+constexpr std::uint64_t maximum_markers = 6 * maximum_prefix * 4;
 
 [[noreturn]] void fail(Code code, const char* message, const std::filesystem::path& path,
                        const std::string& tensor = {}, std::uint32_t system_error = 0) {
@@ -110,12 +114,43 @@ std::vector<std::uint64_t> integers(const Json& value, Code code, const std::fil
     }
     return result;
 }
+void reject_dsm_profile(const Json& root, Bytes payload, const std::filesystem::path& path) {
+    // moshi/scripts/tts_make_voice.py exports one speaker_wavs tensor; the
+    // tts-1.6b-en_fr config specifies 512 channels. Duration (T) is configurable.
+    // This identifies a known format signature, not authenticated model origin.
+    if (root.object.size() != 1 || !root.object.contains("speaker_wavs")) { return; }
+    const std::string name = "speaker_wavs";
+    const auto& record = root.object.at(name);
+    if (record.kind != Json::Kind::object || record.object.size() != 3) {
+        fail(Code::malformed_tensor, "Expected dtype, shape and data_offsets only", path, name);
+    }
+    const auto& dtype = field(record, "dtype", path, name);
+    const auto shape = integers(field(record, "shape", path, name), Code::invalid_shape, path, name);
+    if (dtype.kind != Json::Kind::string || dtype.text != "F32" || shape.size() != 3 ||
+        shape[0] != 1 || shape[1] != 512 || !shape[2] || shape[2] > maximum_payload / (512 * 4)) {
+        fail(Code::unsupported_format, "Unrecognized speaker_wavs layout; cannot identify a supported voice format", path, name);
+    }
+    const auto offsets = integers(field(record, "data_offsets", path, name), Code::malformed_tensor, path, name);
+    const auto size = shape[2] * 512 * 4;
+    if (offsets.size() != 2 || offsets[0] != 0 || offsets[1] != size || size != payload.size()) {
+        fail(Code::corrupt_source, "speaker_wavs byte bounds or payload length disagree with its shape/dtype", path, name);
+    }
+    for (std::size_t at = 0; at < payload.size(); at += 4) {
+        if ((detail::u32(payload, at) & 0x7f800000) == 0x7f800000) {
+            fail(Code::malformed_tensor, "speaker_wavs contains infinity or NaN", path, name);
+        }
+    }
+    fail(Code::incompatible_dsm_profile,
+        "Detected voice format: Kyutai TTS 1.6B (DSM)\n"
+        "Supported voice format: Pocket TTS 6L\n\n"
+        "This voice profile uses a different architecture and cannot be imported into Out Loud.", path, name);
+}
 struct Source {
     std::unique_ptr<detail::MappedFile> file;
     std::array<Bytes,6> cache;
     PocketVoiceInfo info;
     explicit Source(const std::filesystem::path& path) {
-        file = map_source(path, maximum_payload + maximum_header + 8 + 96, Code::corrupt_source);
+        file = map_source(path, maximum_payload + maximum_markers + maximum_header + 8 + 96, Code::corrupt_source);
         const auto bytes = file->bytes();
         if (bytes.size() < 8) { fail(Code::corrupt_source, "Truncated Safetensors length field", path); }
         const auto header_size = detail::u64(bytes, 0);
@@ -135,17 +170,39 @@ struct Source {
             }
             root.object.erase(metadata);
         }
-        if (root.object.size() != 18) { fail(Code::malformed_tensor, "Expected exactly six cache/offset/pad groups; legacy current_end is unsupported", path); }
         const auto payload = bytes.subspan(8 + static_cast<std::size_t>(header_size));
+        reject_dsm_profile(root, payload, path);
+        // Recognize only the pinned six-layer FlowLM state. A Safetensors file
+        // being official does not establish its architecture or model identity.
+        for (const auto& [name,record] : root.object) {
+            (void)record;
+            bool supported = false;
+            for (std::size_t layer = 0; layer < 6; ++layer) {
+                const auto base = "transformer.layers." + std::to_string(layer) + ".self_attn/";
+                supported = supported || name == base + "cache" || name == base + "offset" ||
+                    name == base + "current_end" || name == base + "pad";
+            }
+            if (!supported) {
+                fail(Code::malformed_tensor, "Unexpected voice tensor; only six FlowLM layers (0..5) with cache, offset or legacy current_end, and optional pad are supported", path, name);
+            }
+        }
         std::vector<std::pair<std::uint64_t,std::uint64_t>> intervals;
         for (std::size_t layer = 0; layer < 6; ++layer) {
             const auto base = "transformer.layers." + std::to_string(layer) + ".self_attn/";
             std::array<Bytes,3> tensors;
             std::uint64_t prefix = 0;
-            const std::array<const char*,3> names{"cache", "offset", "pad"};
+            std::uint64_t offset = 0, pad = 0;
+            const bool legacy = root.object.contains(base + "current_end");
+            info.legacy_current_end = info.legacy_current_end || legacy;
+            if (legacy && root.object.contains(base + "offset")) {
+                fail(Code::malformed_tensor, "Conflicting offset and legacy current_end in the same layer", path, base + "current_end");
+            }
+            const std::array<const char*,3> names{"cache", legacy ? "current_end" : "offset", "pad"};
             for (std::size_t index = 0; index < names.size(); ++index) {
                 const auto name = base + names[index];
                 const auto found = root.object.find(name);
+                // Upstream attention uses state.get("pad"): absence is unpadded.
+                if (index == 2 && found == root.object.end()) { continue; }
                 if (found == root.object.end()) { fail(Code::malformed_tensor, "Missing Pocket voice tensor", path, name); }
                 const auto& record = found->second;
                 if (record.kind != Json::Kind::object || record.object.size() != 3) {
@@ -153,17 +210,25 @@ struct Source {
                 }
                 const auto& dtype = field(record, "dtype", path, name);
                 if (dtype.kind != Json::Kind::string) { fail(Code::malformed_tensor, "Tensor dtype must be a string", path, name); }
-                if (dtype.text != (index == 0 ? "F32" : "I64")) {
-                    fail(Code::unsupported_dtype, "Expected F32 cache or I64 offset/pad", path, name);
+                const bool marker = legacy && index == 1;
+                if (dtype.text != (index == 0 || marker ? "F32" : "I64")) {
+                    fail(Code::unsupported_dtype, "Expected F32 cache/current_end or I64 offset/pad", path, name);
                 }
                 const auto shape = integers(field(record, "shape", path, name), Code::invalid_shape, path, name);
                 std::uint64_t size = 8;
                 if (index == 0) {
                     if (shape.size() != 5 || shape[0] != 2 || shape[1] != 1 || !shape[2] ||
-                        shape[2] > maximum_payload / bytes_per_position || shape[3] != 16 || shape[4] != 64) {
+                        shape[2] > maximum_prefix || shape[3] != 16 || shape[4] != 64) {
                         fail(Code::invalid_shape, "Expected bounded F32 [2,1,N,16,64] with N positive", path, name);
                     }
                     prefix = shape[2]; size = 2 * prefix * 16 * 64 * 4;
+                } else if (marker) {
+                    if (shape.size() != 1 || !shape[0] || shape[0] > maximum_prefix) {
+                        fail(Code::invalid_shape, "Expected bounded legacy F32 current_end[N] with N positive", path, name);
+                    }
+                    // Kyutai models/model_state.py: current_end was a shape-based
+                    // torch.compile counter. Its VALUES are not the step index.
+                    offset = shape[0]; size = offset * 4;
                 } else if (shape != std::vector<std::uint64_t>{1}) {
                     fail(Code::invalid_shape, "Expected I64 [1] offset/pad", path, name);
                 }
@@ -174,10 +239,22 @@ struct Source {
                 }
                 intervals.emplace_back(offsets[0], offsets[1]);
                 tensors[index] = payload.subspan(static_cast<std::size_t>(offsets[0]), static_cast<std::size_t>(size));
+                if (marker) {
+                    for (std::size_t at = 0; at < tensors[index].size(); at += 4) {
+                        if ((detail::u32(tensors[index], at) & 0x7f800000) == 0x7f800000) {
+                            fail(Code::malformed_tensor, "Legacy current_end contains infinity or NaN", path, name);
+                        }
+                    }
+                } else if (index == 1) { offset = detail::u64(tensors[index], 0); }
+                else if (index == 2) { pad = detail::u64(tensors[index], 0); }
             }
-            if (detail::u64(tensors[1], 0) != prefix || detail::u64(tensors[2], 0) != 0 ||
-                (layer && info.prefix_length != prefix)) {
-                fail(Code::malformed_tensor, "Unequal prefixes, offset != N, or nonzero pad", path, base);
+            // Validate the normalized state using the existing OLV invariants.
+            if (offset != prefix) {
+                fail(Code::malformed_tensor, "Offset or legacy current_end length must equal cache N; expanded or truncated caches are unsupported", path, base + names[1]);
+            }
+            if (pad != 0) { fail(Code::malformed_tensor, "Only unpadded voices are supported; pad must be zero", path, base + "pad"); }
+            if (layer && info.prefix_length != prefix) {
+                fail(Code::malformed_tensor, "All six layer cache prefixes must have the same length", path, base + "cache");
             }
             info.prefix_length = static_cast<std::uint32_t>(prefix);
             cache[layer] = tensors[0];

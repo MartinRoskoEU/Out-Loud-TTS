@@ -77,6 +77,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public bool HasImportDiagnostic => importResult?.HasDiagnostic == true;
     public NotificationSeverity NotificationSeverity => importResult?.Severity ?? NotificationSeverity.Info;
     public string NotificationSeverityText => NotificationSeverity.ToString();
+    public string NotificationTitle => importResult?.Title ?? NotificationSeverityText;
     public string ImportStateText => importPhase switch {
         ImportPhase.Choosing when activeOperation == VoiceOperation.Remove => "Confirm removal of the selected voice.",
         ImportPhase.Choosing when activeOperation == VoiceOperation.Export => "Choose where to save the Out Loud voice.",
@@ -238,7 +239,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         Changed(nameof(ImportPhase)); Changed(nameof(ImportResult)); Changed(nameof(HasImportResult));
         Changed(nameof(ImportStateText)); Changed(nameof(ImportDiagnostic)); ImportCommand.Notify();
         RemoveCommand.Notify(); ExportCommand.Notify();
-        Changed(nameof(HasImportDiagnostic)); Changed(nameof(NotificationSeverity)); Changed(nameof(NotificationSeverityText)); DismissNotificationCommand.Notify();
+        Changed(nameof(HasImportDiagnostic)); Changed(nameof(NotificationSeverity)); Changed(nameof(NotificationSeverityText)); Changed(nameof(NotificationTitle)); DismissNotificationCommand.Notify();
         Changed(nameof(IsTesterPage)); Changed(nameof(IsLibraryPage)); ShowTesterCommand.Notify(); ShowLibraryCommand.Notify();
     }
     private void Changed([CallerMemberName] string? name = null) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));

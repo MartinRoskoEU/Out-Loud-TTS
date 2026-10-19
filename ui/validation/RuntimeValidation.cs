@@ -111,6 +111,31 @@ internal static class RuntimeValidation
             // Initialize resource dictionaries only. Never Run/OnStartup/native service.
             var app = new App(); app.InitializeComponent();
             var palette = new ThemePalette(app.Resources);
+            if (args.Length == 2 && args[0] == "--dsm") {
+                // Focused real-view check using a framed diagnosis from the native
+                // importer. No App startup, real window, elevation or native reads.
+                var result = ImportProtocol.DecodeResult(File.ReadAllBytes(args[1]));
+                const string expectedMessage = "Detected voice format: Kyutai TTS 1.6B (DSM)\nSupported voice format: Pocket TTS 6L\n\n" +
+                    "This voice profile uses a different architecture and cannot be imported into Out Loud.";
+                var importer = new FakeImport { Next = result };
+                var dsmModel = new MainViewModel(new FakeService(), importer, importer);
+                var view = new MainWindow { DataContext = dsmModel };
+                foreach (AppTheme theme in new[] { AppTheme.Light, AppTheme.Dark, AppTheme.HighContrast }) {
+                    palette.Apply(theme); dsmModel.ImportAsync().GetAwaiter().GetResult(); Layout(view, 860, 560);
+                    var title = (TextBlock)view.FindName("NotificationTitle");
+                    var message = (TextBlock)view.FindName("NotificationMessage");
+                    if (title.Text != "Incompatible Voice Profile" || message.Text != expectedMessage ||
+                        ((Border)view.FindName("OperationNotification")).Visibility != Visibility.Visible ||
+                        !dsmModel.ImportDiagnostic.Contains("incompatible_dsm_profile") || errors.Errors != 0)
+                        throw new Exception("DSM notification title, message, diagnostics or view binding failed.");
+                    dsmModel.DismissNotificationCommand.Execute(null); Layout(view);
+                    if (((Border)view.FindName("OperationNotification")).Visibility != Visibility.Collapsed)
+                        throw new Exception("DSM notification did not dismiss.");
+                }
+                if (PresentationSource.FromVisual(view) != null) throw new Exception("DSM validation created a real window.");
+                view.Close(); Console.WriteLine("PASS: native DSM diagnosis displays the exact title/message in the compiled WPF view in all three themes.");
+                return 0;
+            }
             if (ThemePalette.FromWindowsSetting(0, false) != AppTheme.Dark || ThemePalette.FromWindowsSetting(1, false) != AppTheme.Light ||
                 ThemePalette.FromWindowsSetting(null, false) != AppTheme.Light || ThemePalette.FromWindowsSetting("0", false) != AppTheme.Light ||
                 ThemePalette.FromWindowsSetting(0, true) != AppTheme.HighContrast) throw new Exception("Theme-setting interpretation failed.");

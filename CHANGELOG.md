@@ -8,6 +8,13 @@ First public release of Out Loud for Windows 11 x64.
 - Voice Manager import of compatible `.olv` and prepared Pocket `.safetensors`
   voices, confirmed replacement/removal, portable voice export, speech testing
   and WAV export. No voices are bundled.
+- Legacy Pocket TTS 6L `current_end` voice states and states without explicit
+  padding normalize during import into the existing `.olv` format. Source files
+  are preserved and strict tensor/model compatibility validation remains in place.
+- Complete known-format identification for incompatible Kyutai TTS 1.6B / DSM
+  `speaker_wavs` profiles, with an **Incompatible Voice Profile** notice explaining
+  the supported Pocket TTS 6L format. Unknown/malformed files retain appropriate
+  diagnostics; structural identification does not assert model provenance.
 - SAPI site speech-rate control from -10 to +10 using statically linked Sonic,
   preserving pitch. Rate 0 bypasses Sonic and retains the original PCM.
 - Inno Setup installation with prerequisite checks, explicit license and Kyutai
@@ -18,6 +25,9 @@ First public release of Out Loud for Windows 11 x64.
   files and inventory; the 23-to-24-file update is covered by isolated checks.
 - Complete uninstall with explicit confirmation of permanent managed-voice and
   application-data deletion; external backups and shared Microsoft runtimes remain.
+- Automatic build artifact cleanup removes verified intermediates and retains
+  current/previous successful publication pairs, required stages and publication
+  records. Referenced, incomplete or uncertain artifacts are preserved.
 - MIT original-code licensing, Nendis copyright, Kyutai CC BY 4.0 attribution
   and prohibited-use policy, and Sonic Apache 2.0 license included.
 

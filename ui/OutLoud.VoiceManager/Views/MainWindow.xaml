@@ -60,7 +60,7 @@
         <Grid>
           <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
           <StackPanel Margin="0,0,14,0">
-            <TextBlock Text="{Binding NotificationSeverityText}" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,5" />
+            <TextBlock x:Name="NotificationTitle" Text="{Binding NotificationTitle}" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,5" />
             <TextBlock x:Name="NotificationMessage" Text="{Binding ImportStateText}" TextWrapping="Wrap" FontWeight="SemiBold" />
             <Expander x:Name="OperationDiagnostic" Header="Diagnostic details" Margin="0,6,0,0" MaxHeight="145"
                       Foreground="{Binding Foreground, ElementName=NotificationMessage}" Visibility="{Binding HasImportDiagnostic, Converter={StaticResource VisibleWhenTrue}}">

@@ -12,7 +12,7 @@ exports and removes compatible voices.
 - Microsoft Visual C++ v14 Runtime x64 (14.44.35211.0 or newer) and
   **.NET 10 Desktop Runtime x64**. Setup checks these and offers to download
   and install missing prerequisites from Microsoft with your consent.
-- Your own compatible Out Loud `.olv` or prepared Pocket `.safetensors` voice.
+- Your own compatible Out Loud `.olv` or prepared Pocket TTS 6L `.safetensors` voice.
   **No voices or recordings are bundled.** Ordinary audio files cannot be imported.
 - The Out Loud addon, installed separately, for World of Warcraft narration.
 
@@ -58,6 +58,19 @@ files are never silently overwritten or deleted.
    `.olv` backup outside the managed library.
 3. Restart World of Warcraft if it was open during import, then select the
    imported voice in the Out Loud addon's voice settings.
+
+Voice Manager supports prepared states for Out Loud's six-layer English Pocket
+TTS model, including older `current_end` states and states without an explicit
+zero-padding tensor. Supported legacy states are normalized once during import
+and stored as `.olv`; the original source file is unchanged. Shape, dtype,
+finite-value and model compatibility checks remain strict. Matching tensor
+structure alone does not prove which model prepared a voice.
+
+Kyutai TTS 1.6B / DSM `speaker_wavs` profiles use a different architecture and
+cannot be imported. Recognized DSM profiles show **Incompatible Voice Profile**
+with the detected and supported formats. Other model architectures, raw speaker
+embeddings, recordings and malformed profiles remain unsupported. See
+[voice import compatibility](docs/VOICE_IMPORT.md) for the exact supported schema.
 
 SAPI speech rates from **-10 to +10** are supported using Sonic's pitch-preserving
 speed adjustment: approximately **0.333x**, **1x**, and **3x** at -10, 0 and +10.
@@ -125,3 +138,7 @@ and the pinned offline model/tokenizer inputs. Packaging builds Release x64,
 validates the explicit payload and copies the verified installer to
 `release/OutLoud-Setup-0.1.0.exe`. It does not execute setup or publish to GitHub.
 `release/`, generated artifacts and user voice files remain excluded from Git.
+Successful staging removes verified intermediate build output. Automatic artifact
+cleanup retains the current and previous successful publication pairs, referenced
+stages and publication records; uncertain or incomplete artifacts remain for
+diagnosis. It does not operate on the installed application or voice data.

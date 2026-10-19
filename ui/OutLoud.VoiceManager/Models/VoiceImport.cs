@@ -18,6 +18,9 @@ public enum ImportPhase { None, Choosing, AwaitingElevation, Importing, Succeede
 public sealed record VoiceImportResult(ImportPhase Phase, string? LibraryId = null, BackendError? Error = null, string[]? DuplicateIds = null,
     VoiceOperation Operation = VoiceOperation.Import, bool Unchanged = false)
 {
+    private bool IsIncompatibleDsmProfile => Phase == ImportPhase.Failed &&
+        Operation is VoiceOperation.Import or VoiceOperation.Replace && Error?.ImportCode == "incompatible_dsm_profile";
+    public string Title => IsIncompatibleDsmProfile ? "Incompatible Voice Profile" : Severity.ToString();
     public NotificationSeverity Severity => Phase switch {
         ImportPhase.Cancelled => NotificationSeverity.Info,
         ImportPhase.Partial => NotificationSeverity.Warning,
@@ -28,6 +31,7 @@ public sealed record VoiceImportResult(ImportPhase Phase, string? LibraryId = nu
     public bool HasDiagnostic => Error != null || DuplicateIds is { Length: > 0 };
     public string Message => Phase switch
     {
+        _ when IsIncompatibleDsmProfile => Error!.Message,
         ImportPhase.Succeeded when Operation == VoiceOperation.Remove => "Voice removed from Out Loud and Windows speech.",
         ImportPhase.Partial when Operation == VoiceOperation.Remove && Error?.Code == "removal_partial" => "Removal is incomplete. The library entry is detached, but its Windows speech registration still needs review. See the diagnostic details.",
         ImportPhase.Partial when Operation == VoiceOperation.Remove => "Voice removed from Out Loud and Windows speech, but file cleanup is pending. See the diagnostic details.",

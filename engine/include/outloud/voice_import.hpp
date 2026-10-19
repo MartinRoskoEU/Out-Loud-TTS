@@ -11,7 +11,7 @@ enum class VoiceImportErrorCode {
     file_not_found, source_io, unsupported_format, corrupt_source,
     malformed_tensor, invalid_shape, unsupported_dtype, incompatible_model,
     compatibility_required, source_identity_mismatch, invalid_destination,
-    destination_io, olv_validation, internal_failure
+    destination_io, olv_validation, internal_failure, incompatible_dsm_profile
 };
 [[nodiscard]] std::string_view voice_import_error_name(VoiceImportErrorCode code) noexcept;
 
@@ -39,6 +39,7 @@ struct PocketVoiceInfo {
     std::string source_sha256, payload_sha256;
     std::map<std::string, std::string> metadata;
     bool model_provenance_verified = false;
+    bool legacy_current_end = false; // structural format only, not model provenance
 };
 struct OlvInfo {
     std::uint32_t format_version = 1, prefix_length = 0;

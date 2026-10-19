@@ -12,5 +12,7 @@
   <ItemGroup>
     <!-- Load the actual SDK-compiled view with fake data, without App startup. -->
     <ProjectReference Include="..\OutLoud.VoiceManager\OutLoud.VoiceManager.csproj" />
+    <!-- MainWindow's application-relative icon resolves against this test host. -->
+    <Resource Include="..\OutLoud.VoiceManager\Assets\OutLoud.ico" Link="Assets\OutLoud.ico" />
   </ItemGroup>
 </Project>

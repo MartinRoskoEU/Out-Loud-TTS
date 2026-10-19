@@ -129,13 +129,13 @@ generated/installer/stages/<candidate>/
         runtime/
             pocket-english.olp
             pocket-english-tokenizer.bin
-        licenses/                 # Seven original documents, exact policy, generated terms
+        licenses/                 # Required licenses, attributions, policy and generated terms
         LICENSE
         THIRD_PARTY_NOTICES.md
         RNG_NOTICES.md
 ```
 
-The 23-file payload is selected by [package.json](package.json), not by recursive
+The 24-file payload is selected by [package.json](package.json), not by recursive
 copying of build or user directories. Stage metadata is outside the installable
 payload. It records version, source identity, SDK/apphost provenance, native build
 pairing and every payload size/hash. Hash metadata provides reproducibility and

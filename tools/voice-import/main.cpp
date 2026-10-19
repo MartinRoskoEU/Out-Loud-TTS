@@ -15,7 +15,8 @@ void show(const outloud::PocketVoiceInfo& info) {
     std::cout << "format=Safetensors/Pocket-cache-offset-pad\nprefix=" << info.prefix_length
               << "\nsource_bytes=" << info.source_bytes << "\npayload_bytes=" << info.payload_bytes
               << "\nsource_sha256=" << info.source_sha256 << "\npayload_sha256=" << info.payload_sha256
-              << "\nmetadata_entries=" << info.metadata.size() << "\nmodel_provenance_verified=false\n";
+              << "\nmetadata_entries=" << info.metadata.size() << "\nmodel_provenance_verified=false\n"
+              << "voice_state_format=Pocket-TTS-6L" << (info.legacy_current_end ? "-legacy-current_end" : "") << '\n';
 }
 void show(const outloud::OlvInfo& info) {
     std::cout << "olv_version=" << info.format_version << "\nprefix=" << info.prefix_length

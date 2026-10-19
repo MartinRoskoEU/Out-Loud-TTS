@@ -80,13 +80,41 @@ merely by matching its tensor shapes.
 
 ## Supported boundary and dependencies
 
-The backend supports the complete finite, unpadded batch-1 state above with
-any positive bounded N, six equal prefix lengths, I64 offsets equal to N and
-zero pads. Source filename extensions are not used to infer the container.
-Legacy `current_end`, extra/missing tensors, expanded caches with unused NaNs,
-other architectures/languages, other dtypes and padded/batched states are
-rejected. Upstream supports a legacy `current_end` branch; its conversion is
-deliberately outside this first production contract.
+The backend supports finite, unpadded batch-1 state with positive bounded N,
+six equal prefix lengths, F32 caches `[2,1,N,16,64]`, and either I64 `offset[1]`
+equal to N or legacy F32 `current_end[N]`. An absent `pad` means zero; a present
+pad must remain I64 `[1]` with value zero. This covers current three-tensor
+groups, older cache/offset pairs, and legacy cache/current_end pairs (also with
+an explicit zero pad). Source filename extensions do not infer the container.
+
+Legacy normalization happens inside the existing native import boundary, before
+the normalized offset/pad/prefix and finite-cache validation. It reproduces
+Kyutai's shape counter: `current_end.shape[0]` becomes the I64 offset value,
+regardless of the marker's stored values. Marker contents must still be finite;
+the importer deliberately supports only the official F32 one-dimensional marker
+structure. The cache is copied verbatim, including already-applied RoPE. There
+is no key rotation, model prefill, or synthesis-time conversion. OLV v1 represents
+the normalized offset with its shared prefix length and invariant zero pad.
+The read-only source mapping and source SHA256 still refer to the original file.
+
+The reference environment and corresponding upstream sources establish these
+semantics: [state import](https://github.com/kyutai-labs/pocket-tts/blob/1df6b3da17cb43eff8c4c4e077f785520492adff/pocket_tts/models/model_state.py),
+[optional padding](https://github.com/kyutai-labs/pocket-tts/blob/1df6b3da17cb43eff8c4c4e077f785520492adff/pocket_tts/modules/attention.py),
+and [historical F32 shape counter](https://github.com/kyutai-labs/pocket-tts/blob/v1.0.0/pocket_tts/modules/transformer.py).
+Upstream reconstructs module dictionaries permissively and does not impose our
+six-layer OLV schema. Our importer additionally rejects simultaneous `offset`
+and `current_end`, extra/missing state, mismatched lengths, non-finite tensors,
+expanded caches, other dtypes/dimensions, and padded/batched states. The original
+`audio_prompt` representation requires neural prefill and remains unsupported,
+as do `speaker_wavs` and other raw conditioning representations.
+
+Six layers, 16 heads, and head dimension 64 come from the pinned English FlowLM
+architecture, not a universal Kyutai voice format. Structural compatibility does
+not prove that a voice was prepared with the pinned weights or conditioning
+configuration. The existing caller model declaration, source identity checks,
+and `model_provenance_verified=false` policy remain unchanged. Profiles prepared
+with other model weights, languages, or BOS/preparation conventions cannot be
+made model-compatible merely by converting the counter.
 
 This source can be safely parsed and converted natively: it is a bounded JSON
 directory and raw tensors, with no executable deserialization. A small private
@@ -95,7 +123,9 @@ is shipped. It rejects duplicate keys, invalid UTF-8/escapes/surrogates and
 ambiguous/out-of-range numeric fields. Header limit is 64 KiB, nesting limit
 8, total JSON nodes 1024, object members 128, array elements 32. Payload limit
 is the existing 1 GiB `.olv` limit, so N is at most **21,845**. Source size is
-bounded by that payload plus the header, its length field and 96 scalar bytes.
+bounded by that payload plus the header, its length field, 96 scalar bytes and
+524,280 bytes for six bounded legacy F32 markers. The OLV payload limit stays
+1 GiB; source-only markers are discarded after validation.
 
 Import needs neither the `.olp` file nor Python/PyTorch/NumPy. The shared model
 and tokenizer are required for synthesis and runtime pairing validation.
@@ -105,8 +135,120 @@ operation requiring its original preparation weights/tooling. The synthesis
 `bos_before_voice`; this importer cannot recreate that audio preparation path
 using `.olp`. No Python embedding, LibTorch, ONNX or other neural dependency
 is added. The native importer uses the existing Windows BCrypt/asset libraries.
-Python was used only to inspect local reference files and rerun the old writer
-for an independent comparison during development. No network was accessed.
+The original Step 3A verification used Python to inspect local reference files
+and rerun the old writer, without network access. Legacy verification additionally
+uses upstream source and official downloaded profiles as described below.
+
+## Legacy compatibility verification (2026-10-19)
+
+Only the importer, its focused native tests, and this document changed. A separate
+`build-legacy-voice` development build uses MSVC `/W4 /WX`. The focused test
+executable checks existing Gnome whole-file byte equality, both position formats
+with/without pad, byte-preserved K/V, original-source preservation, temporary
+managed-library publication, and production engine loading. Its optional model
+test synthesizes a legacy-encoded Gnome reference through the existing engine:
+170 frames / 326,400 samples, exactly equal to canonical FP32 PCM (SHA256
+`36788a2c1cfde712fb9ef68151a93b1b78eec40b1e440e99ff1b1b59d1a8bcf0`).
+All 121 structured rejection checks passed. Focused rejection cases cover malformed markers/bounds, missing and conflicting
+fields, unknown layers/tensors, wrong architecture/dtype, non-finite marker and
+cache values, padding, incompatible declarations, and source identity mismatch.
+
+Official Alba files were independently compared against the installed upstream
+`_import_model_state` implementation. All six normalized offsets and K/V byte
+streams match, their OLVs pass the production loader, and source hashes stay
+unchanged. Test conversion used the existing explicit pinned-model declaration;
+this proves conversion fidelity and structural loading, not missing model origin.
+
+| Official source | Source SHA256 | Result |
+| --- | --- | --- |
+| `embeddings_v2/alba.safetensors` | `413fc94e6bd73e1b6f25e850b25652f5163e41d92a403954f86cbbedd0c414d1` | Legacy F32 current_end[125], absent pad: converts |
+| `embeddings_v3/alba.safetensors` | `76fcc99b552439f1d2a96d593285113f6afaf628281195a2959b40f5c3610f3f` | I64 offset[1]=125, absent pad: converts |
+| Cached `languages/english/embeddings/alba.safetensors` | `d291428b416d6c36a1de7835e51dbe1e334b75e5af512bb18dd23a1047fe8f3b` | I64 offset[1]=126, zero pad: converts |
+
+The first two files come from
+[Kyutai's repository at ab248779](https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/tree/ab248779e0718743c013e20b2d812ace7c8f4bf7);
+the cached file is from revision `4e1e0a3e611c51c0b4ed8174fc10f32a54644303`.
+V2 and v3 produce the identical 6,144,000-byte cache payload (SHA256
+`453cabdadc449b39f45111119dd574a7b271899d2a4dfeeea9360bd1bbeb4721`).
+The repository's older `embeddings/alba.safetensors` contains `audio_prompt`,
+not KV state, and is rejected. After the user identified Downloads as the source
+location, the local `a-moment-by.wav.1e68beda%40240.safetensors` reproduced the
+exact original error with the previous importer. Its SHA256 is
+`5eb47ea7ac2648cb4300925a7017cabbf67e99079e8881548e69d7c19ceaf6e5`.
+It contains only F32 `speaker_wavs[1,512,125]`, with `sig`/`epoch` metadata;
+there is no `current_end`, offset, pad, or layer KV cache. Thus the original
+failure was not evidence of a legacy counter: the old tensor-count error
+incorrectly suggested that explanation for every non-18-tensor file.
+
+The updated importer rejects that actual download with tensor context
+`speaker_wavs`. It also safely rejects the other Downloads profile,
+`p304_023.wav.1e68beda%40240.safetensors`, which has the same unsupported
+structure. Both files retain their original hashes, and neither rejection
+creates an OLV. This representation cannot be normalized into prepared KV
+state by field conversion; model-specific neural preparation would be needed.
+The legacy cache support above does not make these files compatible.
+Downloaded test inputs, converted outputs and comparison results (including
+`downloads-verification.json`) are under ignored `generated/legacy-voice/`.
+
+No installed library, voice registration, model weights, speech-generation code,
+SAPI code, installer or release artifact is modified by this work.
+
+## Known incompatible DSM format identification
+
+Before Pocket tensor validation, the importer recognizes the documented Kyutai
+TTS 1.6B / DSM voice-embedding layout: exactly one tensor named `speaker_wavs`
+(plus optional string-map metadata), F32 dtype, shape `[1,512,T]` with positive
+bounded T. The record must contain exactly `dtype`, `shape`, and `data_offsets`;
+its offsets must describe the entire contiguous payload from byte zero, with
+exactly `1*512*T*4` bytes and only finite FP32 values. Extra or mixed tensors,
+wrong dtype/rank/dimensions, invalid metadata, bad lengths/bounds, NaNs and
+infinities never receive the DSM classification. Unknown and malformed inputs
+retain generic format, shape, tensor, or corruption diagnostics.
+
+The signature follows [Kyutai's voice exporter](https://github.com/kyutai-labs/moshi/blob/main/scripts/tts_make_voice.py),
+which saves a single unquantized latent embedding, and the
+[1.6B model configuration](https://huggingface.co/kyutai/tts-1.6b-en_fr/blob/main/config.json),
+which specifies the 512-channel speaker conditioner. T is variable because
+the export duration is configurable; 125 positions is the provided profile's
+length, not a model identity check. Neither matching structure nor `sig`/`epoch`
+metadata proves authentic model provenance. No provenance flag is promoted.
+Supported Pocket inspection separately reports whether a validated six-layer
+state used legacy `current_end`; its existing validation and conversion stay
+unchanged.
+
+A complete DSM match produces the structured import code
+`incompatible_dsm_profile`, preserved through the existing library/helper
+error mapping. Voice Manager displays the title **Incompatible Voice Profile**
+and this exact message in its existing error notification:
+
+```text
+Detected voice format: Kyutai TTS 1.6B (DSM)
+Supported voice format: Pocket TTS 6L
+
+This voice profile uses a different architecture and cannot be imported into Out Loud.
+```
+
+Focused verification used Downloads' `p304_023.wav.1e68beda%40240.safetensors`
+(the URL-escaped local filename for `p304_023.wav.1e68beda@240.safetensors`),
+SHA256 `d7db37b50925a6d520544f69f5b0849cc216ccfdc68dab3b1927620de408381a`.
+It is recognized with the exact message, leaves no OLV, and retains its hash.
+The original native diagnosis was framed for the existing helper protocol and
+rendered by the compiled WPF view in light, dark, and high-contrast themes;
+title, message, diagnostic details, dismissal, and bindings passed without
+starting App services, showing a real window, or touching installed state.
+The dedicated view check is `ui/validation`'s `--dsm <result-frame>` mode.
+Its icon resource is included in the validation host so the real production
+view can resolve its application-relative icon.
+
+The native import test passes 161 structured rejection checks, including DSM
+lookalikes and propagation through the actual library/frontend error mapping.
+Existing Gnome OLV byte equality, all four current/legacy and optional-pad
+combinations, managed publication, and production OLV loading pass. Official
+Alba v2 and v3 also import and load with their original source hashes intact.
+The small frontend harness passes 214 checks, including exact DSM presentation
+through the helper decoder and generic diagnostics for unknown/malformed input.
+Local real-file evidence and the result frame are in ignored
+`generated/dsm-identification/`.
 
 ## Compatibility and `.olv` v1
 

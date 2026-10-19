@@ -138,6 +138,21 @@ internal static class ImportTests
         parsed = ImportProtocol.DecodeResult(Frame(3, id, nativeError)); check(parsed.Phase == ImportPhase.Partial && parsed.Error == nativeError, "Partial binary result.");
         parsed = ImportProtocol.DecodeResult(Frame(2, "", new("library", "duplicate_content", "Already imported", "C:\\ž"), new[] { id }));
         check(parsed.DuplicateIds?[0] == id && parsed.Error?.Path == "C:\\ž", "Duplicate result Unicode/error transport.");
+        const string dsmMessage = "Detected voice format: Kyutai TTS 1.6B (DSM)\nSupported voice format: Pocket TTS 6L\n\n" +
+            "This voice profile uses a different architecture and cannot be imported into Out Loud.";
+        parsed = ImportProtocol.DecodeResult(Frame(2, "", new("library", "import_failed", dsmMessage,
+            ImportCode: "incompatible_dsm_profile", Tensor: "speaker_wavs")));
+        importer.Next = parsed; await model.ImportAsync();
+        check(model.NotificationTitle == "Incompatible Voice Profile" && model.ImportStateText == dsmMessage &&
+            model.NotificationSeverity == NotificationSeverity.Error && model.ImportDiagnostic.Contains("incompatible_dsm_profile"),
+            "DSM title/message survive protocol, result model and notification bindings.");
+        foreach (string code in new[] { "unsupported_format", "malformed_tensor", "invalid_shape", "corrupt_source" }) {
+            var unknown = new VoiceImportResult(ImportPhase.Failed, Error: new("library", "import_failed", "Invalid tensor", ImportCode: code));
+            check(unknown.Title == "Error" && unknown.Message == "Import failed: Invalid tensor" && !unknown.Message.Contains("DSM"),
+                "Unknown/malformed errors retain generic diagnostics.");
+        }
+        model.DismissNotificationCommand.Execute(null);
+        check(model.NotificationTitle == "Info", "Dismissal clears DSM notification title.");
         bool Reject(byte[] bytes) { try { ImportProtocol.DecodeResult(bytes); return false; } catch (Exception) { return true; } }
         byte[] bad = Frame(1, id); bad[4] = 99; check(Reject(bad), "Bad response version rejected.");
         bad = Frame(1, id); bad[8] = 99; check(Reject(bad), "Unknown response outcome rejected.");
