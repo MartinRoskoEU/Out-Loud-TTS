@@ -287,7 +287,9 @@ std::array<unsigned char,256> voice_header(const Source& source, const std::file
     std::copy(magic.begin(), magic.end(), header.begin());
     put(header,8,1); put(header,12,256); put(header,16,0x01020304);
     put(header,20,1); put(header,24,1); put(header,28,2);
-    const auto compatibility = hash_bytes(pocket_model_compatibility_id, Code::internal_failure, path);
+    // Fixed OLV v1 import marker retained byte-for-byte. Preparation model
+    // revisions are not tracked or used for playback eligibility.
+    const auto compatibility = hash_bytes("0e06c1a37e3c5ede0bdc8f330753f406d4046ab25698bbbe4bbb61a0b783c70f", Code::internal_failure, path);
     const auto identity = hash_bytes(source.info.source_sha256, Code::internal_failure, path);
     const auto payload_hash = hash_bytes(source.info.payload_sha256, Code::internal_failure, path);
     std::copy(compatibility.begin(),compatibility.end(),header.begin()+32);
@@ -353,13 +355,11 @@ PocketVoiceInfo validate_pocket_voice(const std::filesystem::path& source) { ret
 OlvInfo validate_olv(const std::filesystem::path& input, std::string_view compatibility_id) {
     return guarded(input,[&] {
         const auto path = local_path(input,Code::source_io);
-        const auto requested = hash_bytes(compatibility_id,Code::incompatible_model,path);
+        // Optional caller identity is syntax-checked, never a playback gate.
+        if (!compatibility_id.empty()) { (void)hash_bytes(compatibility_id,Code::incompatible_model,path); }
         const auto file = map_source(path,maximum_payload+256,Code::olv_validation);
         try {
             const OutLoudVoice voice(path);
-            if (voice.compatibility_id() != detail::hex(requested)) {
-                fail(Code::incompatible_model, "Voice/model compatibility mismatch", path);
-            }
             return OlvInfo{voice.version(),voice.prefix_length(),file->bytes().size(),voice.payload_bytes(),
                            voice.source_sha256(),voice.compatibility_id(),detail::hex(detail::sha256(file->bytes()))};
         } catch (const VoiceImportError&) { throw; }
@@ -369,12 +369,8 @@ OlvInfo validate_olv(const std::filesystem::path& input, std::string_view compat
 VoiceImportResult convert_pocket_voice_to_olv(const std::filesystem::path& input,
     const std::filesystem::path& output, const VoiceImportOptions& options) {
     return guarded(input,[&] {
-        if (options.declared_model_compatibility_id.empty()) {
-            fail(Code::compatibility_required, "Source has no proven model identity; explicitly declare the preparing model compatibility ID", input);
-        }
-        if (detail::hex(hash_bytes(options.declared_model_compatibility_id,Code::incompatible_model,input)) != pocket_model_compatibility_id) {
-            fail(Code::incompatible_model, "Only the pinned Pocket English 3.3.0 synthesis model is supported", input);
-        }
+        // The historical model declaration is an ignored API argument.
+        // Import and playback depend only on supported structure/integrity.
         const auto source_path = local_path(input,Code::source_io);
         Source source(source_path);
         if (!options.expected_source_sha256.empty() &&

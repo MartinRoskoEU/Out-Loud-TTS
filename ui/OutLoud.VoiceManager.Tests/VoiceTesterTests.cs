@@ -17,7 +17,7 @@ internal static class VoiceTesterTests
 {
     private const string Id = "0123456789abcdef0123456789abcdef", Other = "fedcba9876543210fedcba9876543210";
     private const string Root = @"C:\fake-library";
-    private static VoiceRecord Voice(string id = Id) => new(id, "Same name", "valid", "", "correct", "", "compat", "olv", 1, false);
+    private static VoiceRecord Voice(string id = Id) => new(id, "Same name", "valid", "", "correct", "", "compat", "olv", 1);
     private sealed class Backend : IVoiceTestBackend
     {
         public string Name => "Fake baseline";

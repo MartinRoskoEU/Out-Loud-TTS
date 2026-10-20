@@ -1,4 +1,9 @@
-# Out Loud 0.1.0
+# Out Loud
+
+**Out Loud 0.2.0** updates the official Kyutai Pocket TTS English model and
+simplifies voice management. See the [release notes](docs/releases/0.2.0.md) for
+the exact model identity and voice-quality guidance. The installer is prepared
+locally; public publication is pending. Historical 0.1.0 artifacts are preserved.
 
 Offline English text-to-speech for the Out Loud World of Warcraft addon, powered
 by Pocket TTS and Windows SAPI5. The included Voice Manager imports, tests,
@@ -22,12 +27,14 @@ Internet access is needed if setup must download missing Microsoft runtimes.
 
 ## Install
 
-1. Download `OutLoud-Setup-0.1.0.exe` from
-   [GitHub Releases](https://github.com/MartinRoskoEU/Out-Loud-TTS/releases).
+1. Obtain `OutLoud-Setup-0.2.0.exe` and its checksum from the approved release
+   artifacts. Public downloads use
+   [GitHub Releases](https://github.com/MartinRoskoEU/Out-Loud-TTS/releases);
+   publication of 0.2.0 is pending.
    Compare its SHA-256 with the release checksum if you want to verify the download:
 
    ```powershell
-   Get-FileHash .\OutLoud-Setup-0.1.0.exe -Algorithm SHA256
+   Get-FileHash .\OutLoud-Setup-0.2.0.exe -Algorithm SHA256
    ```
 
 2. Close World of Warcraft, Voice Manager and other applications using Out Loud.
@@ -63,8 +70,14 @@ Voice Manager supports prepared states for Out Loud's six-layer English Pocket
 TTS model, including older `current_end` states and states without an explicit
 zero-padding tensor. Supported legacy states are normalized once during import
 and stored as `.olv`; the original source file is unchanged. Shape, dtype,
-finite-value and model compatibility checks remain strict. Matching tensor
-structure alone does not prove which model prepared a voice.
+finite-value, integrity and structural compatibility checks remain strict.
+Voice availability depends on supported structure and integrity, independently of
+the model revision used for preparation. No per-voice model classifications or
+compatibility warnings are shown. Existing OLV v1 fields and payloads are preserved.
+Voices prepared with older weights may sound different or exhibit artifacts with
+the updated model. For best quality, users may need to prepare new profiles using
+the updated weights and their original reference audio. Out Loud does not create
+profiles from recordings or automatically regenerate existing voices.
 
 Kyutai TTS 1.6B / DSM `speaker_wavs` profiles use a different architecture and
 cannot be imported. Recognized DSM profiles show **Incompatible Voice Profile**
@@ -123,20 +136,25 @@ See [production build instructions](installer/inno/BUILD.md),
 [architecture](docs/ARCHITECTURE.md), and the
 [Voice Manager guide](docs/VOICE_MANAGER_GUIDE.md).
 The authoritative product version is [ProductVersion.props](ProductVersion.props).
+The developer-only [model update workflow](docs/MODEL_UPDATES.md) discovers official
+updates, verifies and converts weights, automatically advances the engine version
+when weights change, and validates publication with rollback support. It does not
+update installed applications or publish releases automatically.
 
 Production packaging uses the existing scripts:
 
 ```powershell
-.\installer\inno\build-stage.ps1 -StageDirectory "$PWD\generated\installer\stages\release-0.1.0"
-.\installer\inno\verify-stage.ps1 -StageDirectory "$PWD\generated\installer\stages\release-0.1.0"
-.\installer\inno\build-installer.ps1 -StageDirectory "$PWD\generated\installer\stages\release-0.1.0"
+.\installer\inno\build-stage.ps1 -StageDirectory "$PWD\generated\installer\stages\release-0.2.0"
+.\installer\inno\verify-stage.ps1 -StageDirectory "$PWD\generated\installer\stages\release-0.2.0"
+.\installer\inno\build-installer.ps1 -StageDirectory "$PWD\generated\installer\stages\release-0.2.0" -PreserveHistoricalInstallers
 ```
 
 Use a new stage directory for each build. Build tools require CMake 3.24+,
 Visual Studio 2022 C/C++ tools and Windows SDK, .NET 10 SDK, Inno Setup 7.0.2+,
 and the pinned offline model/tokenizer inputs. Packaging builds Release x64,
 validates the explicit payload and copies the verified installer to
-`release/OutLoud-Setup-0.1.0.exe`. It does not execute setup or publish to GitHub.
+`release/OutLoud-Setup-0.2.0.exe`. The preservation switch leaves older versioned
+installers in place. Packaging does not execute setup or publish to GitHub.
 `release/`, generated artifacts and user voice files remain excluded from Git.
 Successful staging removes verified intermediate build output. Automatic artifact
 cleanup retains the current and previous successful publication pairs, referenced

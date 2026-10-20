@@ -188,6 +188,7 @@ struct MaintenanceFiles {
             signing_require(j.transaction_id==pointer.substr(0,32) && j.root_encoding==maintenance_root_encoding(root.native()),"maintenance_journal_wrong_installation");
             if(i){signing_require(j.installation_id==last.installation_id && j.operation==last.operation && j.components==last.components && j.host==last.host &&
                     j.old_version==last.old_version && j.new_version==last.new_version && j.registration_before==last.registration_before &&
+                    j.host_before==last.host_before && j.host_after==last.host_after &&
                     (last.library_identity.empty() || last.library_identity==j.library_identity) &&
                     (last.library_parent_identity.empty() || last.library_parent_identity==j.library_parent_identity) &&
                     (!last.bootstrap_detector || last.bootstrap_detector==j.bootstrap_detector) &&

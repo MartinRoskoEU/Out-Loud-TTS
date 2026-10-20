@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.2.0
+
+- Updated the official Kyutai Pocket TTS English weights to immutable revision
+  `7f364c05d1be3faf2b234cdbe4cbb68a026d4218`; the English architecture and tokenizer
+  are unchanged. See [release notes](docs/releases/0.2.0.md) for hashes/provenance.
+- Reusable developer-side automatic model discovery, verified download and OLP
+  conversion, automatic engine versioning on changed weights, integrity checks,
+  validation, model history and transactional rollback.
+- Simplified Voice Manager and native voice handling: no per-voice model
+  classifications or Legacy/Unknown warnings. Supported OLV v1 and prepared
+  Safetensors voices remain importable/playable after strict structural and
+  integrity validation. Existing voice identities and files are preserved.
+- Explicit forward cross-version development deployment checks the expected
+  installed version, updates the full package with the existing signing identity,
+  and journals installed version metadata together with payload rollback.
+- Expanded the default Voice Tester passage for manual listening tests.
+- Optional historical-installer preservation during local packaging; existing
+  artifact-retention defaults and release exclusion from Git remain unchanged.
+
+Existing profiles prepared with older weights may sound different or exhibit
+artifacts. Best quality may require preparing a new profile with the updated
+model and original reference audio. Voices are not automatically converted or
+regenerated; structural support does not guarantee acoustic quality.
+
 ## 0.1.0
 
 First public release of Out Loud for Windows 11 x64.

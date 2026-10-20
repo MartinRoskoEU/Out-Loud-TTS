@@ -8,7 +8,10 @@ separate manually initiated development operation.
 ## Library page and operations
 
 The list shows Name, Library Status and SAPI Status, with full-row selection and
-details for identity, metadata and diagnostics. Refresh preserves selection by
+details for identity, metadata and diagnostics. Voice model-version tracking,
+classifications and compatibility warnings are not used. Supported structure and
+integrity determine availability; see [model updates](MODEL_UPDATES.md).
+Refresh preserves selection by
 immutable ID. Failure keeps the last good snapshot and shows an error; that list
 is not proof of current state. Loading/empty/error states and dismissible
 Info/Success/Warning/Error notifications remain distinct. Refresh validates each

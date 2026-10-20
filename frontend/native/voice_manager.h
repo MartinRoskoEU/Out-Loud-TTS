@@ -47,7 +47,7 @@ typedef struct outloud_vm_voice_v1 {
     const outloud_vm_error_v1* sapi_error; // per-row failure, not a fabricated status
     uint32_t metadata_present;
     uint32_t olv_version;            // meaningful only when metadata_present==1
-    uint32_t provenance_verified;    // meaningful only when metadata_present==1
+    uint32_t reserved_metadata;      // retired field; always zero, ABI v1 layout preserved
     uint32_t reserved;
 } outloud_vm_voice_v1;
 typedef struct outloud_vm_snapshot_v1 {

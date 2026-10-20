@@ -194,7 +194,7 @@ internal static class RuntimeValidation
             model.RefreshAsync().GetAwaiter().GetResult(); Layout(window);
             if (window.Title != "Out Loud" || !model.IsEmpty) throw new Exception("Empty view/title validation failed.");
             var voice = new VoiceRecord("0123456789abcdef0123456789abcdef", "Gnome Male (fake)", "valid", "", "correct", "Library identity/path/name checked; shared runtime configuration was not supplied.",
-                "pocket-english-model-compatibility-identifier-with-a-long-value", "olv", 1, false);
+                "pocket-english-model-compatibility-identifier-with-a-long-value", "olv", 1);
             var second = voice with { LibraryId = "other-fake-id", DisplayName = "Undead Male (fake)", SapiStatus = "stale_name" };
             service.Next = new VoiceSnapshot("fake-root", new[] { voice, second }); model.RefreshAsync().GetAwaiter().GetResult();
             model.SelectedVoice = voice; Layout(window);

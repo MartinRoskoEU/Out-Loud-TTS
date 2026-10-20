@@ -1,23 +1,27 @@
 # Production installer build
 
-Out Loud 0.1.0 is prepared as a normal public release. Keep the product version
+Out Loud 0.2.0 is prepared for release approval. Keep the product version
 in `ProductVersion.props`; AppId, CLSID and installation lifecycle are unchanged.
 Run from the repository root with the supported build tools and pinned offline
 assets described in the [README](../../README.md#development):
 
 ```powershell
-.\installer\inno\build-stage.ps1 -StageDirectory "$PWD\generated\installer\stages\release-0.1.0"
-.\installer\inno\verify-stage.ps1 -StageDirectory "$PWD\generated\installer\stages\release-0.1.0"
-.\installer\inno\build-installer.ps1 -StageDirectory "$PWD\generated\installer\stages\release-0.1.0"
+.\installer\inno\build-stage.ps1 -StageDirectory "$PWD\generated\installer\stages\release-0.2.0"
+.\installer\inno\verify-stage.ps1 -StageDirectory "$PWD\generated\installer\stages\release-0.2.0"
+.\installer\inno\build-installer.ps1 -StageDirectory "$PWD\generated\installer\stages\release-0.2.0" -PreserveHistoricalInstallers
 ```
 
 Choose a fresh stage path for each build. The workflow builds production Release
 x64 components, validates all allowlisted payload hashes/versions and legal
-material, and publishes the compiler output to `release/OutLoud-Setup-0.1.0.exe`
+material, and copies the compiler output to `release/OutLoud-Setup-0.2.0.exe`
 with SHA-256 verification. Packaging records identify a `public-release`;
 publisher signing and installer execution are not performed. GitHub publication
 requires final manual approval. This preparation performs build/packaging checks,
 not a new installation or broad lifecycle test campaign.
+`-PreserveHistoricalInstallers` keeps older versioned installers in `release/`;
+other artifact-retention conventions remain unchanged. Use the existing signing
+policy: no publisher signing or installation-owned certificate access occurs
+during packaging. Review [0.2.0 notes](../../docs/releases/0.2.0.md) before release.
 
 ## Historical implementation and live validation records
 

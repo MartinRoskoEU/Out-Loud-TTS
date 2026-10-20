@@ -53,13 +53,12 @@ internal static class NativeVoiceManager
                 IntPtr contentPointer = ResultContent(result, (ulong)index);
                 if (contentPointer == IntPtr.Zero) throw Failure("protocol_error", "Missing native content metadata.");
                 var content = Marshal.PtrToStructure<ContentV1>(contentPointer);
-                if (row.MetadataPresent > 1 || row.ProvenanceVerified > 1)
+                if (row.MetadataPresent > 1 || row.ReservedMetadata != 0)
                     throw Failure("protocol_error", "The native metadata flags are invalid.");
                 rows.Add(new VoiceRecord(Required(row.LibraryId), Optional(row.DisplayName), Required(row.Health),
                     Required(row.LibraryDetail), Optional(row.SapiStatus), Optional(row.SapiDetail) ?? "",
                     Optional(row.CompatibilityId), Optional(row.ImportKind),
                     row.MetadataPresent == 1 ? row.OlvVersion : null,
-                    row.MetadataPresent == 1 ? row.ProvenanceVerified == 1 : null,
                     row.SapiError == IntPtr.Zero ? null : CopyError(row.SapiError),
                     Optional(content.OlvSha256), Optional(content.SourceSha256), Optional(content.SourceFilename), Optional(content.ImportedUtc)));
             }
@@ -134,7 +133,7 @@ internal static class NativeVoiceManager
     internal struct VoiceV1
     {
         public IntPtr LibraryId, DisplayName, Health, LibraryDetail, SapiStatus, SapiDetail, CompatibilityId, ImportKind, SapiError;
-        public uint MetadataPresent, OlvVersion, ProvenanceVerified, Reserved;
+        public uint MetadataPresent, OlvVersion, ReservedMetadata, Reserved;
     }
     [StructLayout(LayoutKind.Sequential, Pack = 8)]
     internal struct ErrorV1

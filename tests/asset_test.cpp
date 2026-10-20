@@ -60,7 +60,8 @@ void corrupt_voice(const std::filesystem::path& source, const std::filesystem::p
     changed = original; set32(changed, 200, 15); check(changed, "dimensions");
     changed = original; set32(changed, 208, 2); check(changed, "dimensions");
     changed = original; set32(changed, 220, 0); check(changed, "post-RoPE");
-    changed = original; changed[32] ^= 1; check(changed, "compatibility mismatch", true);
+    changed = original; changed[32] ^= 1; seal(changed); write(scratch,changed);
+    outloud::OutLoudVoice(scratch).validate_against(model); // Different preparation identity is informational.
     changed = original; changed[64] ^= 1; check(changed, "container SHA256");
     changed = original; changed[128] ^= 1; check(changed, "payload SHA256", true);
     changed = original; changed[96] ^= 1; check(changed, "container SHA256");
@@ -141,7 +142,7 @@ int wmain(int argc, wchar_t** argv) {
                      "Full source BF16 bytes and FP32 PyTorch widening: PASS\n"
                      "All 65,536 BF16 patterns: PASS\n"
                   << outloud::test::voice_expected.size() << " original voice byte/schema checks: PASS\n"
-                     "Corruption, bounds, dimensions, dtype and compatibility rejection: PASS\nRESULT: PASS\n";
+                     "Corruption/bounds/dimensions/dtype rejection and informational voice identities: PASS\nRESULT: PASS\n";
         return 0;
     } catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }
 }

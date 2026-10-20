@@ -16,6 +16,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 include(CTest)
 option(OUTLOUD_BUILD_DEVELOPMENT_TOOLS "Build opt-in research, listening and performance tools" OFF)
+option(OUTLOUD_BUILD_MODEL_UPDATE_VALIDATOR "Build isolated model update validation tool" OFF)
 
 set(OUTLOUD_TOKENIZER_ASSET "${CMAKE_CURRENT_SOURCE_DIR}/generated/tokenizer/pocket-english-tokenizer.bin"
     CACHE FILEPATH "Offline-exported pinned tokenizer asset")
@@ -152,4 +153,10 @@ foreach(target OutLoudPocketSAPI OutLoudVoiceManagerNative OutLoudVoiceImportHel
 endforeach()
 if(BUILD_TESTING OR OUTLOUD_BUILD_DEVELOPMENT_TOOLS)
     include(cmake/Development.cmake)
+endif()
+if(OUTLOUD_BUILD_MODEL_UPDATE_VALIDATOR)
+    add_executable(outloud-model-update-check tools/model-update-check/main.cpp)
+    target_link_libraries(outloud-model-update-check PRIVATE outloud_orchestration outloud_voice_library outloud_asset_io)
+    target_include_directories(outloud-model-update-check PRIVATE engine/src)
+    target_compile_options(outloud-model-update-check PRIVATE /W4 /WX /utf-8 /permissive- /fp:precise)
 endif()

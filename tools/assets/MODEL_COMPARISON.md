@@ -1,5 +1,10 @@
 # Read-only Pocket model comparison
 
+The shared discovery function also powers the reusable
+[CHECK/UPDATE workflow](../../docs/MODEL_UPDATES.md). Individual voices are not
+model-version tracked or classified. Supported structure and integrity determine
+voice availability; changed model weights may still affect speech behavior.
+
 From the repository root, use the existing reference environment:
 
 ```powershell

@@ -6,13 +6,14 @@
 namespace {
 namespace fs=outloud::detail::library_fs;
 void show(const outloud::LibraryVoice& voice) {
-    std::cout<<"id="<<voice.library_id<<"\nhealth="<<outloud::voice_health_name(voice.health)<<'\n';
+    std::cout<<"id="<<voice.library_id<<"\nhealth="<<outloud::voice_health_name(voice.health)
+             <<'\n';
     if (voice.metadata) {
         const auto& m=*voice.metadata;
         std::cout<<"name="<<m.display_name<<"\nolv_version="<<m.olv_version<<"\nolv_sha256="<<m.olv_sha256
             <<"\nsource_sha256="<<m.source_sha256<<"\ncompatibility_id="<<m.compatibility_id
             <<"\nimport_kind="<<(m.import_kind==outloud::VoiceImportKind::pocket_prepared?"pocket_prepared":"olv")
-            <<"\nimported_utc="<<m.imported_utc<<"\nmodel_provenance_verified=false\n";
+            <<"\nimported_utc="<<m.imported_utc<<'\n';
     }
     std::wcout<<L"managed_olv="<<voice.managed_olv_path.native()<<L'\n';
     if (!voice.detail.empty()) { std::cout<<"detail="<<voice.detail<<'\n'; }

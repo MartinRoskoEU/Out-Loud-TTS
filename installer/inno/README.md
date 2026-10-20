@@ -1,5 +1,9 @@
 # Out Loud production installer: A03.1-A03.12
 
+Current product version: **0.2.0**, from `ProductVersion.props`. Current changes
+and exact model identity are in the [0.2.0 release notes](../../docs/releases/0.2.0.md).
+The A03 records below retain their historical 0.1.0 validation context.
+
 A03.12 completes the shared native/Inno integration for a controlled-test
 **OutLoud-Setup-0.1.0.exe**, Windows 11 x64. The build scripts stage and compile
 only; they never execute setup, register SAPI or create certificates. Functional
@@ -30,6 +34,9 @@ same-volume staged copy and preserves the previous file on publication failure.
 After success, older versioned installers move out of `release/` into the current
 `generated/installer/compiler-output/` build directory. Locked obsolete files are
 preserved with a warning. Other release-directory content is left alone.
+Pass `-PreserveHistoricalInstallers` to `build-installer.ps1` or
+`publish-installer.ps1` to leave older versioned installers in `release/` instead.
+The 0.2.0 release preparation uses this switch to preserve the 0.1.0 artifact.
 Build output, provenance, replacement backups and diagnostics remain under
 `generated/`; both output locations are ignored by Git. This does not provide
 publisher signing or authorize installer execution.

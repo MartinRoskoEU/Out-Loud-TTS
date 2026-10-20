@@ -16,7 +16,7 @@ public sealed class VoiceTesterViewModel : INotifyPropertyChanged
     private readonly IWaveExportDialog? exportDialog;
     private IReadOnlyList<VoiceRecord> voices = Array.Empty<VoiceRecord>();
     private VoiceRecord? selected;
-    private string root = "", text = "The Forsaken, once servants of the Lich King, now fight for their freedom. Stay here, and wait for my return.";
+    private string root = "", text = "Adventurer, listen carefully: at dawn, three scouts vanished near the shattered watchtower. Search the ruins, retrieve the silver key, and protect the wounded prisoner before the seventh bell. But tell me—did you hear a strange whisper beneath the storm, or was it only the wind?";
     private bool busy, closed;
     private long revision;
     private CancellationTokenSource? stop;

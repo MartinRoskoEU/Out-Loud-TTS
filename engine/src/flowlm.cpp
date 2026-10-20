@@ -113,7 +113,7 @@ void FlowLMBackbone::backbone_into(std::span<const float> embeddings, FlowLMPref
     require(!embeddings.empty() && embeddings.size() % 1024 == 0, "Invalid backbone embedding dimensions");
     const auto tokens = embeddings.size() / 1024;
     const auto offset = state.offset();
-    require(state.compatibility_ == model_.compatibility_id() && state.voice_sha_ == voice_sha_, "Prefill voice/model state mismatch");
+    require(state.compatibility_ == voice_.compatibility_id() && state.voice_sha_ == voice_sha_, "Prefill voice state mismatch");
     const auto previous = offset - voice_.prefix_length();
     require(tokens <= state.capacity_ && previous <= state.capacity_ - tokens, "Prefill suffix capacity exceeded");
     require(std::all_of(embeddings.begin(), embeddings.end(), [](float x) { return std::isfinite(x); }),

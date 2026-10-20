@@ -193,10 +193,8 @@
                   <TextBox Text="{Binding SelectedVoice.ImportKindText, Mode=OneWay}" Style="{StaticResource DetailValue}" />
                 </StackPanel>
               </Grid>
-              <TextBlock Text="Compatibility ID" Style="{StaticResource DetailLabel}" />
+              <TextBlock Text="OLV identifier" Style="{StaticResource DetailLabel}" />
               <TextBox Text="{Binding SelectedVoice.CompatibilityText, Mode=OneWay}" Style="{StaticResource IdentifierValue}" />
-              <TextBlock Text="Provenance verified" Style="{StaticResource DetailLabel}" />
-              <TextBox Text="{Binding SelectedVoice.ProvenanceText, Mode=OneWay}" Style="{StaticResource DetailValue}" />
               <TextBlock Text="OLV SHA256" Style="{StaticResource DetailLabel}" />
               <TextBox Text="{Binding SelectedVoice.OlvSha256, Mode=OneWay}" Style="{StaticResource IdentifierValue}" />
               <TextBlock Text="Source SHA256" Style="{StaticResource DetailLabel}" />

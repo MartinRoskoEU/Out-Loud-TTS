@@ -306,6 +306,39 @@ def report_text(report):
     return '\n'.join(lines) + '\n'
 
 
+def discover_official():
+    """Single official default selection shared by the diagnostic and updater."""
+    import yaml
+    hf = metadata(REPO, 'main')
+    require(re.fullmatch('[0-9a-f]{40}', hf['sha']) is not None, 'Invalid HF revision')
+    git_revision = remote_json(GITHUB)['sha']
+    require(re.fullmatch('[0-9a-f]{40}', git_revision) is not None, 'Invalid GitHub revision')
+    defaults = get(f'https://raw.githubusercontent.com/kyutai-labs/pocket-tts/{git_revision}/pocket_tts/default_parameters.py').decode('utf-8')
+    require(re.search(r'^DEFAULT_LANGUAGE\s*=\s*[\"\x27]english[\"\x27]\s*$', defaults, re.M),
+            'Official default language changed; no automatic multilingual fallback')
+    config_url = f'https://raw.githubusercontent.com/kyutai-labs/pocket-tts/{git_revision}/pocket_tts/config/english.yaml'
+    config_bytes = get(config_url)
+    config = yaml.safe_load(config_bytes)
+    require(config['flow_lm']['transformer']['num_layers'] == 6, 'Official default architecture is unsupported (expected 6 layers): ' + json.dumps(flatten(config), sort_keys=True))
+    repo, filename, revision = hf_uri(config['weights_path'])
+    require(repo == REPO and filename == 'languages/english/model.safetensors', 'Default model selection changed; manual review required')
+    pinned = metadata(repo, revision)
+    weight_entry = entry(pinned, filename)
+    head_entry = entry(hf, filename)
+    digest = weight_entry['lfs']['sha256']
+    aliases = [r['rfilename'].split('/')[1] for r in hf['siblings'] if
+               re.fullmatch(r'languages/english_\d{4}-\d{2}(?:_\d+)?/model.safetensors', r['rfilename']) and r.get('lfs', {}).get('sha256') == digest]
+    require(bool(aliases), 'Default weights lack an official stable English alias; review required')
+    history = remote_json(f'https://huggingface.co/api/models/{REPO}/tree/{hf["sha"]}/languages/english?expand=true')
+    last_commit = next(r['lastCommit'] for r in history if r['path'] == filename)
+    require(head_entry['lfs']['sha256'] == digest,
+            'HF default and immutable GitHub config weights disagree; upstream review required')
+    return dict(hf=hf, git_revision=git_revision, config_url=config_url,
+                config_bytes=config_bytes, config=config, repo=repo, filename=filename,
+                revision=revision, pinned=pinned, weight_entry=weight_entry,
+                head_entry=head_entry, digest=digest, aliases=aliases, last_commit=last_commit)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--stats', action='store_true', help='Include NumPy per-tensor absolute differences; no inference')
@@ -314,7 +347,7 @@ def main():
     args = parser.parse_args()
     import yaml
     contract = json.loads((ROOT / 'reference/pocket-model-schema.json').read_text())
-    baseline = json.loads((ROOT / 'reference/pipeline-baseline.json').read_text())
+    baseline = json.loads((ROOT / 'reference/active-model.json' if (ROOT / 'reference/active-model.json').is_file() else ROOT / 'reference/pipeline-baseline.json').read_text())
     policy = json.loads((ROOT / 'installer/inno/package.json').read_text())
     cpp = (ROOT / 'engine/include/outloud/pocket_model_schema.hpp').read_text()
     for key in ('source_sha256', 'compatibility_id', 'payload_sha256'):
@@ -346,24 +379,23 @@ def main():
     monitored = {str(olp.path): olp_info['sha256'], **{r['path']: r['sha256'] for r in installed}}
     if original:
         monitored[str(original)] = contract['source_sha256']
-    hf = metadata(REPO, 'main')
-    require(re.fullmatch('[0-9a-f]{40}', hf['sha']) is not None, 'Invalid HF revision')
-    git_revision = remote_json(GITHUB)['sha']
-    config_url = f'https://raw.githubusercontent.com/kyutai-labs/pocket-tts/{git_revision}/pocket_tts/config/english.yaml'
-    config_bytes = get(config_url)
-    config = yaml.safe_load(config_bytes)
-    require(config['flow_lm']['transformer']['num_layers'] == 6, 'Official default is not a six-layer model; no 24-layer/experimental fallback selected')
-    repo, filename, revision = hf_uri(config['weights_path'])
-    require(repo == REPO and filename == 'languages/english/model.safetensors', 'Default model selection changed; manual review required')
-    pinned = metadata(repo, revision)
-    weight_entry = entry(pinned, filename)
-    head_entry = entry(hf, filename)
-    digest = weight_entry['lfs']['sha256']
-    aliases = [r['rfilename'].split('/')[1] for r in hf['siblings'] if
-               re.fullmatch(r'languages/english_\d{4}-\d{2}(?:_\d+)?/model.safetensors', r['rfilename']) and r.get('lfs', {}).get('sha256') == digest]
-    history = remote_json(f'https://huggingface.co/api/models/{REPO}/tree/{hf["sha"]}/languages/english?expand=true')
-    last_commit = next(r['lastCommit'] for r in history if r['path'] == filename)
-    local_config = ROOT / '.venv/Lib/site-packages/pocket_tts/config/english.yaml'
+    selected = discover_official()
+    hf = selected['hf']
+    config_url = selected['config_url']
+    config_bytes = selected['config_bytes']
+    config = selected['config']
+    repo = selected['repo']
+    filename = selected['filename']
+    revision = selected['revision']
+    pinned = selected['pinned']
+    weight_entry = selected['weight_entry']
+    head_entry = selected['head_entry']
+    digest = selected['digest']
+    aliases = selected['aliases']
+    last_commit = selected['last_commit']
+    local_config = ROOT / 'reference/model-config.yaml'
+    if not local_config.is_file():
+        local_config = ROOT / '.venv/Lib/site-packages/pocket_tts/config/english.yaml'
     config_old = yaml.safe_load(local_config.read_bytes()) if local_config.is_file() else None
     config_verified = bool(config_old and hf_uri(config_old['weights_path'])[2] == contract['source_revision'])
     differences = None
@@ -378,7 +410,7 @@ def main():
                                reference_config=str(local_config), reference_config_verified=config_verified,
                                reference_config_sha256=sha(local_config) if config_verified else None,
                                aliases_at_official_head=[r['rfilename'] for r in hf['siblings'] if r.get('lfs', {}).get('sha256') == contract['source_sha256']]),
-                  official=dict(head_revision=hf['sha'], head_modified=hf.get('lastModified'), weight_revision=revision,
+                  official=dict(config_revision=selected['git_revision'], head_revision=hf['sha'], head_modified=hf.get('lastModified'), weight_revision=revision,
                                 filename=filename, published_sha256=digest, published_bytes=weight_entry['size'],
                                 stable_aliases=aliases, config_url=config_url, config_sha256=hashlib.sha256(config_bytes).hexdigest(),
                                 weight_last_commit=last_commit, head_matches_configured_weights=head_entry['lfs']['sha256'] == digest,
@@ -411,11 +443,11 @@ def main():
         if comparison['schema_equal'] and differences == {} and report.get('tokenizer_equal'):
             report['confirmed'].append('No inference topology/kernel changes indicated by the compared schema/config; exporter algorithm and OLP v1 layout can be reused after updating pins.')
         if comparison['voice_preparation_changes']:
-            report['risks'].append(f"{len(comparison['voice_preparation_changes'])} voice-preparation tensors changed. Existing old-weight KV caches are not established compatible; regenerate them with the new model.")
-    report['risks'] += ['OLV records a required model compatibility ID and voice-source hash, not authenticated preparation provenance; library metadata explicitly says model_provenance_verified=false.',
+            report['risks'].append(f"{len(comparison['voice_preparation_changes'])} voice-preparation tensors changed. Structurally supported caches remain playable; speech quality, speaker similarity and EOS behavior may change. Optional fresh preparation requires original reference audio.")
+    report['risks'] += ['OLV v1 serialized identities and hashes are retained as format data; individual voices are not model-version tracked or classified.',
                         'OLV contains post-RoPE KV caches, not reference audio/conditioning latents. No supported safe migration to changed voice-preparation weights is available from OLV alone; changing its ID is unsafe.']
     report['unknowns'] += ['No synthesis/quality/EOS benchmark or live process-memory inspection was performed. Registered model paths, not a running process snapshot, were checked.',
-                          'Original audio and independently verified preparation provenance for existing user voices were not inspected.',
+                          'Original audio and speech quality of existing user voices were not inspected.',
                           'Counts include all stored parameter/buffer elements. Safetensors does not record requires_grad, so a trainable-only parameter count is not asserted.',
                           'The historical Python config is a local reference tied to the pinned HF revision; its original upstream code-commit identity was not preserved independently.']
     if not config_verified:

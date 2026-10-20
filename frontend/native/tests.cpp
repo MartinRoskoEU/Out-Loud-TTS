@@ -114,7 +114,7 @@ int wmain(int argc,wchar_t** argv) {
         check(outloud_vm_result_content(missing.get(),content_snapshot->voice_count)==nullptr,"Out-of-range content getter.");
         check(text(first.display_name,imported.voice.metadata->display_name) && text(first.health,voice_health_name(imported.voice.health)),"UTF-8 name/health not preserved.");
         check(text(first.sapi_status,sapi_token_status_name(SapiTokenStatus::missing)) && !first.sapi_error,"Missing SAPI status.");
-        check(first.metadata_present==1 && first.olv_version==imported.voice.metadata->olv_version && first.provenance_verified==0,"Metadata flags.");
+        check(first.metadata_present==1 && first.olv_version==imported.voice.metadata->olv_version && first.reserved_metadata==0,"Metadata flags.");
         check(text(first.compatibility_id,imported.voice.metadata->compatibility_id) && text(first.import_kind,"olv"),"Metadata IDs/kind.");
         check(inventory(library.root())==files_before && registry->tokens==registry_before && !registry->writes && !registry->verifies,"Bridge changed library/registry.");
         // Prepare valid tokens using the real backend, temporary library and fake

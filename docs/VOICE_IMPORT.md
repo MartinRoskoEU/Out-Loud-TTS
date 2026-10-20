@@ -1,5 +1,11 @@
 # Step 3A: native Pocket voice importer
 
+Current policy: [structure-based voice support](MODEL_UPDATES.md). No preparing
+model identity or declaration is required or tracked. Supported OLV v1 and
+Safetensors profiles remain usable regardless of preparation revision. Historical
+model-declaration restrictions below are superseded; structural, integrity,
+bounds, finite-value and source-hash validation remain enforced.
+
 Prepared voice import, [managed library storage](VOICE_LIBRARY.md) and
 [managed SAPI tokens](MULTI_VOICE_SAPI.md) are separate operations. Importing
 never registers a Windows voice.
@@ -109,12 +115,11 @@ expanded caches, other dtypes/dimensions, and padded/batched states. The origina
 as do `speaker_wavs` and other raw conditioning representations.
 
 Six layers, 16 heads, and head dimension 64 come from the pinned English FlowLM
-architecture, not a universal Kyutai voice format. Structural compatibility does
-not prove that a voice was prepared with the pinned weights or conditioning
-configuration. The existing caller model declaration, source identity checks,
-and `model_provenance_verified=false` policy remain unchanged. Profiles prepared
-with other model weights, languages, or BOS/preparation conventions cannot be
-made model-compatible merely by converting the counter.
+architecture, not a universal Kyutai voice format. Structural compatibility
+does not establish a voice's preparation revision, and that revision is not
+tracked or required. The historical caller model declaration is ignored; source
+identity and structural/integrity checks remain enforced. Normalizing the counter
+does not convert a structurally unsupported architecture into a supported one.
 
 This source can be safely parsed and converted natively: it is a bounded JSON
 directory and raw tensors, with no executable deserialization. A small private

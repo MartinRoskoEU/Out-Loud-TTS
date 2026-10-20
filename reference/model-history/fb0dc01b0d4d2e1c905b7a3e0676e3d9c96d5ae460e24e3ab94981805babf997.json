@@ -1,0 +1,47 @@
+{
+  "config_revision": null,
+  "engine_version": "0.1.0",
+  "model": {
+    "element_count": 109502146,
+    "file": "languages/english/model.safetensors",
+    "metadata": null,
+    "repository": "kyutai/pocket-tts",
+    "revision": "983151f13aaeab1b13c1e5e3c2c383d49a9edf3f",
+    "runtime_dtype": "float32",
+    "sha256": "fb0dc01b0d4d2e1c905b7a3e0676e3d9c96d5ae460e24e3ab94981805babf997",
+    "stored_dtype": "bfloat16",
+    "tensor_count": 214
+  },
+  "tokenizer": {
+    "automatically_inserted_bos_eos": false,
+    "byte_fallback": true,
+    "fallback_boundary_ids": [
+      262,
+      1230,
+      3244
+    ],
+    "file": "languages/english/tokenizer.json",
+    "implementation": "pocket_tts.modules.text_conditioner.JsonTokenizer",
+    "lookup_table_shape": [
+      4001,
+      1024
+    ],
+    "model_type": "Unigram",
+    "repository": "kyutai/pocket-tts-without-voice-cloning",
+    "revision": "00eac05ed3d16bdc3f6b5d598874019c34a89214",
+    "sentence_boundary_ids": [
+      263,
+      682,
+      799,
+      292
+    ],
+    "sha256": "f498428e1eafee50492f7be13dc9bfafcfc12e508cd0eb1b01c92ecd5d8c6687",
+    "special_tokens": {
+      "</s>": 2,
+      "<pad>": 3,
+      "<s>": 1,
+      "<unk>": 0
+    },
+    "vocabulary_size": 4000
+  }
+}

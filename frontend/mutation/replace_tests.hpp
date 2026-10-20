@@ -38,9 +38,7 @@ void replacement_checks(const std::filesystem::path& prepared,const outloud::Sap
     const auto invalid=scratch/L"invalid-replacement.safetensors"; { std::ofstream file(invalid); file << "invalid safetensors"; }
     rejected(VoiceLibraryErrorCode::import_failed,[&] { (void)library.replace_pocket_voice(original.library_id,invalid,options); });
     check(inventory(library.root()/L"voices")==pair_before,"Invalid source changed original bytes.");
-    auto incompatible=options; incompatible.import.declared_model_compatibility_id=std::string(64,'0');
-    rejected(VoiceLibraryErrorCode::import_failed,[&] { (void)library.replace_pocket_voice(original.library_id,new_source,incompatible); });
-    check(inventory(library.root()/L"voices")==pair_before,"Incompatible source changed original bytes.");
+    // Model declarations are not proof and do not block valid external caches.
     auto stale=options; stale.expected_display_name="Wrong name";
     rejected(VoiceLibraryErrorCode::replacement_conflict,[&] { (void)library.replace_pocket_voice(original.library_id,new_source,stale); });
     stale=options; stale.expected_olv_sha256=std::string(64,'0');
@@ -80,8 +78,7 @@ void replacement_checks(const std::filesystem::path& prepared,const outloud::Sap
     check(replacement.changed && !replacement.cleanup_pending && replacement.voice.library_id==original.library_id && replacement.voice.metadata->display_name==original.metadata->display_name &&
         replacement.voice.managed_olv_path==original.managed_olv_path && library.list_voices().size()==1 && std::memcmp(&before,&after,sizeof(before))==0,"Replacement did not preserve directory/path/name/ID/count.");
     check(replacement.voice.metadata->olv_sha256!=original.metadata->olv_sha256 && replacement.voice.metadata->source_sha256!=original.metadata->source_sha256 &&
-        replacement.voice.metadata->source_filename==fs::utf8(new_source.filename().wstring()) && replacement.voice.metadata->import_kind==VoiceImportKind::pocket_prepared &&
-        !replacement.voice.metadata->model_provenance_verified && library.inspect_voice(original.library_id).health==VoiceHealth::valid,"Replacement content metadata/health incorrect.");
+        replacement.voice.metadata->source_filename==fs::utf8(new_source.filename().wstring()) && replacement.voice.metadata->import_kind==VoiceImportKind::pocket_prepared && library.inspect_voice(original.library_id).health==VoiceHealth::valid,"Replacement content metadata/health incorrect.");
     check(registry->tokens==tokens && registry->writes==writes && manager.inspect(original.library_id).status==SapiTokenStatus::correct,"Replacement rewrote or changed SAPI identity/configuration.");
     // Same content at a different ID remains protected.
     const auto second=library.import_pocket_voice(original_source,"Other",import).voice;

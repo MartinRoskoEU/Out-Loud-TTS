@@ -1,5 +1,9 @@
 # Native Out Loud Pocket assets (Step 2C)
 
+See [MODEL_UPDATES.md](MODEL_UPDATES.md) for current pins and structure-only playback policy.
+The v1 layout is preserved. Historical pairing rejections below no longer apply
+to structurally valid voices; OLP model integrity and identity checks stay strict.
+
 `outloud_assets` is a C++20 Windows x64 library for the fixed Pocket TTS 3.3.0
 English, CPU, batch-1, 24 kHz mono synthesis asset contract. `.olp` holds the
 shared model; `.olv` holds one ready-to-synthesize Out Loud Voice. The native

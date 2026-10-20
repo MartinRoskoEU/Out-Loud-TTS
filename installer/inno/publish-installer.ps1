@@ -1,6 +1,6 @@
 #Requires -Version 5.1
 [CmdletBinding()]
-param([Parameter(Mandatory = $true)][string]$BuildDirectory)
+param([Parameter(Mandatory = $true)][string]$BuildDirectory, [switch]$PreserveHistoricalInstallers)
 . (Join-Path $PSScriptRoot 'production-common.ps1')
 . (Join-Path $PSScriptRoot 'build-components.ps1')
 $artifactLock = Enter-OutLoudArtifactLock
@@ -87,6 +87,7 @@ try {
     # release/. Preserve unrelated entries. Artifact retention runs only after
     # verified publication and never operates on release/ itself.
     foreach ($old in Get-ChildItem -LiteralPath $release -File -Force) {
+        if ($PreserveHistoricalInstallers) { continue }
         if ($old.Name -cne $product.installer_filename -and $old.Name -cmatch '^OutLoud-Setup-\d+\.\d+\.\d+\.exe$') {
             try {
                 Assert-ProductionPlainPath $old.FullName

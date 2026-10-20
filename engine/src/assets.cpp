@@ -116,9 +116,11 @@ void OutLoudVoice::validate() const {
     }
 }
 void OutLoudVoice::validate_against(const PocketModelAsset& model) const {
-    if (compatibility_id()!=model.compatibility_id()) {
-        throw AssetError(AssetErrorCode::compatibility,"Voice/model compatibility mismatch");
-    }
+    // Both loaders enforce the same fixed English six-layer architecture.
+    // A different preparation checkpoint affects quality, not cache bounds.
+    // Keep all structural/integrity checks; preparation revision is irrelevant.
+    (void)model;
+    validate();
 }
 std::uint32_t OutLoudVoice::prefix_length() const { return detail::u32(file_->bytes(), 196); }
 std::uint64_t OutLoudVoice::payload_bytes() const { return detail::u64(file_->bytes(), 184); }

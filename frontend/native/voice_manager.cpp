@@ -49,7 +49,6 @@ struct outloud_vm_result {
                 record.metadata_present = 1; record.display_name = m.display_name.c_str();
                 record.olv_version = m.olv_version; record.compatibility_id = m.compatibility_id.c_str();
                 record.import_kind = m.import_kind==VoiceImportKind::olv ? "olv" : "pocket_prepared";
-                record.provenance_verified = m.model_provenance_verified ? 1U : 0U;
             }
             records.push_back(record);
             contents.push_back(v.metadata ? outloud_vm_content_v1{v.metadata->olv_sha256.c_str(),v.metadata->source_sha256.c_str(),v.metadata->source_filename.c_str(),v.metadata->imported_utc.c_str()} : outloud_vm_content_v1{});

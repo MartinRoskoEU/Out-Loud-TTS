@@ -78,3 +78,11 @@ separate agreements remain independent under CC section 7(b). This assessment
 supersedes the earlier pending asset conclusion without rewriting gated-source
 history or claiming that past agreements are cancelled. Installer component
 licensing beyond this asset remains separate.
+
+## Active development checkpoint (engine 0.2.0)
+
+Official stable English: kyutai/pocket-tts@7f364c05d1be3faf2b234cdbe4cbb68a026d4218.
+Source SHA-256: `7767ce79b1b8db523d867e70855a00627aacfe44aaa5c1fd7ebe135fba71fff9`.
+Configuration: https://raw.githubusercontent.com/kyutai-labs/pocket-tts/9aa7a7f0e52a4cd81bcf8a0fc7c981cdc6d11e53/pocket_tts/config/english.yaml.
+OLP SHA-256: `fe8c40e3a773465974ce965e57f01c8904ac4cb2cf7086c42cbb151f8815ba3e`.
+Same synthesis-only BF16 conversion and license/policy obligations. Historical release artifacts are retained.

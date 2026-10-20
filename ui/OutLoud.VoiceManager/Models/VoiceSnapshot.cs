@@ -20,7 +20,7 @@ public sealed class BackendException : Exception
 
 public sealed record VoiceRecord(string LibraryId, string? DisplayName, string Health,
     string LibraryDetail, string? SapiStatus, string SapiDetail, string? CompatibilityId,
-    string? ImportKind, uint? OlvVersion, bool? ProvenanceVerified, BackendError? SapiError = null,
+    string? ImportKind, uint? OlvVersion, BackendError? SapiError = null,
     string? OlvSha256 = null, string? SourceSha256 = null, string? SourceFilename = null, string? ImportedUtc = null)
 {
     public string NameText => DisplayName ?? "(Metadata unavailable)";
@@ -28,7 +28,6 @@ public sealed record VoiceRecord(string LibraryId, string? DisplayName, string H
     public string OlvVersionText => OlvVersion?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "Unavailable";
     public string ImportKindText => ImportKind ?? "Unavailable";
     public string CompatibilityText => CompatibilityId ?? "Unavailable";
-    public string ProvenanceText => ProvenanceVerified.HasValue ? (ProvenanceVerified.Value ? "Yes" : "No") : "Unavailable";
     public string SapiDiagnostic => SapiError?.Diagnostic ?? SapiDetail;
 }
 

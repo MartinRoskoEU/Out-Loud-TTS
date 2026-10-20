@@ -10,9 +10,10 @@ import struct
 
 os.environ['HF_HUB_OFFLINE'] = '1'
 ROOT = Path(__file__).resolve().parents[2]
-MODEL_SHA = 'fb0dc01b0d4d2e1c905b7a3e0676e3d9c96d5ae460e24e3ab94981805babf997'
+_MODEL = json.loads((ROOT / 'reference/pocket-model-schema.json').read_text(encoding='utf-8'))
+MODEL_SHA = _MODEL['source_sha256']
 TOKENIZER_SHA = 'f498428e1eafee50492f7be13dc9bfafcfc12e508cd0eb1b01c92ecd5d8c6687'
-MODEL_REVISION = '983151f13aaeab1b13c1e5e3c2c383d49a9edf3f'
+MODEL_REVISION = _MODEL['source_revision']
 MODEL_INPUT = (Path.home() / '.cache/huggingface/hub/models--kyutai--pocket-tts/snapshots'
                / MODEL_REVISION / 'languages/english/model.safetensors')
 COMPATIBILITY_ID = hashlib.sha256(b'OutLoud/Pocket/English/3.3.0/synthesis-v1\0'

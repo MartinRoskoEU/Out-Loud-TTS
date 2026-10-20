@@ -45,7 +45,8 @@ struct VoiceMetadata {
     std::uint32_t olv_version = 1;
     std::string olv_sha256, source_sha256, compatibility_id, imported_utc, source_filename;
     VoiceImportKind import_kind = VoiceImportKind::olv;
-    bool model_provenance_verified = false;
+    // Retired schema-1 boolean, preserved only for metadata round trips.
+    bool reserved_metadata_flag = false;
 };
 struct LibraryVoice {
     // Directory identity is authoritative even when metadata is corrupt.

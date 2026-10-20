@@ -3,7 +3,8 @@
 param(
     [Parameter(Mandatory = $true)][string]$StageDirectory,
     [string]$OutputDirectory,
-    [string]$CompilerPath = 'C:\Program Files\Inno Setup 7\ISCC.exe'
+    [string]$CompilerPath = 'C:\Program Files\Inno Setup 7\ISCC.exe',
+    [switch]$PreserveHistoricalInstallers
 )
 . (Join-Path $PSScriptRoot 'production-common.ps1')
 . (Join-Path $PSScriptRoot 'build-components.ps1')
@@ -63,6 +64,6 @@ if ($signature.Status -ne 'NotSigned') { throw 'Unexpected installer signature. 
     source = $identity; executed = $false; validation_scope = 'build_and_packaging'; manual_release_approval = 'pending'
 } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $output 'installer-build.json') -Encoding UTF8
 Write-Output "BUILT $installer"
-& (Join-Path $PSScriptRoot 'publish-installer.ps1') -BuildDirectory $output
+& (Join-Path $PSScriptRoot 'publish-installer.ps1') -BuildDirectory $output -PreserveHistoricalInstallers:$PreserveHistoricalInstallers
 Write-Output 'Public release installer prepared for final manual approval. Publisher unsigned; setup was not executed.'
 } finally { Exit-OutLoudArtifactLock $artifactLock }

@@ -1,6 +1,8 @@
 """Offline original-byte and PyTorch widening references; no native runtime dependencies."""
 import hashlib
 import json
+import argparse
+from pathlib import Path
 
 import numpy as np
 import torch
@@ -10,10 +12,14 @@ from export_voice import read_voice
 
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--input', type=Path, default=MODEL_INPUT)
+    parser.add_argument('--voice-directory', type=Path, default=ROOT / 'voices')
+    args = parser.parse_args()
     destination = ROOT / 'generated/assets'
     destination.mkdir(parents=True, exist_ok=True)
     contract = schema()
-    with SafeTensorSource(MODEL_INPUT, MODEL_SHA) as source:
+    with SafeTensorSource(args.input, MODEL_SHA) as source:
         original_hash = hashlib.sha256()
         widened_hash = hashlib.sha256()
         for r in contract['tensors']:
@@ -28,7 +34,7 @@ def main():
     (destination / 'bf16-f32-fixture.bin').write_bytes(widened)
     voices = []
     for name, sha in VOICE_SHAS.items():
-        path = ROOT / 'voices' / (name + '.safetensors')
+        path = args.voice_directory / (name + '.safetensors')
         if not path.exists():
             continue
         with SafeTensorSource(path, sha) as source:

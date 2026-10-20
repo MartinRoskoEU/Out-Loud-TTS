@@ -6,6 +6,7 @@
 #include <set>
 #include <string_view>
 #include <exception>
+#include <array>
 namespace outloud::installer {
 // A03.12 shared lifecycle. Standalone signing/registration paths remain disabled.
 inline constexpr bool maintenance_lifecycle_ready=true;
@@ -32,10 +33,23 @@ struct MaintenanceJournal {
     MaintenancePhase phase=MaintenancePhase::preparing;
     SigningOwnership ownership;
     std::wstring registration_before,registration_after,resource_phase,library_identity,library_parent_identity;
+    // Only explicit full-package developer upgrades own these host snapshots.
+    std::wstring host_before,host_after;
     MaintenanceFile bootstrap_detector,bootstrap_requirements,bootstrap_report;
     std::vector<MaintenanceChange> changes;
     bool operator==(const MaintenanceJournal&)const=default;
 };
+inline bool maintenance_development_upgrade(const MaintenanceJournal& j){
+    return j.operation==MaintenanceOperation::development && j.components==MaintenanceComponents::package;
+}
+inline std::array<unsigned,3> maintenance_version_parts(const std::wstring& v){
+    std::array<unsigned,3> result{};size_t start{};
+    for(size_t i=0;i<3;++i){const auto end=v.find(L'.',start);const auto part=v.substr(start,end==v.npos?v.size()-start:end-start);
+        signing_require(!part.empty() && part.size()<=5 && part.find_first_not_of(L"0123456789")==part.npos &&
+            (part.size()==1 || part.front()!=L'0') && ((i==2)==(end==v.npos)),"maintenance_version_invalid");
+        result[i]=static_cast<unsigned>(std::stoul(part));signing_require(result[i]<=65535,"maintenance_version_invalid");start=end+1;}
+    return result;
+}
 inline std::vector<std::wstring> maintenance_selection(MaintenanceComponents components,const std::vector<std::wstring>& package){
     const std::vector<std::wstring> engine{signing_target};
     const std::vector<std::wstring> manager{L"bin/OutLoudVoiceManagerNative.dll",L"bin/OutLoudVoiceImportHelper.exe",
@@ -99,7 +113,8 @@ inline void validate_maintenance(const MaintenanceJournal& j,const std::vector<s
     signing_require(static_cast<unsigned>(j.operation)<=3 && static_cast<unsigned>(j.components)<=3 &&
         static_cast<unsigned>(j.host)<=1 && static_cast<unsigned>(j.phase)<=10,"maintenance_enum_invalid");
     signing_require(j.operation!=MaintenanceOperation::development || (j.host==MaintenanceHost::developer &&
-        j.components!=MaintenanceComponents::package && j.old_version==j.new_version),"maintenance_development_identity_change");
+        (maintenance_development_upgrade(j)?maintenance_version_parts(j.old_version)<maintenance_version_parts(j.new_version):
+            j.old_version==j.new_version)),"maintenance_development_identity_change");
     signing_require(j.operation==MaintenanceOperation::development ||
         (j.host==MaintenanceHost::inno && j.components==MaintenanceComponents::package),"maintenance_host_invalid");
     signing_require(!j.new_version.empty() && j.new_version.size()<32 &&
@@ -140,6 +155,9 @@ inline void validate_maintenance(const MaintenanceJournal& j,const std::vector<s
     const auto tree=[](const std::wstring& value){return value==L"absent" || (!value.empty() && value.size()<=131072 && value.size()%2==0 &&
         value.find_first_not_of(L"0123456789abcdef")==std::wstring::npos);};
     signing_require(tree(j.registration_before) && tree(j.registration_after),"maintenance_registry_snapshot_invalid");
+    signing_require(maintenance_development_upgrade(j)?
+        (tree(j.host_before) && tree(j.host_after) && j.host_before!=L"absent" && j.host_after!=L"absent" && j.host_before!=j.host_after):
+        (j.host_before.empty() && j.host_after.empty()),"maintenance_host_snapshot_invalid");
     signing_require(j.operation==MaintenanceOperation::fresh || j.registration_before==j.registration_after,"maintenance_update_registration_changed");
 }
 // Explicit simulated process death bypasses normal unwinding rollback in tests.
@@ -194,7 +212,8 @@ template<class Operations> MaintenanceOutcome maintain_installation(Operations& 
         j.phase=MaintenancePhase::metadata;op.save(j);
         for(const auto& c:j.changes)if(std::find(std::begin(maintenance_metadata),std::end(maintenance_metadata),c.path)!=std::end(maintenance_metadata))op.publish(c);
         j.phase=MaintenancePhase::verifying;op.save(j);op.verify_committed(j);
-        if(j.host==MaintenanceHost::inno){j.phase=MaintenancePhase::awaiting_host;op.save(j);return MaintenanceOutcome::awaiting_host;}
+        if(j.host==MaintenanceHost::inno || maintenance_development_upgrade(j)){
+            j.phase=MaintenancePhase::awaiting_host;op.save(j);return MaintenanceOutcome::awaiting_host;}
         op.verify_host(j);j.phase=MaintenancePhase::committed;op.save(j);return MaintenanceOutcome::committed;
     }catch(const MaintenanceInterrupted&){throw;}catch(...){
         const auto original=std::current_exception();

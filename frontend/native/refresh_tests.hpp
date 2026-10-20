@@ -44,7 +44,7 @@ void refresh_checks(const std::filesystem::path& olv,const std::filesystem::path
             if (old.voice.metadata) {
                 const auto& m=*old.voice.metadata; const auto* content=outloud_vm_result_content(actual.get(),at);
                 check(text(next.display_name,m.display_name) && next.olv_version==m.olv_version &&
-                    text(next.compatibility_id,m.compatibility_id) && next.provenance_verified==0 &&
+                    text(next.compatibility_id,m.compatibility_id) && next.reserved_metadata==0 &&
                     text(next.import_kind,m.import_kind==VoiceImportKind::olv ? "olv" : "pocket_prepared") &&
                     content && text(content->olv_sha256,m.olv_sha256) && text(content->source_sha256,m.source_sha256) &&
                     text(content->source_filename,m.source_filename) && text(content->imported_utc,m.imported_utc),"Refresh metadata/content changed");

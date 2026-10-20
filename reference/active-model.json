@@ -1,0 +1,91 @@
+{
+  "compatibility_id": "11399b73577d746fa8b5a52a9a6893b1033343f4cbc6da7ad08b831b6d20eb36",
+  "config_revision": "9aa7a7f0e52a4cd81bcf8a0fc7c981cdc6d11e53",
+  "config_sha256": "08fcb2c2a1e5a79416c3683eeb3e98e1684bf7c1a23f2fa2d194837535442ca8",
+  "configuration": {
+    "default_temperature": 0.3,
+    "flow_lm": {
+      "dtype": "float32",
+      "flow": {
+        "depth": 6,
+        "dim": 512
+      },
+      "insert_bos_before_voice": true,
+      "lookup_table": {
+        "dim": 1024,
+        "n_bins": 4000,
+        "tokenizer": "tokenizers",
+        "tokenizer_path": "hf://kyutai/pocket-tts-without-voice-cloning/languages/english/tokenizer.json@00eac05ed3d16bdc3f6b5d598874019c34a89214"
+      },
+      "transformer": {
+        "d_model": 1024,
+        "hidden_scale": 4,
+        "max_period": 10000,
+        "num_heads": 16,
+        "num_layers": 6
+      }
+    },
+    "mimi": {
+      "channels": 1,
+      "dtype": "float32",
+      "frame_rate": 12.5,
+      "inner_dim": 32,
+      "outer_dim": 512,
+      "quantizer": {
+        "dimension": 32,
+        "output_dimension": 512
+      },
+      "sample_rate": 24000,
+      "seanet": {
+        "channels": 1,
+        "compress": 2,
+        "dilation_base": 2,
+        "dimension": 512,
+        "kernel_size": 7,
+        "last_kernel_size": 3,
+        "n_filters": 64,
+        "n_residual_layers": 1,
+        "pad_mode": "constant",
+        "ratios": [
+          6,
+          5,
+          4
+        ],
+        "residual_kernel_size": 3
+      },
+      "transformer": {
+        "context": 250,
+        "d_model": 512,
+        "dim_feedforward": 2048,
+        "input_dimension": 512,
+        "layer_scale": 0.01,
+        "num_heads": 8,
+        "num_layers": 2,
+        "output_dimensions": [
+          512
+        ]
+      }
+    },
+    "weights_path": "hf://kyutai/pocket-tts/languages/english/model.safetensors@7f364c05d1be3faf2b234cdbe4cbb68a026d4218",
+    "weights_path_without_voice_cloning": "hf://kyutai/pocket-tts-without-voice-cloning/languages/english/model.safetensors@575d14372df89a4534bcb989870a34e77544b09f"
+  },
+  "development_build": "generated/model-updates/run-20261020T000220Z-0bd3c4b4/build",
+  "engine_version": "0.2.0",
+  "model": {
+    "file": "languages/english/model.safetensors",
+    "repository": "kyutai/pocket-tts",
+    "revision": "7f364c05d1be3faf2b234cdbe4cbb68a026d4218",
+    "sha256": "7767ce79b1b8db523d867e70855a00627aacfe44aaa5c1fd7ebe135fba71fff9"
+  },
+  "olv_format_version": 1,
+  "release_promoted": false,
+  "tokenizer": {
+    "bytes": 245020,
+    "file": "languages/english/tokenizer.json",
+    "published_hash_verified": true,
+    "repository": "kyutai/pocket-tts-without-voice-cloning",
+    "revision": "00eac05ed3d16bdc3f6b5d598874019c34a89214",
+    "sha256": "f498428e1eafee50492f7be13dc9bfafcfc12e508cd0eb1b01c92ecd5d8c6687"
+  },
+  "validation_report": "generated/model-updates/run-20261020T000220Z-0bd3c4b4/native-validation.log"
+}

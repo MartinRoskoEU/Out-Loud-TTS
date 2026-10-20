@@ -107,7 +107,7 @@ internal static class ImportTests
         check(model.ImportPhase == ImportPhase.Cancelled && importer.Calls == 0 && service.Reads == 0 && !model.IsBusy, "Cancel before elevation.");
         dialog.Next = request; importer.Next = new(ImportPhase.Cancelled); await model.ImportAsync();
         check(model.ImportPhase == ImportPhase.Cancelled && service.Reads == 0 && model.ImportCommand.CanExecute(null), "UAC cancellation UI recovery.");
-        var voice = new VoiceRecord(id, "Different loaded name", "valid", "", "correct", "", "compat", "pocket_prepared", 1, false);
+        var voice = new VoiceRecord(id, "Different loaded name", "valid", "", "correct", "", "compat", "pocket_prepared", 1);
         service.Next = new("fake", new[] { voice }); importer.Next = new(ImportPhase.Succeeded, id);
         model.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(model.Voices)) model.SelectedVoice = null; };
         await model.ImportAsync();

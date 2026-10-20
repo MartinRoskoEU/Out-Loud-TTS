@@ -121,7 +121,7 @@ std::string serialize(const VoiceMetadata& m) {
         ",\n  \"source_sha256\":"+quote(m.source_sha256)+",\n  \"compatibility_id\":"+quote(m.compatibility_id)+
         ",\n  \"imported_utc\":"+quote(m.imported_utc)+",\n  \"source_filename\":"+quote(m.source_filename)+
         ",\n  \"import_kind\":"+quote(m.import_kind==VoiceImportKind::pocket_prepared?"pocket_prepared":"olv")+
-        ",\n  \"model_provenance_verified\":false\n}\n";
+        ",\n  \"model_provenance_verified\":"+(m.reserved_metadata_flag?"true":"false")+"\n}\n";
 }
 VoiceMetadata metadata(const std::filesystem::path& path,std::string_view expected_id) {
     detail::refresh_audit::event(detail::refresh_audit::Event::metadata);
@@ -148,8 +148,9 @@ VoiceMetadata metadata(const std::filesystem::path& path,std::string_view expect
     result.olv_version=static_cast<std::uint32_t>(version);
     result.olv_sha256=string("olv_sha256"); result.source_sha256=string("source_sha256"); result.compatibility_id=string("compatibility_id");
     result.imported_utc=string("imported_utc"); result.source_filename=string("source_filename"); const auto kind=string("import_kind");
-    const auto& provenance=field("model_provenance_verified");
-    if (provenance.kind!=Json::Kind::literal || provenance.text!="false" ||
+    // Reserved schema-1 key retained for existing metadata; no model tracking.
+    const auto& reserved=field("model_provenance_verified");
+    if (reserved.kind!=Json::Kind::literal || (reserved.text!="false" && reserved.text!="true") ||
         result.library_id!=expected_id || !fs::id(result.library_id) || !hash(result.olv_sha256) ||
         !hash(result.source_sha256) || !hash(result.compatibility_id) || !timestamp(result.imported_utc) ||
         result.source_filename.empty() || result.source_filename.size()>1024 ||
@@ -159,6 +160,7 @@ VoiceMetadata metadata(const std::filesystem::path& path,std::string_view expect
     if (kind=="pocket_prepared") { result.import_kind=VoiceImportKind::pocket_prepared; }
     else if (kind=="olv") { result.import_kind=VoiceImportKind::olv; }
     else { bad(); }
+    result.reserved_metadata_flag=reserved.text=="true";
     return result;
 }
 void save_metadata(const std::filesystem::path& path,const VoiceMetadata& record,bool machine) {
@@ -224,11 +226,12 @@ LibraryVoice inspect(const std::filesystem::path& entry,const std::string& id,bo
         detail::refresh_audit::event(detail::refresh_audit::Event::olv_validation);
         const auto validated=validate_olv(path);
         const auto& m=*result.metadata;
-        if (m.compatibility_id!=pocket_model_compatibility_id) { result.health=VoiceHealth::incompatible_model; result.detail="Metadata declares an incompatible model"; }
-        else if (m.olv_version!=validated.format_version || m.olv_sha256!=validated.file_sha256 ||
+        if (m.olv_version!=validated.format_version || m.olv_sha256!=validated.file_sha256 ||
                  m.source_sha256!=validated.source_sha256 || m.compatibility_id!=validated.compatibility_id) {
             result.health=VoiceHealth::hash_mismatch; result.detail="Managed asset identity disagrees with metadata";
-        } else { result.health=VoiceHealth::valid; result.managed_olv_path=path; }
+        } else {
+            result.health=VoiceHealth::valid; result.managed_olv_path=path;
+        }
     } catch (const VoiceImportError& error) {
         result.health=error.code()==VoiceImportErrorCode::incompatible_model?VoiceHealth::incompatible_model:VoiceHealth::corrupt_voice;
         result.detail=error.what();
@@ -353,7 +356,7 @@ LibraryImportResult publish(Session& session,Stage& stage,const VoiceMetadata& r
     }
     const auto final=session.voices->path/fs::wide(record.library_id);
     fs::rename(stage.directory.value,final,false,Code::destination_io); stage.published=true;
-    return {{record.library_id,record,final/L"voice.olv",VoiceHealth::valid,{}},std::move(matches)};
+    return {inspect(final,record.library_id,session.machine),std::move(matches)};
 }
 void copy_voice(const std::filesystem::path& source,const std::filesystem::path& target,bool machine) {
     const detail::MappedFile mapping(source,maximum_voice);

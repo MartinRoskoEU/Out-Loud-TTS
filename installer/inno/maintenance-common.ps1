@@ -86,12 +86,16 @@ function Invoke-OutLoudDevelopmentMaintenance($Plan, [string]$Reports) {
     if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'Use an elevated x64 PowerShell session for machine-wide maintenance.' }
     $helper = Get-OutLoudMaintenanceHelper
     $report = Join-Path $Reports 'maintenance-result.ini'
-    & $helper --maintain development $Plan.components $Plan.installation_root $Plan.candidates (Join-Path $Plan.candidates 'maintenance-input.ini') --consented $report | Out-Host
+    $selection = if ($Plan.Contains('native_components')) { $Plan.native_components } else { $Plan.components }
+    & $helper --maintain development $selection $Plan.installation_root $Plan.candidates (Join-Path $Plan.candidates 'maintenance-input.ini') --consented $report | Out-Host
     if ($LASTEXITCODE -ne 0) { throw 'Native maintenance failed. Preserve its protected journal; checked recovery is required if indicated. No success is assumed.' }
     $status = Read-OutLoudUpdateIni $report
-    if ($status['results']['schema'] -cne '1' -or $status['results']['maintenance'] -cne 'committed' -or
+    $expected = if ($selection -ceq 'Package') { 'awaiting_host' } else { 'committed' }
+    if ($status['results']['schema'] -cne '1' -or $status['results']['maintenance'] -cne $expected -or
         $status['results']['installation_id'] -cne $Plan.installation_id) { throw 'Native maintenance did not verify a matching committed installation.' }
-    $Plan['deployment'] = 'committed'
+    $Plan['deployment'] = if ($selection -ceq 'Package') { 'awaiting_validation' } else { 'committed' }
+    $Plan['signing'] = 'installation_owned_verified'
+    $Plan['blocker'] = ''
     $Plan['replacement'] = 'native_verified'
     $Plan['recovery'] = 'native_transaction'
 }

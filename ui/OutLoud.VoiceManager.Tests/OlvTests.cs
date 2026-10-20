@@ -45,7 +45,7 @@ internal static class OlvTests
     public static async Task Run(Action<bool,string> check)
     {
         const string id="0123456789abcdef0123456789abcdef";
-        var voice = new VoiceRecord(id,"Hlas ž 🎵","valid","","correct","","pinned","olv",1,false, OlvSha256:new string('a',64));
+        var voice = new VoiceRecord(id,"Hlas ž 🎵","valid","","correct","","pinned","olv",1, OlvSha256:new string('a',64));
         check(VoiceFileSelection.ImportFilter.StartsWith("Supported Voice Files (*.safetensors;*.olv)|*.safetensors;*.olv",StringComparison.Ordinal) &&
             VoiceFileSelection.ImportFilter.Contains("Prepared Pocket Voice (*.safetensors)") && VoiceFileSelection.ImportFilter.Contains("Out Loud Voice (*.olv)"), "Both discoverable import filters, default combined.");
         check(VoiceFileSelection.IsSupported("C:\\ž.OLV") && VoiceFileSelection.IsSupported("C:\\ž.safetensors") && !VoiceFileSelection.IsSupported("C:\\ž.wav"), "Supported source formats only.");

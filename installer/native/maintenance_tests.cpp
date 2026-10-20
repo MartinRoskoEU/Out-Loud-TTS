@@ -6,7 +6,7 @@ void check(bool value,const char* message){if(!value)throw std::runtime_error(me
 template<class F> void refuses(F&& f,const char* code){bool found=false;std::string observed="no refusal";try{f();}catch(const SigningError& e){observed=e.what();found=observed.find(code)!=std::string::npos;}
     if(!found)throw std::runtime_error(std::string("expected ")+code+", observed "+observed);check(found,code);}
 struct Fixture {
-    MaintenanceFiles files;MaintenanceJournal state;std::vector<std::wstring> payload;std::wstring registry=L"abcd";
+    MaintenanceFiles files;MaintenanceJournal state;std::vector<std::wstring> payload;std::wstring registry=L"abcd",host_registry;
     unsigned generation{},reuse{};bool host_confirmed=true;std::string fault;bool interrupt{},failed{};unsigned publications{};
     Fixture(const fs::path& root,MaintenanceOperation operation=MaintenanceOperation::development,MaintenanceComponents components=MaintenanceComponents::both,bool reopen=false):files(root){
         payload={std::begin(registration_payload_paths),std::end(registration_payload_paths)};
@@ -51,12 +51,15 @@ struct Fixture {
     MaintenanceFile backup(const std::wstring& p){return files.backup(p);}
     MaintenanceFile original(const std::wstring& p){return files.original(p);}
     void publish(const MaintenanceChange& c){files.publish(c);++publications;if(publications==2)point("files");if(c.path==L"configuration/signing.ini")point("metadata");}
-    void publish_registration(const MaintenanceJournal& j){signing_require(registry==j.registration_before,"fixture_registration_conflict");registry=j.registration_after;point("registration");}
-    void verify_committed(const MaintenanceJournal& j){for(const auto& c:j.changes)signing_require(current(c.path)==c.after,"fixture_commit_invalid");signing_require(registry==j.registration_after,"fixture_registration_invalid");}
+    void publish_registration(const MaintenanceJournal& j){signing_require(registry==j.registration_before,"fixture_registration_conflict");registry=j.registration_after;
+        if(maintenance_development_upgrade(j)){signing_require(host_registry==j.host_before,"fixture_foreign_host");host_registry=j.host_after;}point("registration");}
+    void verify_committed(const MaintenanceJournal& j){for(const auto& c:j.changes)signing_require(current(c.path)==c.after,"fixture_commit_invalid");signing_require(registry==j.registration_after,"fixture_registration_invalid");
+        if(maintenance_development_upgrade(j))signing_require(host_registry==j.host_after,"fixture_foreign_host");}
     void verify_host(const MaintenanceJournal&){signing_require(host_confirmed,"fixture_host_unconfirmed");}
     void authenticate_recovery(const MaintenanceJournal& j){signing_require(j.installation_id==state.installation_id,"fixture_identity_mismatch");}
-    void validate_recovery_resources(const MaintenanceJournal& j){signing_require(registry==j.registration_before || registry==j.registration_after,"fixture_foreign_registry");}
-    void restore_registration(const MaintenanceJournal& j){registry=j.registration_before;}
+    void validate_recovery_resources(const MaintenanceJournal& j){signing_require(registry==j.registration_before || registry==j.registration_after,"fixture_foreign_registry");
+        if(maintenance_development_upgrade(j))signing_require(host_registry==j.host_before || host_registry==j.host_after,"fixture_foreign_host");}
+    void restore_registration(const MaintenanceJournal& j){validate_recovery_resources(j);registry=j.registration_before;host_registry=j.host_before;}
     void restore(const MaintenanceChange& c){files.restore(c);}
     void restore_resources(const MaintenanceJournal& j){if(j.operation==MaintenanceOperation::fresh)generation=0;}
     void verify_original(const MaintenanceJournal& j){for(const auto& c:j.changes)signing_require(current(c.path)==c.before,"fixture_rollback_invalid");signing_require(registry==j.registration_before,"fixture_registry_rollback_invalid");}
@@ -210,7 +213,12 @@ int wmain(int argc,wchar_t** argv){
         {
             RegistrationTree host;host.values={{L"Publisher",registration_string(L"Nendis")},{L"DisplayVersion",registration_string(L"0.1.0")}};
             for(const auto* name:{L"Out Loud",L"Out Loud version 0.1.0",L"Out Loud 0.1.0"}){
-                host.values[L"DisplayName"]=registration_string(name);maintenance_host_identity(host);check(true,"exact Inno host display name accepted");}
+                host.values[L"DisplayName"]=registration_string(name);maintenance_host_identity(host);check(true,"exact Inno host display name accepted");
+                host.values[L"UninstallString"]=registration_string(L"\"C:\\Program Files\\OutLoud\\unins000.exe\"");
+                host.children[L"unchanged"].values[L"opaque"]={REG_BINARY,{0,1,255}};
+                const auto upgraded=maintenance_host_version(host,L"0.2.0");
+                check(registration_field(upgraded,L"DisplayVersion")==L"0.2.0" && maintenance_host_version(upgraded,L"0.1.0")==host,
+                    "host version roundtrip preserves all typed values and children");}
             host.values[L"DisplayName"]=registration_string(L"Out Loud 9.9.9");
             refuses([&]{maintenance_host_identity(host);},"maintenance_host_identity_invalid");
             host.values[L"DisplayName"]=registration_string(L"Out Loud");host.values[L"Publisher"]=registration_string(L"foreign");
@@ -247,6 +255,25 @@ int wmain(int argc,wchar_t** argv){
             const auto selection=maintenance_selection(mode,f.payload);check(selection.size()==(mode==MaintenanceComponents::engine?1:mode==MaintenanceComponents::voice_manager?6:7),"exact selection");
             check(maintain_installation(f)==MaintenanceOutcome::committed,"development committed");check(f.generation==0 && f.reuse==1,"certificate reused");
             f.verify_committed(f.state);check(maintenance_decode(maintenance_encode(f.state),f.payload)==f.state,"journal exact roundtrip");f.preserved();}
+        for(const auto* failure:{"stage","signing","ready","files","registration","metadata","success","postflight","foreign"}){
+            std::wstring name;for(const char* c=failure;*c;++c)name+=static_cast<wchar_t>(*c);
+            Fixture f(child((L"dev-upgrade-"+name).c_str()),MaintenanceOperation::development,MaintenanceComponents::package);
+            f.state.new_version=L"0.2.0";f.state.host_before=L"abcd";f.state.host_after=L"1234";f.host_registry=f.state.host_before;
+            check(maintenance_decode(maintenance_encode(f.state),f.payload)==f.state,"upgrade v3 journal roundtrip");
+            auto bad=f.state;bad.host_after.clear();refuses([&]{validate_maintenance(bad,f.payload);},"host_snapshot_invalid");
+            bad=f.state;bad.new_version=bad.old_version;refuses([&]{validate_maintenance(bad,f.payload);},"development_identity_change");
+            if(name==L"success" || name==L"postflight" || name==L"foreign"){
+                check(maintain_installation(f)==MaintenanceOutcome::awaiting_host,"explicit developer upgrade awaits installed validation");
+                f.files.release();auto j=f.load();
+                if(name==L"foreign"){f.host_registry=L"ffff";refuses([&]{static_cast<void>(recover_maintenance(f,j));},"fixture_foreign_host");
+                    check(j.phase==MaintenancePhase::awaiting_host,"foreign host prevents any rollback");f.host_registry=j.host_after;}
+                const bool commit=name==L"success";
+                check(recover_maintenance(f,j,commit)==(commit?MaintenanceOutcome::committed:MaintenanceOutcome::rolled_back),"installed validation commits or rolls back");
+                check(f.host_registry==(commit?j.host_after:j.host_before),"host version follows payload transaction");
+            }else{f.fault=failure;refuses([&]{static_cast<void>(maintain_installation(f));},"fixture_fault");
+                f.files.release();auto j=f.load();f.verify_original(j);check(j.phase==MaintenancePhase::rolled_back && f.host_registry==j.host_before,"upgrade fault restores files and version metadata");}
+            check(f.generation==0,"upgrade never creates another certificate");f.preserved();
+        }
         for(const auto operation:{MaintenanceOperation::fresh,MaintenanceOperation::release,MaintenanceOperation::repair}){
             Fixture f(child(operation==MaintenanceOperation::fresh?L"fresh":operation==MaintenanceOperation::release?L"release":L"repair"),operation,MaintenanceComponents::package);
             check(maintain_installation(f)==MaintenanceOutcome::awaiting_host,"Inno host boundary");

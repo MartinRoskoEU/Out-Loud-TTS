@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "model_source_sha256": "fb0dc01b0d4d2e1c905b7a3e0676e3d9c96d5ae460e24e3ab94981805babf997",
-  "model_raw_tensor_bytes_sha256": "3446fde347dc0019d5341a1fa56692d7ed6cf7ef296dde2a1bbbecaf40e97bee",
-  "model_widened_tensor_bytes_sha256": "c4b7d97f2d67a3a637e25ac959c03f5eefb69e371d0d3a7053fe6f91f94ec3e2",
+  "model_source_sha256": "7767ce79b1b8db523d867e70855a00627aacfe44aaa5c1fd7ebe135fba71fff9",
+  "model_raw_tensor_bytes_sha256": "44b3ea624cf9a118924c2f40146f23928dd0b165617f1e0fce6aac5812c9c5a9",
+  "model_widened_tensor_bytes_sha256": "052101346f15f9ba0a5a9596940eb2c61e26bea6bb93bb0d519bbf539f294e1a",
   "bf16_pattern_count": 65536,
   "bf16_fixture_sha256": "9207d7eb28680a098c73dbe536d1ff7b94311dc417b9a385e0af6660683e93ca",
   "torch_version": "2.14.1+cpu",

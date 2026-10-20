@@ -15,7 +15,7 @@
              TextChanged="NameChanged" Padding="10,8" BorderThickness="1"
              BorderBrush="{DynamicResource BorderBrush}" Background="{DynamicResource SurfaceBrush}" Foreground="{DynamicResource TextBrush}"
              SelectionBrush="{DynamicResource AccentBrush}" />
-    <TextBlock Text="The file will be validated and installed in the managed Voice Library. Use voice data for the supported Pocket English model; preparation provenance cannot be verified."
+    <TextBlock Text="The file will be validated and installed in the managed Voice Library. Supported Pocket voice structure and integrity are checked before import."
                Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,8,0,18" />
     <Border Style="{StaticResource Card}" Padding="14">
       <TextBlock Text="Out Loud needs Administrator permission to add this voice to the machine voice library and Windows speech system. Windows will ask after you click Import."

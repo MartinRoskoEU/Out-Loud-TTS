@@ -37,7 +37,7 @@ foreach ($file in @('installer/inno/build-stage.ps1','installer/inno/production-
 $iss = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'OutLoud.iss'))
 Check ($iss -match '#ifndef StageRoot' -and $iss -match 'if WizardSilent') 'validated stage and interactive initialization required'
 Check ($iss -notmatch '(?m)^Source: .*DestDir:' -and $iss -match 'maintenance-files.iss') 'Inno never directly publishes product files'
-Check ([regex]::Matches((Get-OutLoudMaintenanceFilesText), 'Flags: dontcopy').Count -eq 23) '23 extracted payload entries'
+Check ([regex]::Matches((Get-OutLoudMaintenanceFilesText), 'Flags: dontcopy').Count -eq @($policy.files).Count) 'complete policy-derived extracted payload entries'
 Check ($iss -match 'PrepareSharedMaintenance\(Result\)' -and $iss -match 'CompleteSharedMaintenance') 'shared transaction and host completion wired'
 $native = [IO.File]::ReadAllText((Join-Path $ProductionRepository 'installer/native/maintenance.hpp'))
 Check ($native -match 'maintenance_lifecycle_ready=true') 'shared native lifecycle enabled'

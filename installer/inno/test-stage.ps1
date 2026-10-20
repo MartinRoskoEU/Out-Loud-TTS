@@ -15,9 +15,14 @@ Copy-Item -LiteralPath (Join-Path $StageDirectory 'runtime-packages.ini') -Desti
 Copy-Item -LiteralPath (Join-Path $StageDirectory 'signing-policy.ini') -Destination $scratch
 Copy-Item -LiteralPath (Join-Path $StageDirectory 'registration-policy.ini') -Destination $scratch
 Copy-Item -LiteralPath (Join-Path $StageDirectory 'installer-version.iss') -Destination $scratch
+foreach ($name in @('maintenance-input.ini', 'maintenance-files.iss', 'maintenance-copy.iss')) {
+    Copy-Item -LiteralPath (Join-Path $StageDirectory $name) -Destination $scratch
+}
 Copy-Item -LiteralPath (Join-Path $StageDirectory 'package-manifest.json'), (Join-Path $StageDirectory 'build-record.json') -Destination $scratch
 $manifestPath = Join-Path $scratch 'package-manifest.json'
 $originalManifest = [IO.File]::ReadAllBytes($manifestPath)
+$maintenancePath = Join-Path $scratch 'maintenance-input.ini'
+$originalMaintenance = [IO.File]::ReadAllBytes($maintenancePath)
 $script:StageChecks = 0
 function Assert-Rejected([string]$Label, [string]$MessagePattern, [scriptblock]$Action) {
     $rejected = $false
@@ -34,7 +39,14 @@ function Update-TestRecord([string]$Relative) {
     $path = Resolve-ProductionPath (Join-Path $scratch 'payload') $Relative
     $entry.sha256 = Get-ProductionHash $path
     $entry.bytes = (Get-Item -LiteralPath $path).Length
+    Update-TestMaintenance $manifest
     $manifest | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $manifestPath -Encoding UTF8
+}
+function Update-TestMaintenance($Manifest) {
+    # Rebind the private fixture's request so deeper content checks are reached.
+    [IO.File]::WriteAllText($maintenancePath,
+        (Get-OutLoudMaintenanceIni $Manifest.files $Manifest.detector_sha256 $Manifest.prerequisites_sha256), [Text.Encoding]::ASCII)
+    $Manifest.maintenance_ini_sha256 = Get-ProductionHash $maintenancePath
 }
 try {
     [void](Assert-ProductionStage $scratch); $script:StageChecks++
@@ -58,7 +70,7 @@ try {
     $damaged[$pe + 4] = 0x4c; $damaged[$pe + 5] = 0x01
     [IO.File]::WriteAllBytes($binary, $damaged); Update-TestRecord 'bin/OutLoudVoiceManagerNative.dll'
     try { Assert-Rejected 'x86 binary with refreshed hash' 'Expected AMD64 PE' { Assert-ProductionStage $scratch } }
-    finally { [IO.File]::WriteAllBytes($binary, $saved); [IO.File]::WriteAllBytes($manifestPath, $originalManifest) }
+    finally { [IO.File]::WriteAllBytes($binary, $saved); [IO.File]::WriteAllBytes($manifestPath, $originalManifest); [IO.File]::WriteAllBytes($maintenancePath, $originalMaintenance) }
     foreach ($relative in @('runtime/pocket-english.olp', 'runtime/pocket-english-tokenizer.bin')) {
         $asset = Resolve-ProductionPath (Join-Path $scratch 'payload') $relative
         $stream = [IO.File]::Open($asset, [IO.FileMode]::Open, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
@@ -69,12 +81,13 @@ try {
             $stream = [IO.File]::OpenWrite($asset)
             try { $stream.WriteByte($first) } finally { $stream.Dispose() }
             [IO.File]::WriteAllBytes($manifestPath, $originalManifest)
+            [IO.File]::WriteAllBytes($maintenancePath, $originalMaintenance)
         }
     }
     $license = Join-Path $scratch 'payload/LICENSE'; $saved = [IO.File]::ReadAllBytes($license)
     [IO.File]::WriteAllText($license, 'incorrect license'); Update-TestRecord 'LICENSE'
     try { Assert-Rejected 'altered license with refreshed hash' 'License material differs' { Assert-ProductionStage $scratch } }
-    finally { [IO.File]::WriteAllBytes($license, $saved); [IO.File]::WriteAllBytes($manifestPath, $originalManifest) }
+    finally { [IO.File]::WriteAllBytes($license, $saved); [IO.File]::WriteAllBytes($manifestPath, $originalManifest); [IO.File]::WriteAllBytes($maintenancePath, $originalMaintenance) }
     foreach ($entry in (Get-ProductionPolicy).files | Where-Object { $_.source -in @('repository', 'consent') }) {
         $legalPath = Resolve-ProductionPath (Join-Path $scratch 'payload') $entry.path
         $savedLegal = [IO.File]::ReadAllBytes($legalPath)
@@ -87,12 +100,13 @@ try {
     [IO.File]::WriteAllText($terms, 'truncated legal presentation')
     Update-TestRecord 'licenses/OutLoud-Installation-Terms.txt'
     try { Assert-Rejected 'altered agreement with refreshed hash' 'Installation agreement differs' { Assert-ProductionStage $scratch } }
-    finally { [IO.File]::WriteAllBytes($terms, $savedTerms); [IO.File]::WriteAllBytes($manifestPath, $originalManifest) }
+    finally { [IO.File]::WriteAllBytes($terms, $savedTerms); [IO.File]::WriteAllBytes($manifestPath, $originalManifest); [IO.File]::WriteAllBytes($maintenancePath, $originalMaintenance) }
     $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
     $manifest.files[0].sha256 = '0' * 64
+    Update-TestMaintenance $manifest
     $manifest | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $manifestPath -Encoding UTF8
     try { Assert-Rejected 'tampered manifest hash' 'Package content differs' { Assert-ProductionStage $scratch } }
-    finally { [IO.File]::WriteAllBytes($manifestPath, $originalManifest) }
+    finally { [IO.File]::WriteAllBytes($manifestPath, $originalManifest); [IO.File]::WriteAllBytes($maintenancePath, $originalMaintenance) }
     foreach ($relative in @('prerequisites.ini', 'bootstrap/OutLoudPrerequisites.exe')) {
         $inputPath = Join-Path $scratch $relative
         $savedInput = [IO.File]::ReadAllBytes($inputPath)
@@ -139,7 +153,7 @@ try {
             version_source_sha256 {$manifest.version_source_sha256='0'*64}
         }
         $manifest | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $manifestPath -Encoding UTF8
-        try { Assert-Rejected "changed product metadata $case" 'Unexpected foundation manifest/build identity|Production product/installer version metadata differs' { Assert-ProductionStage $scratch } }
+        try { Assert-Rejected "changed product metadata $case" 'Unexpected public release manifest/build identity|Production product/installer version metadata differs' { Assert-ProductionStage $scratch } }
         finally { [IO.File]::WriteAllBytes($manifestPath,$originalManifest) }
     }
     $recordPath=Join-Path $scratch 'build-record.json';$saved=[IO.File]::ReadAllBytes($recordPath)
@@ -149,7 +163,7 @@ try {
     $record | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $recordPath -Encoding UTF8
     $manifest.build_record_sha256=Get-ProductionHash $recordPath
     $manifest | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $manifestPath -Encoding UTF8
-    try { Assert-Rejected 'coordinated wrong release and refreshed hash' 'Production product/installer version metadata differs' { Assert-ProductionStage $scratch } }
+    try { Assert-Rejected 'coordinated wrong release and refreshed hash' 'Unexpected public release manifest/build identity|Production product/installer version metadata differs' { Assert-ProductionStage $scratch } }
     finally { [IO.File]::WriteAllBytes($recordPath,$saved); [IO.File]::WriteAllBytes($manifestPath,$originalManifest) }
     $recordPath = Join-Path $scratch 'build-record.json'; $saved = [IO.File]::ReadAllBytes($recordPath)
     $record = Get-Content -LiteralPath $recordPath -Raw | ConvertFrom-Json

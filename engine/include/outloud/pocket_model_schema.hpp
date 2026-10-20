@@ -5,9 +5,9 @@
 #include <cstdint>
 #include <string_view>
 namespace outloud {
-inline constexpr std::string_view pocket_model_source_sha256 = "fb0dc01b0d4d2e1c905b7a3e0676e3d9c96d5ae460e24e3ab94981805babf997";
-inline constexpr std::string_view pocket_model_compatibility_id = "993a3a9749dc64d60815aa0e71fa4c18f53d478d05d0c4da8c7c77164387c59a";
-inline constexpr std::string_view pocket_model_payload_sha256 = "dc804d42e457b49614f279d3656d81cf3f493df7459c8ecb9c4c423ece8feeac";
+inline constexpr std::string_view pocket_model_source_sha256 = "7767ce79b1b8db523d867e70855a00627aacfe44aaa5c1fd7ebe135fba71fff9";
+inline constexpr std::string_view pocket_model_compatibility_id = "11399b73577d746fa8b5a52a9a6893b1033343f4cbc6da7ad08b831b6d20eb36";
+inline constexpr std::string_view pocket_model_payload_sha256 = "ad0ddebb3daeeaf630f17a7836fe80a949cab6fcb1b5de56540c46665bb372ea";
 inline constexpr std::uint64_t pocket_model_payload_bytes = 199438784ULL;
 enum class PocketTensorId : std::uint32_t {
     flow_lm_bos_emb = 0,

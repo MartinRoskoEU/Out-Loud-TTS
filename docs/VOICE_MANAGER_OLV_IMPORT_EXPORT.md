@@ -62,8 +62,9 @@ the separate synthesis-to-audio operation.
 
 ## Validation, privilege and file safety
 
-OLV validation uses the existing strict header/version/layout/payload/integrity,
-finite FP32 K/V prefix and pinned Pocket English compatibility checks. A readable
+OLV validation uses strict header/version/layout/payload/integrity and finite
+FP32 K/V prefix checks. Voice support depends on structure and integrity under the current
+[playback policy](MODEL_UPDATES.md); preparing model revisions are not tracked. A readable
 or syntactically valid file alone is insufficient. Missing/locked/corrupt/version/
 compatibility failures retain native structured error causes. OLV version 1,
 metadata schema 1 and the supported model compatibility identifier are unchanged.

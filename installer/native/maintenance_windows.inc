@@ -30,14 +30,6 @@ MaintenanceComponents maintenance_components(const std::wstring& s){
     if(s==L"Both")return MaintenanceComponents::both;if(s==L"Package")return MaintenanceComponents::package;throw SigningError("maintenance_components_invalid");
 }
 std::wstring maintenance_version(){std::wstring v;for(const char c:std::string(OUTLOUD_MAINTENANCE_VERSION))v+=static_cast<wchar_t>(c);return v;}
-std::array<unsigned,3> maintenance_version_parts(const std::wstring& v){
-    std::array<unsigned,3> result{};size_t start{};
-    for(size_t i=0;i<3;++i){const auto end=v.find(L'.',start);const auto part=v.substr(start,end==v.npos?v.size()-start:end-start);
-        signing_require(!part.empty() && part.size()<=5 && part.find_first_not_of(L"0123456789")==part.npos &&
-            (part.size()==1 || part.front()!=L'0') && ((i==2)==(end==v.npos)),"maintenance_version_invalid");
-        result[i]=static_cast<unsigned>(std::stoul(part));signing_require(result[i]<=65535,"maintenance_version_invalid");start=end+1;}
-    return result;
-}
 std::wstring maintenance_random(){std::array<BYTE,16> bytes{};signing_require(BCryptGenRandom(nullptr,bytes.data(),static_cast<ULONG>(bytes.size()),BCRYPT_USE_SYSTEM_PREFERRED_RNG)>=0,"maintenance_random_failed");return hex(bytes.data(),bytes.size());}
 void maintenance_active_files(const std::vector<fs::path>& paths){
     DWORD session{};wchar_t key[CCH_RM_SESSION_KEY+1]{};signing_require(RmStartSession(&session,0,key)==ERROR_SUCCESS,"maintenance_process_inventory_unavailable");
@@ -57,12 +49,37 @@ void maintenance_host_identity(const RegistrationTree& tree){
     // Accept only those exact product/version forms, including interrupted hosts.
     signing_require(name==L"Out Loud" || name==L"Out Loud version "+version || name==L"Out Loud "+version,"maintenance_host_identity_invalid");
 }
-std::optional<std::pair<fs::path,std::wstring>> maintenance_host_record(){
-    RegistryHandle current,next;signing_require(registry_open(HKEY_LOCAL_MACHINE,L"SOFTWARE",KEY_READ|KEY_WOW64_64KEY,current),"maintenance_host_registry_unavailable");
+RegistrationSnapshot maintenance_host_tree(RegistryHandle& current,HANDLE transaction=nullptr,REGSAM extra=0){
+    RegistryHandle next;signing_require(registry_open(HKEY_LOCAL_MACHINE,L"SOFTWARE",KEY_READ|KEY_WOW64_64KEY,current,transaction),"maintenance_host_registry_unavailable");
     for(const auto* component:{L"Microsoft",L"Windows",L"CurrentVersion",L"Uninstall",L"OutLoud_is1"}){
-        if(!registry_open(current.value,component,KEY_READ|KEY_WOW64_64KEY,next))return {};
+        if(!registry_open(current.value,component,KEY_READ|KEY_WOW64_64KEY|(std::wstring(component)==L"OutLoud_is1"?extra:0),next,transaction))return {};
         RegCloseKey(current.value);current.value=next.value;next.value=nullptr;}
-    size_t budget=65536;const auto tree=registry_tree(current.value,budget);
+    size_t budget=65536;return registry_tree(current.value,budget,0,transaction);
+}
+std::wstring maintenance_host_snapshot(){RegistryHandle key;return encoded_tree(maintenance_host_tree(key));}
+RegistrationTree maintenance_host_version(RegistrationTree tree,const std::wstring& version){
+    maintenance_host_identity(tree);static_cast<void>(maintenance_version_parts(version));
+    const auto old=registration_field(tree,L"DisplayVersion"),name=registration_field(tree,L"DisplayName");
+    tree.values[L"DisplayVersion"]=registration_string(version);
+    if(name!=L"Out Loud")tree.values[L"DisplayName"]=registration_string(
+        name==L"Out Loud version "+old?L"Out Loud version "+version:L"Out Loud "+version);
+    return tree;
+}
+// Exchange only the two version fields. A typed snapshot binds every other
+// value/child, including the existing uninstaller, location and configuration.
+void maintenance_host_exchange(const std::wstring& before,const std::wstring& after,const std::wstring& version){
+    RegistryTransaction transaction;RegistryHandle key;
+    const auto current=maintenance_host_tree(key,transaction.value,KEY_SET_VALUE);
+    signing_require(current && encoded_tree(current)==before,"maintenance_host_raced");
+    const auto desired=maintenance_host_version(*current,version);
+    signing_require(encoded_tree(desired)==after,"maintenance_host_change_invalid");
+    for(const auto* name:{L"DisplayVersion",L"DisplayName"}){
+        const auto& value=desired.values.at(name);registry_ok(RegSetValueExW(key.value,name,0,value.type,value.bytes.data(),static_cast<DWORD>(value.bytes.size())));}
+    size_t budget=65536;signing_require(encoded_tree(registry_tree(key.value,budget,0,transaction.value))==after,"maintenance_host_transaction_invalid");
+    signing_require(CommitTransaction(transaction.value),"maintenance_host_commit_failed");transaction.committed=true;
+}
+std::optional<std::pair<fs::path,std::wstring>> maintenance_host_record(){
+    RegistryHandle key;const auto captured=maintenance_host_tree(key);if(!captured)return {};const auto& tree=*captured;
     maintenance_host_identity(tree);const auto version=registration_field(tree,L"DisplayVersion");
     return std::make_pair(installation_path(registration_field(tree,L"InstallLocation")),version);
 }
@@ -172,8 +189,11 @@ struct WindowsMaintenance {
         for(const auto* pending:{L"signing.pending.ini",L"signing.next.ini",L"signing.previous.ini",L"registration.pending.ini"})
             signing_require(!fs::exists(files.root/L"configuration"/pending),"maintenance_legacy_recovery_required");
         manifest=maintenance_ini(request);auto& head=manifest.at(L"maintenance");
-        signing_require(head.size()==4 && head.at(L"schema")==L"1" && head.at(L"app_id")==L"OutLoud" && head.at(L"version")==maintenance_version() &&
+        const bool upgrade=operation==MaintenanceOperation::development && components==MaintenanceComponents::package;
+        signing_require(head.size()==(upgrade?6u:4u) && head.at(L"schema")==L"1" && head.at(L"app_id")==L"OutLoud" && head.at(L"version")==maintenance_version() &&
             head.at(L"clsid")==outloud::sapi::clsid_text,"maintenance_request_identity_invalid");
+        if(upgrade)signing_require(host && head.at(L"upgrade_from")==host->second && head.at(L"upgrade_to")==maintenance_version() &&
+            maintenance_version_parts(host->second)<maintenance_version_parts(maintenance_version()),"maintenance_explicit_upgrade_mismatch");
         const auto chosen=maintenance_selection(components,package());signing_require(manifest.size()==chosen.size()+2,"maintenance_request_files_invalid");
         std::set<std::wstring> requested;
         for(size_t i=0;i<chosen.size();++i){const auto& entry=manifest.at(L"file"+std::to_wstring(i));const auto& p=entry.at(L"path");
@@ -192,6 +212,9 @@ struct WindowsMaintenance {
         auto j=MaintenanceJournal{};j.operation=operation;j.components=components;j.host=operation==MaintenanceOperation::development?MaintenanceHost::developer:MaintenanceHost::inno;
         j.transaction_id=maintenance_random();j.root_encoding=maintenance_root_encoding(files.root.native());j.new_version=maintenance_version();
         registry_overrides();j.registration_before=encoded_tree(registry_capture());j.registration_after=j.registration_before;
+        if(upgrade){RegistryHandle key;const auto tree=maintenance_host_tree(key);
+            signing_require(tree.has_value(),"maintenance_upgrade_host_missing");j.host_before=encoded_tree(tree);
+            j.host_after=encoded_tree(maintenance_host_version(*tree,j.new_version));}
         if(operation==MaintenanceOperation::fresh){
             const auto retry_id=maintenance_failed_fresh_identity(files.root,package());
             signing_require(!fs::exists(maintenance_library()),"maintenance_unbound_library_preserved");
@@ -204,7 +227,9 @@ struct WindowsMaintenance {
             baseline=maintenance_inventory_decode(files.read(files.root/L"configuration/inventory.dat"));j.old_version=baseline.version;
             j.library_identity=baseline.library_identity;j.library_parent_identity=baseline.library_parent_identity;maintenance_validate_library(files,j);
             signing_require(baseline.installation_id==j.installation_id && baseline.certificate_hash==j.ownership.certificate_sha256 && host->second==baseline.version,"maintenance_baseline_identity_invalid");
-            signing_require((operation==MaintenanceOperation::release && maintenance_version_parts(j.old_version)<=maintenance_version_parts(j.new_version)) || j.old_version==j.new_version,"maintenance_version_change_invalid");
+            signing_require((operation==MaintenanceOperation::release && maintenance_version_parts(j.old_version)<=maintenance_version_parts(j.new_version)) ||
+                (upgrade && head.at(L"upgrade_from")==j.old_version && maintenance_version_parts(j.old_version)<maintenance_version_parts(j.new_version)) ||
+                (!upgrade && j.old_version==j.new_version),"maintenance_version_change_invalid");
             for(const auto& [p,f]:baseline.files){const auto actual=files.current(p);signing_require(actual==MaintenanceFile(f) || (operation==MaintenanceOperation::repair && !actual),"maintenance_baseline_changed");}
             const RegistrationIdentity identity{j.installation_id,j.ownership.certificate_sha256,(files.root/signing_target).native()};
             signing_require(registry_capture()==RegistrationSnapshot(desired_registration(identity)),"maintenance_com_baseline_changed");
@@ -281,6 +306,7 @@ struct WindowsMaintenance {
         maintenance_active_files(paths);files.lock_files(j);for(const auto& [p,f]:baseline.files){static_cast<void>(f);files.acquire(files.path(p));}}
     void revalidate(const MaintenanceJournal& j){
         maintenance_validate_library(files,j);
+        if(maintenance_development_upgrade(j))signing_require(maintenance_host_snapshot()==j.host_before,"maintenance_host_raced");
         signing_require(encoded_tree(registry_capture())==j.registration_before,"maintenance_registration_raced");registry_overrides();
         for(const auto& c:j.changes)signing_require(files.current(c.path)==c.before && files.stamp(files.vault/L"new"/c.path)==c.after && (!c.before || files.backup(c.path)==c.backup),"maintenance_precommit_state_changed");
         for(const auto& [p,f]:baseline.files)signing_require(files.current(p)==MaintenanceFile(f) ||
@@ -293,9 +319,11 @@ struct WindowsMaintenance {
     void publish_registration(const MaintenanceJournal& j){
         registry_overrides();signing_require(encoded_tree(registry_capture())==j.registration_before,"maintenance_registration_raced");
         if(j.operation==MaintenanceOperation::fresh)registry_exchange({},desired_registration({j.installation_id,j.ownership.certificate_sha256,(files.root/signing_target).native()}));
+        if(maintenance_development_upgrade(j))maintenance_host_exchange(j.host_before,j.host_after,j.new_version);
     }
     void verify_committed(const MaintenanceJournal& j){
         maintenance_validate_library(files,j);
+        if(maintenance_development_upgrade(j))signing_require(maintenance_host_snapshot()==j.host_after,"maintenance_committed_host_invalid");
         for(const auto& c:j.changes)signing_require(files.current(c.path)==c.after,"maintenance_committed_file_invalid");
         signing_require(encoded_tree(registry_capture())==j.registration_after,"maintenance_committed_registration_invalid");registry_overrides();
         // Bytes/signatures/certificate were checked with held staged identities before publication.
@@ -322,6 +350,10 @@ struct WindowsMaintenance {
         authority();require_admin_protected(files.root);signing_require(j.root_encoding==maintenance_root_encoding(files.root.native()),"maintenance_recovery_wrong_root");
         const auto host=maintenance_host_record();signing_require(j.operation==MaintenanceOperation::fresh?(!host || same_installation_path(host->first,files.root)):
             (host && same_installation_path(host->first,files.root)),"maintenance_recovery_host_conflict");
+        if(maintenance_development_upgrade(j)){
+            RegistryHandle key;const auto tree=maintenance_host_tree(key);const auto actual=encoded_tree(tree);
+            signing_require(tree && ((actual==j.host_before && encoded_tree(maintenance_host_version(*tree,j.new_version))==j.host_after) ||
+                (actual==j.host_after && encoded_tree(maintenance_host_version(*tree,j.old_version))==j.host_before)),"maintenance_recovery_foreign_host");}
         if(j.operation==MaintenanceOperation::fresh && j.registration_after!=L"absent")
             signing_require(j.registration_after==encoded_tree(desired_registration({j.installation_id,j.ownership.certificate_sha256,(files.root/signing_target).native()})),"maintenance_recovery_registration_identity_invalid");
         // The protected pointer and every flushed snapshot authenticate the exact
@@ -358,17 +390,22 @@ struct WindowsMaintenance {
         // Once Inno has recorded a new release version, native rollback alone
         // cannot restore Inno's logs/host record. Require checked finalization or
         // explicit host recovery instead of making the two inventories disagree.
-        signing_require(!host || (j.operation!=MaintenanceOperation::fresh && host->second==j.old_version),"maintenance_host_changed_finalize_or_recover_inno_required");
+        if(maintenance_development_upgrade(j)){
+            const auto actual_host=maintenance_host_snapshot();signing_require(actual_host==j.host_before || actual_host==j.host_after,"maintenance_recovery_foreign_host");
+        }else signing_require(!host || (j.operation!=MaintenanceOperation::fresh && host->second==j.old_version),"maintenance_host_changed_finalize_or_recover_inno_required");
         if(j.operation==MaintenanceOperation::fresh && j.phase!=MaintenancePhase::rolled_back)maintenance_remove_created_signing(j,false);
     }
     void restore_registration(const MaintenanceJournal& j){
         validate_recovery_resources(j);
+        if(maintenance_development_upgrade(j) && maintenance_host_snapshot()==j.host_after)
+            maintenance_host_exchange(j.host_after,j.host_before,j.old_version);
         if(j.operation==MaintenanceOperation::fresh && encoded_tree(registry_capture())==j.registration_after && j.registration_after!=L"absent")
             maintenance_remove_created_registration(j);
     }
     void restore(const MaintenanceChange& c){files.restore(c);}
     void restore_resources(const MaintenanceJournal& j){if(j.operation==MaintenanceOperation::fresh){maintenance_restore_library(files,j);maintenance_remove_created_signing(j);}}
     void verify_original(const MaintenanceJournal& j){for(const auto& c:j.changes)signing_require(files.current(c.path)==c.before,"maintenance_original_verification_failed");
+        if(maintenance_development_upgrade(j))signing_require(maintenance_host_snapshot()==j.host_before,"maintenance_original_host_invalid");
         signing_require(encoded_tree(registry_capture())==j.registration_before,"maintenance_original_registration_invalid");}
     void release_for_recovery(){files.release();}
     void finish(MaintenanceOutcome outcome){if(outcome!=MaintenanceOutcome::awaiting_host)files.retire(active);}

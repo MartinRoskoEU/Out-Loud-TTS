@@ -15,7 +15,7 @@ void show(const outloud::PocketVoiceInfo& info) {
     std::cout << "format=Safetensors/Pocket-cache-offset-pad\nprefix=" << info.prefix_length
               << "\nsource_bytes=" << info.source_bytes << "\npayload_bytes=" << info.payload_bytes
               << "\nsource_sha256=" << info.source_sha256 << "\npayload_sha256=" << info.payload_sha256
-              << "\nmetadata_entries=" << info.metadata.size() << "\nmodel_provenance_verified=false\n"
+              << "\nmetadata_entries=" << info.metadata.size() << "\n"
               << "voice_state_format=Pocket-TTS-6L" << (info.legacy_current_end ? "-legacy-current_end" : "") << '\n';
 }
 void show(const outloud::OlvInfo& info) {
@@ -33,11 +33,11 @@ int wmain(int argc, wchar_t** argv) {
             show(outloud::validate_olv(argv[2])); return 0;
         }
         if (argc < 3) {
-            std::cerr << "Usage: outloud-voice-import <source> <destination.olv> --model-compatibility <pinned|ID> "
+            std::cerr << "Usage: outloud-voice-import <source> <destination.olv> [--model-compatibility <pinned|ID>] "
                          "[--expected-source-sha256 SHA256] [--replace]\n"
                          "       outloud-voice-import inspect <source>\n"
                          "       outloud-voice-import validate-olv <voice.olv>\n"
-                         "pinned explicitly declares that the source was prepared with this project's pinned model.\n";
+                         "Voice import validates supported structure and integrity; model declarations are ignored.\n";
             return 2;
         }
         outloud::VoiceImportOptions options;

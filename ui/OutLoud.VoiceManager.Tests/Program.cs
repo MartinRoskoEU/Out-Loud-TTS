@@ -15,7 +15,7 @@ internal static class Program
     private static void Check(bool value, string message)
     { ++checks; if (!value) throw new Exception(message); }
     private static VoiceRecord Voice(string id, string name, string status = "missing") =>
-        new(id, name, "Valid", "", status, "Native detail", "pocket-english-v1", "olv", 1, false);
+        new(id, name, "Valid", "", status, "Native detail", "pocket-english-v1", "olv", 1);
     private sealed class FakeService : IVoiceManagerService
     {
         public int Reads;
@@ -46,7 +46,7 @@ internal static class Program
             Check(model.Voices[0].DisplayName == "Hlas ž 🎵" && model.Voices[1].SapiStatus == "StaleName", "Native labels/Unicode preserved.");
             model.SelectedVoice = second;
             Check(model.HasSelection && model.SelectedVoice.LibraryId == "second", "Selected detail state.");
-            Check(model.SelectedVoice.OlvVersionText == "1" && model.SelectedVoice.ProvenanceText == "No", "Metadata details.");
+            Check(model.SelectedVoice.OlvVersionText == "1", "Metadata details.");
             var previousList = model.Voices;
             var replacement = Voice("second", "Renamed", "Correct");
             // Model the real DataGrid clearing SelectedItem as ItemsSource changes.
@@ -70,10 +70,10 @@ internal static class Program
             Check(model.SelectedVoice == null && !model.HasSelection, "Removed selection cleared.");
             Check(!model.IsBusy && model.RefreshCommand.CanExecute(null), "Refresh recovered.");
             var rowFailure = new BackendError("sapi", "RegistryAccessDenied", "SAPI access denied.", SystemError: 5);
-            var damaged = new VoiceRecord("damaged", null, "MetadataCorrupt", "Invalid metadata.", null, "", null, null, null, null, rowFailure);
+            var damaged = new VoiceRecord("damaged", null, "MetadataCorrupt", "Invalid metadata.", null, "", null, null, null, rowFailure);
             fake.Ready(damaged); await model.RefreshAsync(); model.SelectedVoice = damaged;
             Check(model.HasSapiErrors && !model.HasError, "Per-row SAPI error retains usable list.");
-            Check(damaged.NameText == "(Metadata unavailable)" && damaged.OlvVersionText == "Unavailable" && damaged.ProvenanceText == "Unavailable",
+            Check(damaged.NameText == "(Metadata unavailable)" && damaged.OlvVersionText == "Unavailable",
                 "Missing metadata is not invented.");
             Check(damaged.SapiDiagnostic.Contains("RegistryAccessDenied"), "Row diagnostic.");
             var stale = Voice("stale", "Undead Male", "stale_name") with {

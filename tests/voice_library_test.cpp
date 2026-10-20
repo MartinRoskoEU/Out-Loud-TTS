@@ -192,13 +192,16 @@ void junction(const std::filesystem::path& link,const std::filesystem::path& tar
 int wmain(int argc,wchar_t** argv) {
     try {
         require(argc==3,"Usage: outloud-voice-library-tests Gnome.safetensors Gnome.olv");
-        const auto original_source=read(argv[1]),original_olv=read(argv[2]);
+        const auto original_source=read(argv[1]),original_input_olv=read(argv[2]);
         const auto real_root=default_voice_library_root(); const auto real_before=GetFileAttributesW(real_root.c_str());
         PWSTR program_data = nullptr;
         require(SUCCEEDED(SHGetKnownFolderPath(FOLDERID_ProgramData,KF_FLAG_DONT_VERIFY,nullptr,&program_data)),"Cannot resolve ProgramData for default-root check");
         const auto expected_root = std::filesystem::path(program_data)/L"OutLoud"/L"VoiceLibrary"; CoTaskMemFree(program_data);
         require(real_root==expected_root,"Default root is not ProgramData known-folder result");
         Scratch scratch; const auto root=scratch.path/L"kni\u017enica";
+        const auto reference_voice=scratch.path/L"reference-unknown.olv";
+        (void)convert_pocket_voice_to_olv(argv[1],reference_voice,{});
+        const auto original_olv=read(reference_voice);
         VoiceLibrary library(root);
         require(!library.is_machine_storage(),"Explicit temporary root gained production status");
         require(library.list_voices().empty() && !std::filesystem::exists(root),"Empty enumeration created a library");
@@ -208,15 +211,15 @@ int wmain(int argc,wchar_t** argv) {
         rejects(Code::invalid_library_root,[&] { VoiceLibrary bad(scratch.path/L"NUL.olv"); });
         VoiceImportOptions options; options.declared_model_compatibility_id=std::string(pocket_model_compatibility_id);
         auto first=library.import_pocket_voice(argv[1],"Gnome Male",options).voice;
-        require(first.health==VoiceHealth::valid && first.metadata && !first.metadata->model_provenance_verified &&
+        require(first.health==VoiceHealth::valid && first.metadata &&
                 first.metadata->import_kind==VoiceImportKind::pocket_prepared,"Pocket import metadata is invalid");
         require(read(first.managed_olv_path)==original_olv,"Pocket library import changed .olv bytes");
         require(first.metadata->schema_version==1 && fs::id(first.library_id),"Schema or library ID format changed");
-        security_checks(scratch,library,first,argv[2]);
+        security_checks(scratch,library,first,reference_voice);
         require(validate_olv(first.managed_olv_path).file_sha256==first.metadata->olv_sha256,"Production loader identity mismatch");
-        auto duplicate=rejects(Code::duplicate_content,[&] { (void)library.import_olv(argv[2],"Other",DuplicateContentPolicy::reject); });
+        auto duplicate=rejects(Code::duplicate_content,[&] { (void)library.import_olv(reference_voice,"Other",DuplicateContentPolicy::reject); });
         require(duplicate.duplicate_ids()==std::vector<std::string>{first.library_id},"Duplicate result has no stable IDs");
-        auto second=library.import_olv(argv[2],"Gnome Male",DuplicateContentPolicy::allow_separate_entry);
+        auto second=library.import_olv(reference_voice,"Gnome Male",DuplicateContentPolicy::allow_separate_entry);
         require(second.duplicate_ids==std::vector<std::string>{first.library_id} && second.voice.library_id!=first.library_id,
                 "Explicit duplicate did not create separate identity");
         require(second.voice.metadata->import_kind==VoiceImportKind::olv && library.list_voices().size()==2,"Duplicate display names were not preserved");
@@ -268,8 +271,8 @@ int wmain(int argc,wchar_t** argv) {
             rejects(Code::library_busy,[&] { (void)library.cleanup_pending(); });
         }
         auto no_declaration=options; no_declaration.declared_model_compatibility_id.clear();
-        const auto error=rejects(Code::import_failed,[&] { (void)library.import_pocket_voice(argv[1],"Missing declaration",no_declaration); });
-        require(error.import_error() && error.import_error()->code()==VoiceImportErrorCode::compatibility_required,"Underlying importer error was flattened");
+        const auto error=rejects(Code::duplicate_content,[&] { (void)library.import_pocket_voice(argv[1],"Missing declaration",no_declaration); });
+        require(!error.duplicate_ids().empty(),"Structurally valid import did not reach duplicate handling");
         require(fs::children(root/L".staging").empty(),"Failed/duplicate import left ordinary staging work");
         const auto second_path=second.voice.managed_olv_path,meta=second_path.parent_path()/L"metadata.json";
         const auto metadata_bytes=read(meta); const std::string original_metadata(metadata_bytes.begin(),metadata_bytes.end());
@@ -282,16 +285,21 @@ int wmain(int argc,wchar_t** argv) {
                     "One corrupt entry broke enumeration");
         };
         write(meta,"{invalid JSON"); health(VoiceHealth::metadata_corrupt);
-        const auto corrupt_duplicate=rejects(Code::duplicate_content,[&] { (void)library.import_olv(argv[2],"Duplicate with corrupt metadata"); });
+        const auto corrupt_duplicate=rejects(Code::duplicate_content,[&] { (void)library.import_olv(reference_voice,"Duplicate with corrupt metadata"); });
         require(std::find(corrupt_duplicate.duplicate_ids().begin(),corrupt_duplicate.duplicate_ids().end(),second.voice.library_id)!=corrupt_duplicate.duplicate_ids().end(),
                 "Duplicate detection trusted corrupt display metadata");
         write(meta,std::string(16385,' ')); health(VoiceHealth::metadata_corrupt);
         write(meta,replace(original_metadata,"\"schema_version\":1","\"schema_version\":2")); health(VoiceHealth::unsupported_metadata_version);
         rejects(Code::unsupported_metadata_version,[&] { (void)library.rename_voice(second.voice.library_id,"Unsupported"); });
         write(meta,replace(original_metadata,"{","{\"asset_path\":\"C:\\\\outside.olv\",")); health(VoiceHealth::metadata_corrupt);
-        write(meta,replace(original_metadata,"gnome_male.olv","../outside.olv")); health(VoiceHealth::metadata_corrupt);
+        write(meta,replace(original_metadata,second.voice.metadata->source_filename,"../outside.olv")); health(VoiceHealth::metadata_corrupt);
         write(meta,replace(original_metadata,second.voice.library_id,"../outside")); health(VoiceHealth::metadata_corrupt);
-        write(meta,replace(original_metadata,"\"model_provenance_verified\":false","\"model_provenance_verified\":true")); health(VoiceHealth::metadata_corrupt);
+        // Retired boolean is opaque schema data and cannot block a valid voice.
+        write(meta,replace(original_metadata,"\"model_provenance_verified\":false","\"model_provenance_verified\":true")); health(VoiceHealth::valid);
+        (void)library.rename_voice(second.voice.library_id,"Retired field round trip");
+        const auto roundtrip=read(meta);
+        require(std::string(roundtrip.begin(),roundtrip.end()).find("\"model_provenance_verified\":true")!=std::string::npos,"Rename changed retired metadata");
+        write(meta,replace(original_metadata,"\"model_provenance_verified\":false","\"model_provenance_verified\":7")); health(VoiceHealth::metadata_corrupt);
         write(meta,replace(original_metadata,"\"schema_version\":1","\"schema_version\":1,\"schema_version\":1")); health(VoiceHealth::metadata_corrupt);
         write(meta,replace(original_metadata,second.voice.metadata->olv_sha256,std::string(64,'0'))); health(VoiceHealth::hash_mismatch);
         rejects(Code::corrupt_voice,[&] { (void)library.export_olv(second.voice.library_id,scratch.path/L"bad-export.olv"); });
@@ -305,10 +313,11 @@ int wmain(int argc,wchar_t** argv) {
         require(bad_version.import_error() && bad_version.import_error()->code()==VoiceImportErrorCode::olv_validation,"Unsupported voice lost production validation reason");
         changed=original_olv; changed[32]^=1;
         const auto digest=detail::asset_integrity(changed); std::copy(digest.begin(),digest.end(),changed.begin()+96);
-        write(second_path,changed); health(VoiceHealth::incompatible_model);
+        write(second_path,changed); health(VoiceHealth::hash_mismatch);
         write(invalid_source,changed);
-        const auto bad_model=rejects(Code::import_failed,[&] { (void)library.import_olv(invalid_source,"Incompatible voice"); });
-        require(bad_model.import_error() && bad_model.import_error()->code()==VoiceImportErrorCode::incompatible_model,"Incompatible voice lost model error");
+        const auto different_model=library.import_olv(invalid_source,"Different declared model",DuplicateContentPolicy::allow_separate_entry);
+        require(different_model.voice.health==VoiceHealth::valid,"Different serialized ID blocked a supported voice");
+        (void)library.remove_voice(different_model.voice.library_id);
         write(second_path,original_olv);
         const auto foreign=scratch.path/L"external-copy.olv"; write(foreign,original_olv);
         std::filesystem::remove(second_path); std::filesystem::create_hard_link(foreign,second_path);
@@ -335,7 +344,7 @@ int wmain(int argc,wchar_t** argv) {
         rejects(Code::unsafe_path,[&] { (void)library.export_olv(first.library_id,export_link/L"voice.olv"); });
         rejects(Code::unsafe_path,[&] { VoiceLibrary bad(export_link/L"library"); });
         const auto staged_link=root/L".staging"; require(RemoveDirectoryW(staged_link.c_str())!=0,"Staging was not empty"); junction(staged_link,outside);
-        rejects(Code::unsafe_path,[&] { (void)library.import_olv(argv[2],"Unsafe stage",DuplicateContentPolicy::allow_separate_entry); });
+        rejects(Code::unsafe_path,[&] { (void)library.import_olv(reference_voice,"Unsafe stage",DuplicateContentPolicy::allow_separate_entry); });
         require(RemoveDirectoryW(staged_link.c_str())!=0,"Cannot remove stage junction fixture"); std::filesystem::create_directory(staged_link);
         health(VoiceHealth::valid);
         {
@@ -385,7 +394,7 @@ int wmain(int argc,wchar_t** argv) {
         std::array<std::optional<LibraryImportResult>,2> imported; std::array<std::exception_ptr,2> errors;
         auto run=[&](std::size_t i) {
             start.arrive_and_wait();
-            try { VoiceLibrary peer(root); imported[i]=peer.import_olv(argv[2],"Concurrent",DuplicateContentPolicy::allow_separate_entry); }
+            try { VoiceLibrary peer(root); imported[i]=peer.import_olv(reference_voice,"Concurrent",DuplicateContentPolicy::allow_separate_entry); }
             catch (...) { errors[i]=std::current_exception(); }
         };
         std::thread one(run,0),two(run,1); one.join(); two.join(); std::size_t successes=0;
@@ -400,7 +409,7 @@ int wmain(int argc,wchar_t** argv) {
         if (successes==2) { require(imported[0]->voice.library_id!=imported[1]->voice.library_id,"Concurrent IDs collided"); }
         const auto removed=library.remove_voice(first.library_id); require(!removed.cleanup_pending,"Ordinary removal failed");
         rejects(Code::voice_not_found,[&] { (void)library.inspect_voice(first.library_id); });
-        require(read(argv[1])==original_source && read(argv[2])==original_olv,"Import/remove changed original source assets");
+        require(read(argv[1])==original_source && read(reference_voice)==original_olv && read(argv[2])==original_input_olv,"Import/remove changed original source assets");
         require(GetFileAttributesW(real_root.c_str())==real_before,"Test touched the real machine library");
         require(fs::children(outside)==std::vector<std::wstring>{L"sentinel.txt"},"Operation changed external sentinel directory");
         std::cout<<"PASS: "<<checks<<" voice library assertions; imports/exports exact Gnome bytes; IDs/rename; metadata/health; duplicates; locks; junctions/hard links/traversal; recovery/concurrency\n"

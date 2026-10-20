@@ -19,9 +19,18 @@ Assert-ProductionPlainPath $scratch
 [void](New-Item -ItemType Directory -Path $scratch)
 $custom = Join-Path $scratch ('Out Loud ' + [char]0x017d + ' hlasy')
 [void](New-Item -ItemType Directory -Path $custom)
-$record = @{ InstallLocation = $custom + '\'; DisplayName = 'Out Loud version 0.1.0'; DisplayVersion = '0.1.0'; Publisher = 'Nendis' }
+$current = (Get-OutLoudProductMetadata).version
+$record = @{ InstallLocation = $custom + '\'; DisplayName = "Out Loud version $current"; DisplayVersion = $current; Publisher = 'Nendis' }
 Check ((Resolve-OutLoudInstalledRoot $record) -ceq $custom) 'Unicode/space path comes from record, trailing slash normalized'
 Reject { Resolve-OutLoudInstalledRoot $null } 'production installer first'
+$older = $record.Clone(); $older.DisplayVersion = '0.1.0'; $older.DisplayName = 'Out Loud 0.1.0'
+Reject { Resolve-OutLoudInstalledRoot $older } 'identity/version differs'
+Check ((Resolve-OutLoudInstalledRoot $older '0.1.0') -ceq $custom) 'explicit exact forward upgrade accepted'
+foreach ($version in @($current, '0.3.0', '00.1.0', '0.1', '65536.0.0')) {
+    Reject { Resolve-OutLoudInstalledRoot $older $version } 'Explicit upgrade requires'
+}
+Reject { Resolve-OutLoudInstalledRoot $record '0.1.0' } 'identity/version differs'
+Reject { New-OutLoudUpdatePlan $custom Engine @{} '0.1.0' } 'complete package'
 foreach ($field in @('Publisher', 'DisplayVersion', 'DisplayName')) {
     $bad = $record.Clone(); $bad[$field] = 'other'
     Reject { Resolve-OutLoudInstalledRoot $bad } 'identity/version differs'

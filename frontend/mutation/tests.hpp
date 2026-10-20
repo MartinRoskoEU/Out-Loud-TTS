@@ -34,7 +34,7 @@ void mutation_checks(const std::filesystem::path& prepared,const std::filesystem
     const auto result = m::import_and_install(decoded,library,registry,resolve,outloud::MachineVoiceLibraryPolicy::development_override);
     check(result.outcome==m::Outcome::success && outloud::detail::library_fs::id(result.library_id) && registry->writes==1,"Prepared voice import + machine install failed.");
     const auto voice = library.inspect_voice(result.library_id);
-    check(voice.health==outloud::VoiceHealth::valid && voice.metadata->display_name==decoded.display_name && !voice.metadata->model_provenance_verified &&
+    check(voice.health==outloud::VoiceHealth::valid && voice.metadata->display_name==decoded.display_name &&
         voice.metadata->import_kind==outloud::VoiceImportKind::pocket_prepared,"Prepared import metadata changed.");
     const auto encoded = m::encode_result(result);
     std::uint32_t length = 0; std::memcpy(&length,encoded.data()+12,4);

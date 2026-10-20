@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "model_source_sha256": "fb0dc01b0d4d2e1c905b7a3e0676e3d9c96d5ae460e24e3ab94981805babf997",
+  "model_raw_tensor_bytes_sha256": "3446fde347dc0019d5341a1fa56692d7ed6cf7ef296dde2a1bbbecaf40e97bee",
+  "model_widened_tensor_bytes_sha256": "c4b7d97f2d67a3a637e25ac959c03f5eefb69e371d0d3a7053fe6f91f94ec3e2",
+  "bf16_pattern_count": 65536,
+  "bf16_fixture_sha256": "9207d7eb28680a098c73dbe536d1ff7b94311dc417b9a385e0af6660683e93ca",
+  "torch_version": "2.14.1+cpu",
+  "voices": [
+    {
+      "name": "gnome_male",
+      "source_sha256": "2118ea60dfe87bd515b27e051e1d677a7fe15663875740599147bde37a9c4cea",
+      "prefix_length": 112,
+      "payload_bytes": 5505024,
+      "payload_sha256": "728da46f323788972bcdd89141468e6bb570e8601c7f39c9ab9400137b50ebb4"
+    },
+    {
+      "name": "undead_male",
+      "source_sha256": "dce632cddb3a33203e140c73b2fa3970325bfbef3984813ddfe3e43e328037b6",
+      "prefix_length": 105,
+      "payload_bytes": 5160960,
+      "payload_sha256": "96feca6a99945c8fcac4845a281f9f5c9fa002a2716f9674fbb96eda259a6cc3"
+    }
+  ]
+}

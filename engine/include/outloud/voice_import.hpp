@@ -38,8 +38,7 @@ struct PocketVoiceInfo {
     std::uint64_t source_bytes = 0, payload_bytes = 0;
     std::string source_sha256, payload_sha256;
     std::map<std::string, std::string> metadata;
-    bool model_provenance_verified = false;
-    bool legacy_current_end = false; // structural format only, not model provenance
+    bool legacy_current_end = false; // older counter layout, not a model version
 };
 struct OlvInfo {
     std::uint32_t format_version = 1, prefix_length = 0;
@@ -47,8 +46,8 @@ struct OlvInfo {
     std::string source_sha256, compatibility_id, file_sha256;
 };
 struct VoiceImportOptions {
-    // Required assertion by the caller about the model that prepared the prefix.
-    // Only pocket_model_compatibility_id is currently supported. This is not proof.
+    // Historical caller assertion, retained for API compatibility only.
+    // Retained as an ignored API argument; import depends on structure/integrity.
     std::string declared_model_compatibility_id;
     std::string expected_source_sha256; // optional independently known source identity
     bool replace_existing = false;
@@ -66,7 +65,8 @@ struct VoiceImportResult {
 [[nodiscard]] VoiceImportResult convert_pocket_voice_to_olv(
     const std::filesystem::path& source, const std::filesystem::path& destination,
     const VoiceImportOptions& options);
-// Validates through the production OutLoudVoice loader, plus the requested pairing.
+// Structural/integrity validation through the production loader. A supplied
+// compatibility ID is syntax checked only; different/unknown models may play.
 [[nodiscard]] OlvInfo validate_olv(const std::filesystem::path& path,
     std::string_view compatibility_id = pocket_model_compatibility_id);
 

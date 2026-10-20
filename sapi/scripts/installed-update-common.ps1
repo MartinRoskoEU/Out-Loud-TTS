@@ -21,11 +21,20 @@ function Read-OutLoudUninstallRecord {
     } finally { $machine.Dispose() }
 }
 
-function Resolve-OutLoudInstalledRoot($Record) {
+function Resolve-OutLoudInstalledRoot($Record, [string]$UpgradeFromVersion) {
     if ($null -eq $Record) { throw 'Out Loud is not installed. Install Out Loud with its production installer first; no standalone development fallback is available.' }
     $product = Get-OutLoudProductMetadata
-    if ($Record.Publisher -cne 'Nendis' -or $Record.DisplayVersion -cne $product.version -or
-        $Record.DisplayName -cnotin @($product.product_name, "$($product.product_name) version $($product.version)")) {
+    $expected = $product.version
+    if ($UpgradeFromVersion) {
+        if ($UpgradeFromVersion -cnotmatch '^(0|[1-9][0-9]{0,4})\.(0|[1-9][0-9]{0,4})\.(0|[1-9][0-9]{0,4})$' -or
+            [version]$UpgradeFromVersion -ge [version]$product.version -or
+            @($UpgradeFromVersion.Split('.') | Where-Object { [int]$_ -gt 65535 }).Count) {
+            throw 'Explicit upgrade requires a canonical older source version and the current development target.'
+        }
+        $expected = $UpgradeFromVersion
+    }
+    if ($Record.Publisher -cne 'Nendis' -or $Record.DisplayVersion -cne $expected -or
+        $Record.DisplayName -cnotin @($product.product_name, "$($product.product_name) version $expected", "$($product.product_name) $expected")) {
         throw 'Out Loud installer identity/version differs from this source. Use the matching source or checked production upgrade/repair.'
     }
     $path = [string]$Record.InstallLocation
@@ -135,8 +144,9 @@ function Assert-OutLoudUpdateFilesAvailable([string[]]$Paths) {
     } finally { foreach ($pin in $pins) { $pin.Dispose() } }
 }
 
-function New-OutLoudUpdatePlan([string]$Root, [string]$Components, $Ownership) {
-    $files = @(Get-OutLoudUpdateFiles $Components)
+function New-OutLoudUpdatePlan([string]$Root, [string]$Components, $Ownership, [string]$UpgradeFromVersion) {
+    if ($UpgradeFromVersion -and $Components -cne 'Both') { throw 'An explicit development upgrade requires Both (the complete package).' }
+    $files = if ($UpgradeFromVersion) { @((Get-ProductionPolicy).files) } else { @(Get-OutLoudUpdateFiles $Components) }
     $paths = @($files | ForEach-Object { Resolve-ProductionPath $Root $_.path })
     Assert-OutLoudUpdateFilesAvailable $paths
     $observed = foreach ($file in $files) {
@@ -145,15 +155,34 @@ function New-OutLoudUpdatePlan([string]$Root, [string]$Components, $Ownership) {
     }
     return [ordered]@{
         schema = 1; purpose = 'development-update-plan'; components = $Components; installation_root = $Root
+        upgrade_from = $UpgradeFromVersion; native_components = $(if ($UpgradeFromVersion) { 'Package' } else { $Components })
         app_id = 'OutLoud'; version = (Get-OutLoudProductMetadata).version; clsid = Get-OutLoudEngineClsid
         installation_id = $Ownership.installation_id; certificate_sha256 = $Ownership.certificate_sha256
         scope = 'LocalMachine'; files = @($observed); inspection = 'ownership_candidate'
-        deployment = 'blocked'; blocker = 'Shared lifecycle requires live validation and A03.11 uninstall before publication is enabled.'
+        deployment = 'blocked'; blocker = 'Publication requires the checked native maintenance transaction.'
         signing = 'pending_native_maintenance'; replacement = 'not_attempted'; recovery = 'native_transaction_pending'
     }
 }
 
 function Prepare-OutLoudUpdateCandidates($Plan, [string]$Reports) {
+    if ($Plan.upgrade_from) {
+        $stage = Join-Path $ProductionRepository ('generated/installer/stages/dev-' + [Guid]::NewGuid().ToString('N'))
+        & (Join-Path $ProductionRepository 'installer/inno/build-stage.ps1') -StageDirectory $stage | Out-Host
+        [void](Assert-ProductionStage $stage)
+        $candidates = Join-Path $Reports 'candidates'
+        if (Test-Path -LiteralPath $candidates) { throw 'Candidate directory already exists.' }
+        Copy-Item -LiteralPath (Join-Path $stage 'payload') -Destination $candidates -Recurse
+        Copy-Item -LiteralPath (Join-Path $stage 'bootstrap') -Destination (Join-Path $candidates 'bootstrap') -Recurse
+        Copy-Item -LiteralPath (Join-Path $stage 'prerequisites.ini') -Destination (Join-Path $candidates 'prerequisites.ini')
+        foreach ($file in $Plan.files) { $file['candidate_sha256'] = Get-ProductionHash (Resolve-ProductionPath $candidates $file.path) }
+        $manifest = Get-Content -LiteralPath (Join-Path $stage 'package-manifest.json') -Raw | ConvertFrom-Json
+        $files = @($Plan.files | ForEach-Object { @{ path=$_.path; sha256=$_.candidate_sha256 } })
+        $request = Get-OutLoudMaintenanceIni $files $manifest.detector_sha256 $manifest.prerequisites_sha256
+        $request = $request.Replace('[bootstrap]', "upgrade_from=$($Plan.upgrade_from)`nupgrade_to=$($Plan.version)`n[bootstrap]")
+        [IO.File]::WriteAllText((Join-Path $candidates 'maintenance-input.ini'), $request, [Text.Encoding]::ASCII)
+        $Plan['candidates'] = $candidates; $Plan['stage'] = $stage; $Plan['preparation'] = 'verified_complete_package'
+        return
+    }
     $work = Join-Path $ProductionRepository ('generated/installer/builds/' + [Guid]::NewGuid().ToString('N'))
     $built = Build-OutLoudComponents -Components $Plan.components -WorkDirectory $work
     Copy-OutLoudUpdateCandidates $Plan $Reports $built
