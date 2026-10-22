@@ -6,6 +6,8 @@
 #include <limits>
 #include <stdexcept>
 #include <string>
+#include <string_view>
+#include <utility>
 #include <unordered_set>
 #include <vector>
 
@@ -40,25 +42,35 @@ struct CollectionControl {
     void* context=nullptr;
     bool aborted() const { return poll && poll(context); }
 };
+struct SpeechVolumeRun {
+    std::size_t offset, length;
+    ULONG volume;
+};
 struct SpeechRequest {
     std::string text;
     std::vector<std::wstring> bookmarks;
     bool cancelled=false;
+    std::vector<SpeechVolumeRun> volume_runs;
 };
 inline SpeechRequest collect_request(const SPVTEXTFRAG* fragments,CollectionControl control={}) {
     SpeechRequest request;
     std::wstring text;
+    std::vector<std::pair<std::size_t,ULONG>> volume_starts;
     std::unordered_set<const SPVTEXTFRAG*> visited;
     std::size_t fragments_seen=0, text_units=0, bookmarks_seen=0, bookmark_units=0;
     for (auto f = fragments; f; f = f->pNext) {
-        if (control.aborted()) { return {{},{},true}; }
+        if (control.aborted()) { return {{},{},true,{}}; }
         collect_add(fragments_seen,1,maximum_fragments);
         if (!visited.insert(f).second) { throw Failure{E_INVALIDARG}; }
         if (f->State.eAction == SPVA_Speak) {
             if (f->ulTextLen && !f->pTextStart) { throw Failure{E_POINTER}; }
             collect_add(text_units,f->ulTextLen,maximum_text_units);
+            const auto volume=(std::min)(f->State.Volume,100UL);
+            if (f->ulTextLen && (volume_starts.empty() || volume_starts.back().second!=volume)) {
+                volume_starts.emplace_back(text.size(),volume);
+            }
             for (std::size_t offset=0;offset<f->ulTextLen;) {
-                if (control.aborted()) { return {{},{},true}; }
+                if (control.aborted()) { return {{},{},true,{}}; }
                 const auto count=(std::min)(std::size_t{4096},static_cast<std::size_t>(f->ulTextLen)-offset);
                 text.append(f->pTextStart+offset,count); offset+=count;
             }
@@ -72,7 +84,7 @@ inline SpeechRequest collect_request(const SPVTEXTFRAG* fragments,CollectionCont
             if (f->ulTextLen && !f->pTextStart) { throw Failure{E_POINTER}; }
             std::wstring name;
             for (std::size_t offset=0;offset<f->ulTextLen;) {
-                if (control.aborted()) { return {{},{},true}; }
+                if (control.aborted()) { return {{},{},true,{}}; }
                 const auto count=(std::min)(std::size_t{4096},static_cast<std::size_t>(f->ulTextLen)-offset);
                 name.append(f->pTextStart+offset,count); offset+=count;
             }
@@ -88,6 +100,55 @@ inline SpeechRequest collect_request(const SPVTEXTFRAG* fragments,CollectionCont
     }
     // Convert once after concatenation, so a surrogate pair can span fragments.
     request.text = utf8(text);
+    std::vector<WORD> character_types;
+    if (volume_starts.size()>1) {
+        character_types.resize(text.size());
+        if (!GetStringTypeW(CT_CTYPE1,text.data(),static_cast<int>(text.size()),character_types.data())) {
+            throw Failure{HRESULT_FROM_WIN32(GetLastError())};
+        }
+    }
+    std::size_t begin=0, bytes=0;
+    for (std::size_t i=0;i<volume_starts.size();++i) {
+        if (control.aborted()) { return {{},{},true,{}}; }
+        auto end=i+1<volume_starts.size() ? volume_starts[i+1].first : text.size();
+        // A UTF-16 character cannot have two volumes. If a fragment splits a
+        // surrogate pair, keep the complete character at its leading volume.
+        if (end && end<text.size() && text[end-1]>=0xd800 && text[end-1]<=0xdbff &&
+            text[end]>=0xdc00 && text[end]<=0xdfff) { ++end; }
+        if (end<=begin) { continue; }
+        const auto length=volume_starts.size()==1 ? request.text.size() : utf8(std::wstring_view(text).substr(begin,end-begin)).size();
+        const auto volume=volume_starts[i].second;
+        bool whitespace=!character_types.empty();
+        for (auto j=begin;whitespace && j<end;++j) {
+            whitespace=(character_types[j]&C1_SPACE)!=0 || (text[j]>=0x1c && text[j]<=0x1f);
+        }
+        // Whitespace has no audible volume. Attach whitespace-only runs to
+        // neighboring text, so an XML change around spaces cannot create an
+        // empty prompt in the existing text pipeline. Keep every original byte.
+        if (whitespace) {
+            if (!request.volume_runs.empty()) { request.volume_runs.back().length+=length; }
+        } else if (request.volume_runs.empty()) {
+            request.volume_runs.push_back({0,bytes+length,volume});
+        } else if (request.volume_runs.back().volume==volume) {
+            request.volume_runs.back().length+=length;
+        } else { request.volume_runs.push_back({bytes,length,volume}); }
+        begin=end; bytes+=length;
+    }
+    if (!request.text.empty() && request.volume_runs.empty()) {
+        request.volume_runs.push_back({0,request.text.size(),volume_starts.front().second});
+    }
     return request;
+}
+template<class Control,class Render>
+HRESULT render_volume_runs(const SpeechRequest& request,Control& control,Render&& render) {
+    for (const auto& run : request.volume_runs) {
+        if (control.poll()) { return S_OK; }
+        control.fragment_volume=run.volume;
+        // Each render drains its Sonic tail before changing the fragment factor.
+        // Equal-volume fragments remain one utterance, preserving the old path.
+        const auto hr=render(std::string_view(request.text).substr(run.offset,run.length));
+        if (hr!=S_OK || control.aborted) { return hr; }
+    }
+    return S_OK;
 }
 }

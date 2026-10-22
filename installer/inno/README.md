@@ -1,7 +1,8 @@
 # Out Loud production installer: A03.1-A03.12
 
-Current product version: **0.2.0**, from `ProductVersion.props`. Current changes
-and exact model identity are in the [0.2.0 release notes](../../docs/releases/0.2.0.md).
+Current product version: **0.2.1**, from `ProductVersion.props`. Current changes
+are in the [0.2.1 release notes](../../docs/releases/0.2.1.md); the unchanged
+model identity is in the [0.2.0 notes](../../docs/releases/0.2.0.md).
 The A03 records below retain their historical 0.1.0 validation context.
 
 A03.12 completes the shared native/Inno integration for a controlled-test
@@ -36,7 +37,7 @@ After success, older versioned installers move out of `release/` into the curren
 preserved with a warning. Other release-directory content is left alone.
 Pass `-PreserveHistoricalInstallers` to `build-installer.ps1` or
 `publish-installer.ps1` to leave older versioned installers in `release/` instead.
-The 0.2.0 release preparation uses this switch to preserve the 0.1.0 artifact.
+The 0.2.1 release preparation uses this switch to preserve 0.1.0 and 0.2.0 artifacts.
 Build output, provenance, replacement backups and diagnostics remain under
 `generated/`; both output locations are ignored by Git. This does not provide
 publisher signing or authorize installer execution.

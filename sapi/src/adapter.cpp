@@ -3,6 +3,7 @@
 #include "asset_diagnostics.hpp"
 #include "error_logger.hpp"
 #include "speech_rate.hpp"
+#include "speech_volume.hpp"
 #include "outloud/orchestration.hpp"
 #include "outloud/pcm16.hpp"
 #include <atomic>
@@ -131,6 +132,8 @@ struct RequestControl {
     bool aborted = false;
     bool rate_initialized = false;
     long rate = 0;
+    bool volume_initialized = false;
+    ULONG volume = 100, fragment_volume = 100;
     unsigned control_errors = 0;
     void control_result(logging::Event event,HRESULT hr,unsigned bit) {
         if (FAILED(hr) && !(control_errors&bit)) {
@@ -148,8 +151,14 @@ struct RequestControl {
             if (SUCCEEDED(hr)) { rate = std::clamp(value,-10L,10L); }
             rate_initialized = true;
         }
-        // Existing volume/skip policy remains unchanged.
-        if (actions & SPVES_VOLUME) { USHORT value = 100; control_result(logging::Event::volume,site->GetVolume(&value),2); }
+        if (!volume_initialized || (actions & SPVES_VOLUME)) {
+            USHORT value = 100;
+            const auto hr = site->GetVolume(&value);
+            control_result(logging::Event::volume,hr,2);
+            if (SUCCEEDED(hr)) { volume = (std::min)(ULONG{value},100UL); }
+            // A failed query retains the last valid level (initially SAPI's 100).
+            volume_initialized = true;
+        }
         if (actions & SPVES_SKIP) {
             SPVSKIPTYPE type{}; long count = 0;
             control_result(logging::Event::skip_info,site->GetSkipInfo(&type,&count),4);
@@ -211,14 +220,24 @@ struct Delivery {
 };
 HRESULT write_frame(RequestControl& control, std::span<const std::int16_t> pcm) {
     const auto* bytes = reinterpret_cast<const std::uint8_t*>(pcm.data());
+    std::array<std::int16_t,1920> adjusted;
     ULONG delivered = 0;
     const auto total = static_cast<ULONG>(pcm.size_bytes());
     while (delivered<total) {
         if (control.poll()) { return S_OK; } // including every partial retry
+        const auto gain = volume_gain(control.volume,control.fragment_volume);
+        const auto remaining = (std::min)(total-delivered,static_cast<ULONG>(adjusted.size()*sizeof(std::int16_t)));
+        const void* output = bytes+delivered;
+        if (gain!=10000) {
+            // Always start from unscaled, unwritten samples. A partial Write may
+            // be followed by a new volume action; never scale the source in place.
+            for (ULONG i=0;i<remaining/2;++i) { adjusted[i]=scale_pcm16(pcm[delivered/2+i],gain); }
+            output=adjusted.data();
+        }
         ULONG written = 0;
-        const auto hr = control.site->Write(bytes+delivered,total-delivered,&written);
+        const auto hr = control.site->Write(output,remaining,&written);
         if (FAILED(hr) || hr==SP_AUDIO_STOPPED) { return hr; }
-        if (!written || written>total-delivered || written%2) { return E_UNEXPECTED; }
+        if (!written || written>remaining || written%2) { return E_UNEXPECTED; }
         delivered += written;
     }
     // Observe a stop signalled by the last Write before acknowledging the sink;
@@ -371,7 +390,9 @@ public:
             if (FAILED(hr)) { return hr; } // leading_bookmarks records the failed site operation.
             if (request.text.empty() || control.aborted) { return S_OK; }
             if (!request.bookmarks.empty() && control.poll()) { return S_OK; }
-            return stream(resident_,configuration_,request.text,control);
+            return render_volume_runs(request,control,[&](std::string_view text) {
+                return stream(resident_,configuration_,text,control);
+            });
         } catch (...) { return exception_code(); }
     }
 private:

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.1
+
+- Fixed native SAPI baseline volume, initial-volume queries and live volume
+  changes, including partial writes and speech-rate output/tails.
+- Combined SAPI baseline and XML fragment volume as percentages, retaining
+  fragment volume boundaries. Zero is silent; full volume preserves PCM bytes.
+- Voice Manager retains normal SAPI playback at volume 100 and Windows audio
+  controls. No new UI setting, model update or voice-format change.
+
 ## 0.2.0
 
 - Updated the official Kyutai Pocket TTS English weights to immutable revision

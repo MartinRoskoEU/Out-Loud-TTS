@@ -18,6 +18,34 @@ internal static class VoiceTesterTests
     private const string Id = "0123456789abcdef0123456789abcdef", Other = "fedcba9876543210fedcba9876543210";
     private const string Root = @"C:\fake-library";
     private static VoiceRecord Voice(string id = Id) => new(id, "Same name", "valid", "", "correct", "", "compat", "olv", 1);
+    public static async Task VolumeChecks(Action<bool, string> check)
+    {
+        var request = new VoiceTestRequest(Voice(), Root, "Plain <volume> text");
+        dynamic token = new ExpandoObject(), key = new ExpandoObject(), voice = new ExpandoObject(), status = new ExpandoObject();
+        token.Id = request.TokenId; token.DataKey = key;
+        token.SetId = (Action<string, string, bool>)((id, _, create) => check(id == request.TokenId && !create, "Existing exact token selected without creation."));
+        key.GetStringValue = (Func<string, string>)(name => name switch {
+            "LibraryId" => Id, "OutLoudManagedOwner" => "OutLoud.ManagedVoice.1", "CLSID" => "{F38C3398-3552-43B9-8350-7DD301327D70}",
+            "VoicePath" => Path.Combine(Root, "voices", Id, "voice.olv"), _ => throw new Exception("Unexpected token query") });
+        voice.Volume = 42; voice.Rate = 8; status.LastHResult = 0; voice.Status = status;
+        int starts = 0; ApartmentState apartment = ApartmentState.Unknown;
+        voice.Speak = (Action<string, int>)((text, flags) => {
+            ++starts; apartment = Thread.CurrentThread.GetApartmentState();
+            check(text == request.Text && flags == 17, "Unmodified plain text through async SAPI Speak.");
+            check((int)voice.Volume == 100 && (int)voice.Rate == 0, "Tester explicitly selects normal full SAPI volume and neutral rate.");
+        });
+        voice.WaitUntilDone = (Func<int, bool>)(_ => true);
+        var activated = new List<string>(); var released = new List<object>();
+        var factory = new SapiTestSessionFactory(id => {
+            activated.Add(id); return id switch { "SAPI.SpObjectToken" => token, "SAPI.SpVoice" => voice, _ => throw new Exception("Unexpected output activation") };
+        }, value => released.Add(value));
+        var result = await new SapiVoiceTestBackend(factory).RunAsync(request, new Progress(), default);
+        check(!result.Cancelled && result.ExportPath == null && starts == 1, "Playback completes without export or extra synthesis.");
+        check(apartment == ApartmentState.STA, "Playback owns SAPI on its STA.");
+        check(activated.SequenceEqual(new[] { "SAPI.SpObjectToken", "SAPI.SpVoice" }), "Normal SAPI playback without a replacement output stream.");
+        check(!((IDictionary<string, object>)voice).ContainsKey("AudioOutputStream"), "Default Windows audio output preserved.");
+        check(released.Count == 4 && ReferenceEquals(released[0], voice), "Session releases voice/status/token resources after playback.");
+    }
     private sealed class Backend : IVoiceTestBackend
     {
         public string Name => "Fake baseline";

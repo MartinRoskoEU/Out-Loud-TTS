@@ -101,8 +101,12 @@ both workers quiesce and the coordinator joins. Observed SAPI abort normally
 returns S_OK; native/write failures still propagate. Fresh prepare/reset/reseed
 permits reuse without recreating workers or a global stop flag.
 
-Skip acknowledges zero skipped items; queried rate/volume do not add gain,
-resampling or neural prosody. Supported leading bookmarks stay out of text and
+Skip acknowledges zero skipped items. SAPI site rate uses Sonic; baseline and
+fragment volume percentages combine at the final PCM16 write boundary after
+rate processing. Volume changes refresh on the caller thread, including partial
+writes; unity preserves bytes and zero writes silence. Equal-volume fragments
+remain concatenated; actual XML volume transitions drain separate rendering
+runs. Volume does not change neural inference. Supported leading bookmarks stay out of text and
 are queued on the Speak caller before synthesis/writes at stream-relative byte
 offset zero when requested. Bookmark-only requests can queue events without PCM;
 actual notification/playback timing belongs to SAPI. They do not synthesize

@@ -1,9 +1,10 @@
 # Out Loud
 
-**Out Loud 0.2.0** updates the official Kyutai Pocket TTS English model and
-simplifies voice management. See the [release notes](docs/releases/0.2.0.md) for
-the exact model identity and voice-quality guidance. The installer is prepared
-locally; public publication is pending. Historical 0.1.0 artifacts are preserved.
+**Out Loud 0.2.1** fixes native SAPI volume handling. See the
+[release notes](docs/releases/0.2.1.md) for the focused patch and the
+[0.2.0 notes](docs/releases/0.2.0.md) for the unchanged model identity and
+voice-quality guidance. The installer is prepared locally; public publication
+is pending. Historical 0.1.0 and 0.2.0 artifacts are preserved.
 
 Offline English text-to-speech for the Out Loud World of Warcraft addon, powered
 by Pocket TTS and Windows SAPI5. The included Voice Manager imports, tests,
@@ -27,14 +28,14 @@ Internet access is needed if setup must download missing Microsoft runtimes.
 
 ## Install
 
-1. Obtain `OutLoud-Setup-0.2.0.exe` and its checksum from the approved release
+1. Obtain `OutLoud-Setup-0.2.1.exe` and its checksum from the approved release
    artifacts. Public downloads use
    [GitHub Releases](https://github.com/MartinRoskoEU/Out-Loud-TTS/releases);
-   publication of 0.2.0 is pending.
+   publication of 0.2.1 is pending.
    Compare its SHA-256 with the release checksum if you want to verify the download:
 
    ```powershell
-   Get-FileHash .\OutLoud-Setup-0.2.0.exe -Algorithm SHA256
+   Get-FileHash .\OutLoud-Setup-0.2.1.exe -Algorithm SHA256
    ```
 
 2. Close World of Warcraft, Voice Manager and other applications using Out Loud.
@@ -144,16 +145,16 @@ update installed applications or publish releases automatically.
 Production packaging uses the existing scripts:
 
 ```powershell
-.\installer\inno\build-stage.ps1 -StageDirectory "$PWD\generated\installer\stages\release-0.2.0"
-.\installer\inno\verify-stage.ps1 -StageDirectory "$PWD\generated\installer\stages\release-0.2.0"
-.\installer\inno\build-installer.ps1 -StageDirectory "$PWD\generated\installer\stages\release-0.2.0" -PreserveHistoricalInstallers
+.\installer\inno\build-stage.ps1 -StageDirectory "$PWD\generated\installer\stages\release-0.2.1"
+.\installer\inno\verify-stage.ps1 -StageDirectory "$PWD\generated\installer\stages\release-0.2.1"
+.\installer\inno\build-installer.ps1 -StageDirectory "$PWD\generated\installer\stages\release-0.2.1" -PreserveHistoricalInstallers
 ```
 
 Use a new stage directory for each build. Build tools require CMake 3.24+,
 Visual Studio 2022 C/C++ tools and Windows SDK, .NET 10 SDK, Inno Setup 7.0.2+,
 and the pinned offline model/tokenizer inputs. Packaging builds Release x64,
 validates the explicit payload and copies the verified installer to
-`release/OutLoud-Setup-0.2.0.exe`. The preservation switch leaves older versioned
+`release/OutLoud-Setup-0.2.1.exe`. The preservation switch leaves older versioned
 installers in place. Packaging does not execute setup or publish to GitHub.
 `release/`, generated artifacts and user voice files remain excluded from Git.
 Successful staging removes verified intermediate build output. Automatic artifact

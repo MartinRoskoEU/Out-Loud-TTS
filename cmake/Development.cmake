@@ -285,6 +285,13 @@ if(OUTLOUD_BUILD_DEVELOPMENT_TOOLS)
 
 endif()
 
+# Synthetic PCM through the actual adapter control/write path; no asset loading,
+# inference, audio device, installed registration or production error-log access.
+add_executable(outloud-sapi-volume-tests sapi/tests/volume.cpp sapi/src/error_logger.cpp)
+target_link_libraries(outloud-sapi-volume-tests PRIVATE outloud_orchestration outloud_sonic ole32 oleaut32 sapi uuid shell32 advapi32)
+target_compile_definitions(outloud-sapi-volume-tests PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN OUTLOUD_ERROR_LOGGER_TEST=1)
+target_compile_options(outloud-sapi-volume-tests PRIVATE /W4 /WX /utf-8 /permissive- /fp:precise)
 if(BUILD_TESTING)
+    add_test(NAME sapi-volume COMMAND outloud-sapi-volume-tests)
     include(${CMAKE_CURRENT_LIST_DIR}/Validation.cmake)
 endif()

@@ -23,10 +23,15 @@ internal static class Program
         public Task<VoiceSnapshot> ReadAsync() { ++Reads; return Replies.Dequeue(); }
         public void Ready(params VoiceRecord[] voices) => Replies.Enqueue(Task.FromResult(new VoiceSnapshot("fake-root", voices)));
     }
-    public static async Task<int> Main()
+    public static async Task<int> Main(string[] args)
     {
         try
         {
+            if (args.Length == 1 && args[0] == "--sapi-volume") {
+                await VoiceTesterTests.VolumeChecks(Check);
+                Console.WriteLine($"PASS: {checks} focused Voice Manager SAPI volume/playback checks; injected automation, no installed resources or audio device.");
+                return 0;
+            }
             Check(Environment.Is64BitProcess, "Tests must run x64.");
             Check(Marshal.SizeOf<NativeVoiceManager.SnapshotV1>() == 24, "Snapshot ABI size.");
             Check(Marshal.SizeOf<NativeVoiceManager.VoiceV1>() == 88, "Voice ABI size.");
