@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.0
+
+- Updated official Kyutai English Pocket TTS weights from `english_2026-09_2`
+  to `english_2026-10`, preserving exact BF16 precision and the existing native
+  inference architecture. Tokenizer and OLV v1 format are unchanged.
+- Applied the new model configuration's apostrophe/whitespace normalization.
+- Preserved the 0.2.1 SAPI volume handling, engine identity and existing
+  in-place upgrade behavior. Existing voices are not regenerated; acoustic
+  equivalence with older profiles is unverified. See [release notes](docs/releases/0.3.0.md).
+
 ## 0.2.1
 
 - Fixed native SAPI baseline volume, initial-volume queries and live volume

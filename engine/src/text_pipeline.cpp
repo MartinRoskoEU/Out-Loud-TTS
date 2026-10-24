@@ -79,14 +79,29 @@ std::vector<Piece> split(std::span<const std::uint32_t> ids, std::span<const std
 PreparedText prepare_text(std::string_view utf8, const Tokenizer& tokenizer) {
     auto text = strip(utf8, tokenizer);
     if (text.empty()) { throw std::invalid_argument("Text prompt cannot be empty"); }
-    // Sequential upstream replacements; a single non-overlapping double-space pass.
-    for (auto& c : text) { if (c == '\n' || c == '\r') { c = ' '; } }
-    std::string collapsed;
-    for (std::size_t i = 0; i < text.size(); ++i) {
-        collapsed += text[i];
-        if (text[i] == ' ' && i + 1 < text.size() && text[i + 1] == ' ') { ++i; }
+    // english_2026-10 enables upstream replace_characters: translate curly
+    // apostrophes, join Unicode whitespace, then remove a comma/semicolon/colon
+    // immediately after sentence punctuation (including intervening spaces).
+    std::string normalized;
+    bool pending_space = false;
+    for (const auto c : detail::characters(text)) {
+        if (tokenizer.is_space(c.cp)) { pending_space = true; continue; }
+        if (pending_space && !normalized.empty()) { normalized += ' '; }
+        pending_space = false;
+        if (c.cp == 0x2018 || c.cp == 0x2019) { normalized += '\''; }
+        else { normalized.append(text, c.offset, c.size); }
     }
-    text = std::move(collapsed);
+    const auto chars = detail::characters(normalized);
+    text.clear();
+    for (std::size_t i = 0; i < chars.size(); ++i) {
+        const auto c = chars[i];
+        text.append(normalized, c.offset, c.size);
+        if (terminal(c.cp)) {
+            auto next = i + 1;
+            while (next < chars.size() && tokenizer.is_space(chars[next].cp)) { ++next; }
+            if (next < chars.size() && (chars[next].cp == ',' || chars[next].cp == ';' || chars[next].cp == ':')) { i = next; }
+        }
+    }
     std::size_t words = 0;
     bool in_word = false;
     for (const auto c : detail::characters(text)) {

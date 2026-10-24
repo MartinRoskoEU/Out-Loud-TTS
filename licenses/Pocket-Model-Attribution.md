@@ -1,7 +1,7 @@
 # Pocket TTS model attribution
 
 Publisher: **Kyutai**. Credited authors recorded in A04: Manu Orsini, Simon Rouard,
-Gabriel De Marmiesse, Václav Volhejn, Neil Zeghidour and Alexandre Défossez.
+Gabriel De Marmiesse, VĂˇclav Volhejn, Neil Zeghidour and Alexandre DĂ©fossez.
 This credit does not invent a copyright assignment or give Nendis ownership of
 the original weights.
 
@@ -41,7 +41,7 @@ No standalone OLV voice or voice recording is added to the OLP.
 Compatibility ID:
 `993a3a9749dc64d60815aa0e71fa4c18f53d478d05d0c4da8c7c77164387c59a`.
 These identities and changes were verified in
-[A04, sections 6–7](../docs/LICENSING_AND_REDISTRIBUTION_A04.md).
+[A04, sections 6â€“7](../docs/LICENSING_AND_REDISTRIBUTION_A04.md).
 No asset was regenerated or modified when this attribution was added.
 
 ## Independently verified public matching payload
@@ -86,3 +86,22 @@ Source SHA-256: `7767ce79b1b8db523d867e70855a00627aacfe44aaa5c1fd7ebe135fba71fff
 Configuration: https://raw.githubusercontent.com/kyutai-labs/pocket-tts/9aa7a7f0e52a4cd81bcf8a0fc7c981cdc6d11e53/pocket_tts/config/english.yaml.
 OLP SHA-256: `fe8c40e3a773465974ce965e57f01c8904ac4cb2cf7086c42cbb151f8815ba3e`.
 Same synthesis-only BF16 conversion and license/policy obligations. Historical release artifacts are retained.
+
+## Active checkpoint (Out Loud 0.3.0)
+
+Official Kyutai `english_2026-10`, selected by Pocket TTS v4.0.1
+(`a922b912dfa366975294afb568d815b305acde5d`). Source repository: `kyutai/pocket-tts`;
+file: `languages/english/model.safetensors`; immutable revision:
+`db04f0e653473e5c7333c69686ac92b7460b0c1d`.
+
+Source SHA-256: `bc96b82436c5ec00d3118ef3b01bc3358423e1766ecae3dca0aeea84789e7d74`.
+
+OLP SHA-256: `b7befdd6647031154a490856b7b59bac3a0d813d9e1f65c621928d2640e0d5c4`.
+
+The checkpoint model card at this revision declares CC BY 4.0. Its prohibited-use
+paragraph matches the already bundled policy. Existing license and consent
+behavior is preserved. The OLP includes the same 169 synthesis tensors as exact
+BF16 bytes; 45 preparation-only tensors are excluded. No quantization or
+precision reduction is applied. See `docs/releases/0.3.0.md` for verification,
+tokenizer identity and voice-quality limitations. Historical provenance above
+describes earlier assets and is retained.

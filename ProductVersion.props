@@ -1,7 +1,7 @@
 <Project>
   <!-- Authoritative product metadata. Edit only this version for a release bump. -->
   <PropertyGroup>
-    <OutLoudProductVersion>0.2.1</OutLoudProductVersion>
+    <OutLoudProductVersion>0.3.0</OutLoudProductVersion>
     <OutLoudProductName>Out Loud</OutLoudProductName>
     <OutLoudProductCopyright>Copyright (c) 2026 Nendis</OutLoudProductCopyright>
     <OutLoudWindowsVersion>$(OutLoudProductVersion).0</OutLoudWindowsVersion>

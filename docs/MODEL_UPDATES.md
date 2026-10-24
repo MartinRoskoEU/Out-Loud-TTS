@@ -1,5 +1,12 @@
 # Developer model updates
 
+Out Loud 0.3.0's `english_2026-10` update and focused validation are recorded in
+[the release notes](releases/0.3.0.md). The first CHECK refused newly enabled
+character replacement settings; they were reviewed and integrated explicitly,
+then the existing conversion and transactional publication helpers were reused
+with only the validation required for this release. The full automatic UPDATE
+and its broader import/library suites were not run for that preparation.
+
 Run from the repository root with the existing reference environment:
 
 ```powershell

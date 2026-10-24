@@ -1,7 +1,7 @@
 {
-  "compatibility_id": "11399b73577d746fa8b5a52a9a6893b1033343f4cbc6da7ad08b831b6d20eb36",
-  "config_revision": "9aa7a7f0e52a4cd81bcf8a0fc7c981cdc6d11e53",
-  "config_sha256": "08fcb2c2a1e5a79416c3683eeb3e98e1684bf7c1a23f2fa2d194837535442ca8",
+  "compatibility_id": "f157c80b787e4ff7164845a7044aae2cd40f3c1bde3ccf1cc117812991d366d0",
+  "config_revision": "a922b912dfa366975294afb568d815b305acde5d",
+  "config_sha256": "8d0995b68708db77558b1a385df1fca7fd2f3d240da7619f864a9d37a7154af6",
   "configuration": {
     "default_temperature": 0.3,
     "flow_lm": {
@@ -66,17 +66,23 @@
         ]
       }
     },
-    "weights_path": "hf://kyutai/pocket-tts/languages/english/model.safetensors@7f364c05d1be3faf2b234cdbe4cbb68a026d4218",
-    "weights_path_without_voice_cloning": "hf://kyutai/pocket-tts-without-voice-cloning/languages/english/model.safetensors@575d14372df89a4534bcb989870a34e77544b09f"
+    "replace_characters": {
+      "\u2018": "'",
+      "\u2019": "'"
+    },
+    "weights_path": "hf://kyutai/pocket-tts/languages/english/model.safetensors@db04f0e653473e5c7333c69686ac92b7460b0c1d",
+    "weights_path_without_voice_cloning": "hf://kyutai/pocket-tts-without-voice-cloning/languages/english/model.safetensors@a7056f505a4a8ca72d8b5fb1440071d6f1a35739"
   },
-  "development_build": "generated/model-updates/run-20261020T000220Z-0bd3c4b4/build",
-  "engine_version": "0.2.0",
+  "development_build": "generated/model-updates/release-0.3.0/build",
+  "engine_version": "0.3.0",
   "model": {
     "file": "languages/english/model.safetensors",
     "repository": "kyutai/pocket-tts",
-    "revision": "7f364c05d1be3faf2b234cdbe4cbb68a026d4218",
-    "sha256": "7767ce79b1b8db523d867e70855a00627aacfe44aaa5c1fd7ebe135fba71fff9"
+    "revision": "db04f0e653473e5c7333c69686ac92b7460b0c1d",
+    "sha256": "bc96b82436c5ec00d3118ef3b01bc3358423e1766ecae3dca0aeea84789e7d74"
   },
+  "model_alias": "english_2026-10",
+  "olp_sha256": "b7befdd6647031154a490856b7b59bac3a0d813d9e1f65c621928d2640e0d5c4",
   "olv_format_version": 1,
   "release_promoted": false,
   "tokenizer": {
@@ -87,5 +93,7 @@
     "revision": "00eac05ed3d16bdc3f6b5d598874019c34a89214",
     "sha256": "f498428e1eafee50492f7be13dc9bfafcfc12e508cd0eb1b01c92ecd5d8c6687"
   },
-  "validation_report": "generated/model-updates/run-20261020T000220Z-0bd3c4b4/native-validation.log"
+  "upstream_release": "v4.0.1",
+  "upstream_release_commit": "a922b912dfa366975294afb568d815b305acde5d",
+  "validation_report": "generated/model-updates/release-0.3.0/native-validation.log"
 }

@@ -8,7 +8,8 @@
 namespace {
 void require(bool value, const char* message) { if (!value) { throw std::runtime_error(message); } }
 void synthesize(const outloud::PocketModelAsset& model, const outloud::Tokenizer& tokenizer,
-                const outloud::OutLoudVoice& voice, const std::filesystem::path& output, bool expect_eos=false) {
+                const outloud::OutLoudVoice& voice, const std::filesystem::path& output, bool expect_eos=false,
+                std::string_view text="Hello. This is an Out Loud model update test.") {
     outloud::UtterancePipeline pipeline(model,voice,tokenizer,50,
         outloud::FlowLMGenerator::estimate_max_gen_len(50),outloud::cpu::KernelPath::automatic);
     std::vector<float> pcm;
@@ -18,7 +19,7 @@ void synthesize(const outloud::PocketModelAsset& model, const outloud::Tokenizer
         for (float value : frame) { require(std::isfinite(value),"Non-finite smoke PCM"); }
         data.insert(data.end(),frame.begin(),frame.end());
     };
-    pipeline.prepare("Hello. This is an Out Loud model update test.",73);
+    pipeline.prepare(text,73);
     const auto result=pipeline.run(sink,&pcm);
     require(result.status==outloud::SynthesisStatus::completed && result.samples==pcm.size() && !pcm.empty(),"Synthesis did not complete");
     const bool eos=std::all_of(result.segments.begin(),result.segments.end(),[](const auto& segment) {
@@ -63,6 +64,8 @@ int wmain(int argc, wchar_t** argv) {
         synthesize(model,tokenizer,prepared,scratch/"prepared.wav",true);
         synthesize(model,tokenizer,existing,scratch/"existing.wav");
         synthesize(model,tokenizer,external,scratch/"imported.wav");
+        synthesize(model,tokenizer,prepared,scratch/"numbers.wav",true,
+            "Bring 12 coins and 3.5 pounds of ore. The total is 42.");
         std::cout << "PASS: model load, OLV v1 and Safetensors playback, byte-preserving export and invalid asset rejection\n";
         return 0;
     } catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }

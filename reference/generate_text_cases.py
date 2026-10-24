@@ -1,4 +1,4 @@
-"""Regenerate twelve text-only fixtures using untouched, installed Pocket 3.3.0 offline."""
+"""Regenerate text-only fixtures with the active model's text normalization offline."""
 from __future__ import annotations
 
 import argparse
@@ -28,6 +28,9 @@ def main():
         raise ValueError('Fixtures require installed tokenizers 0.23.2')
     from pocket_tts.modules.text_conditioner import JsonTokenizer
     from pocket_tts.models.text_chunking import prepare_text_prompt, split_into_best_sentences
+    import yaml
+    config = yaml.safe_load((ROOT / 'reference/model-config.yaml').read_text(encoding='utf-8'))
+    replacements = config.get('replace_characters', {})
     tokenizer = JsonTokenizer(4000, str(args.tokenizer))  # Explicit local path, no HF resolver call.
     examples = [
         ('simple', 'the guard needs your help'),
@@ -46,19 +49,23 @@ def main():
         ('utf8', '\u00e9lan guides the mage\u2014seek the runestone\u2026 \U0001f9d9\U0001f3fd \u6771\u4eac'),
         ('special_tokens', 'Speak <s>now</s>, then <unk> return <pad> home.'),
         ('unicode_upper', '\u00dfharp runes mark the entrance. e\u0301lan guards the doorway.)'),
+        ('curly_quotes', '\u2018Wait?\u2019 The scout\u2019s ready.'),
+        ('sentence_cleanup', 'Wait? , Then go! ; Bring 12 coins.'),
     ]
     cases = []
     for name, text in examples:
-        prepared, _ = prepare_text_prompt(text, False, False)
+        prepared, _ = prepare_text_prompt(text, False, False, replace_characters=replacements)
         segments = []
-        for chunk in split_into_best_sentences(tokenizer, text, 50, False, False):
-            segment, tail = prepare_text_prompt(chunk, False, False)
+        for chunk in split_into_best_sentences(tokenizer, text, 50, False, False, replace_characters=replacements):
+            segment, tail = prepare_text_prompt(chunk, False, False, replace_characters=replacements)
             segments.append({'text': segment, 'token_ids': tokenizer.encode(segment), 'frames_after_eos': tail + 2})
         raw_ids = tokenizer.encode(text)
         cases.append({'name': name, 'text': text, 'prepared_text': prepared,
             'raw_token_ids': raw_ids, 'decoded_raw_text': tokenizer.decode(raw_ids),
             'full_token_ids': tokenizer.encode(prepared), 'segments': segments})
     result = {'schema_version': 1, 'pocket_tts_version': '3.3.0',
+        'model_config_sha256': hashlib.sha256((ROOT / 'reference/model-config.yaml').read_bytes()).hexdigest(),
+        'replace_characters': replacements,
         'tokenizers_version': importlib.metadata.version('tokenizers'), 'tokenizer_sha256': sha,
         'max_tokens': 50, 'cases': cases}
     args.output.parent.mkdir(parents=True, exist_ok=True)

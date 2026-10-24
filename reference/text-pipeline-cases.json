@@ -1,6 +1,11 @@
 {
   "schema_version": 1,
   "pocket_tts_version": "3.3.0",
+  "model_config_sha256": "8d0995b68708db77558b1a385df1fca7fd2f3d240da7619f864a9d37a7154af6",
+  "replace_characters": {
+    "’": "'",
+    "‘": "'"
+  },
   "tokenizers_version": "0.23.2",
   "tokenizer_sha256": "f498428e1eafee50492f7be13dc9bfafcfc12e508cd0eb1b01c92ecd5d8c6687",
   "max_tokens": 50,
@@ -68,14 +73,14 @@
     {
       "name": "whitespace",
       "text": "   meet\r\n   the\t scout    at dawn   ",
-      "prepared_text": "Meet   the\t scout  at dawn.",
+      "prepared_text": "Meet the scout at dawn.",
       "raw_token_ids": [260, 198, 164, 260, 1134, 17, 14, 260, 260, 265, 13, 1050, 629, 260, 260, 260, 309, 1093, 1421, 260, 260, 230, 132, 135],
       "decoded_raw_text": "   meet\r\n   the\t scout    at dawn   ",
-      "full_token_ids": [1164, 597, 260, 260, 265, 13, 1050, 629, 260, 309, 1093, 1421, 263],
+      "full_token_ids": [1164, 597, 265, 1050, 629, 309, 1093, 1421, 263],
       "segments": [
         {
-          "text": "Meet  the\t scout at dawn.",
-          "token_ids": [1164, 597, 260, 265, 13, 1050, 629, 309, 1093, 1421, 263],
+          "text": "Meet the scout at dawn.",
+          "token_ids": [1164, 597, 265, 1050, 629, 309, 1093, 1421, 263],
           "frames_after_eos": 3
         }
       ]
@@ -98,14 +103,14 @@
     {
       "name": "apostrophes",
       "text": "Don't forget the captain's orders. The scout’s waiting.",
-      "prepared_text": "Don't forget the captain's orders. The scout’s waiting.",
+      "prepared_text": "Don't forget the captain's orders. The scout's waiting.",
       "raw_token_ids": [1201, 264, 274, 260, 1858, 265, 331, 3492, 264, 261, 1107, 261, 263, 364, 1050, 629, 230, 132, 157, 261, 934, 273, 263],
       "decoded_raw_text": "Don't forget the captain's orders. The scout’s waiting.",
-      "full_token_ids": [1201, 264, 274, 260, 1858, 265, 331, 3492, 264, 261, 1107, 261, 263, 364, 1050, 629, 230, 132, 157, 261, 934, 273, 263],
+      "full_token_ids": [1201, 264, 274, 260, 1858, 265, 331, 3492, 264, 261, 1107, 261, 263, 364, 1050, 629, 264, 261, 934, 273, 263],
       "segments": [
         {
-          "text": "Don't forget the captain's orders. The scout’s waiting.",
-          "token_ids": [1201, 264, 274, 260, 1858, 265, 331, 3492, 264, 261, 1107, 261, 263, 364, 1050, 629, 230, 132, 157, 261, 934, 273, 263],
+          "text": "Don't forget the captain's orders. The scout's waiting.",
+          "token_ids": [1201, 264, 274, 260, 1858, 265, 331, 3492, 264, 261, 1107, 261, 263, 364, 1050, 629, 264, 261, 934, 273, 263],
           "frames_after_eos": 3
         }
       ]
@@ -174,8 +179,8 @@
       "full_token_ids": [1476, 336, 949, 260, 1, 372, 2, 260, 262, 351, 260, 0, 260, 260, 1774, 260, 3, 260, 648, 263],
       "segments": [
         {
-          "text": "Speak now , then  return  home.",
-          "token_ids": [1476, 336, 949, 372, 260, 262, 351, 260, 260, 1774, 260, 648, 263],
+          "text": "Speak now , then return home.",
+          "token_ids": [1476, 336, 949, 372, 260, 262, 351, 260, 1774, 648, 263],
           "frames_after_eos": 3
         }
       ]
@@ -191,6 +196,36 @@
         {
           "text": "SSharp runes mark the entrance. élan guards the doorway. )",
           "token_ids": [446, 640, 739, 334, 401, 791, 371, 2242, 265, 260, 530, 334, 806, 263, 402, 208, 133, 1494, 3026, 261, 265, 1296, 1163, 263, 260, 45],
+          "frames_after_eos": 3
+        }
+      ]
+    },
+    {
+      "name": "curly_quotes",
+      "text": "‘Wait?’ The scout’s ready.",
+      "prepared_text": "'Wait?' The scout's ready.",
+      "raw_token_ids": [260, 230, 132, 156, 1563, 1537, 274, 292, 230, 132, 157, 364, 1050, 629, 230, 132, 157, 261, 1238, 263],
+      "decoded_raw_text": "‘Wait?’ The scout’s ready.",
+      "full_token_ids": [260, 264, 1563, 1537, 274, 292, 264, 364, 1050, 629, 264, 261, 1238, 263],
+      "segments": [
+        {
+          "text": "'Wait? ' The scout's ready.",
+          "token_ids": [260, 264, 1563, 1537, 274, 292, 260, 264, 364, 1050, 629, 264, 261, 1238, 263],
+          "frames_after_eos": 3
+        }
+      ]
+    },
+    {
+      "name": "sentence_cleanup",
+      "text": "Wait? , Then go! ; Bring 12 coins.",
+      "prepared_text": "Wait? Then go! Bring 12 coins.",
+      "raw_token_ids": [3314, 292, 260, 262, 1160, 350, 682, 260, 1230, 1648, 273, 260, 341, 365, 571, 356, 261, 263],
+      "decoded_raw_text": "Wait? , Then go! ; Bring 12 coins.",
+      "full_token_ids": [3314, 292, 1160, 350, 682, 1648, 273, 260, 341, 365, 571, 356, 261, 263],
+      "segments": [
+        {
+          "text": "Wait? Then go! Bring 12 coins.",
+          "token_ids": [3314, 292, 1160, 350, 682, 1648, 273, 260, 341, 365, 571, 356, 261, 263],
           "frames_after_eos": 3
         }
       ]

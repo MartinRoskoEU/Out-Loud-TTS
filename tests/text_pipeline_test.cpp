@@ -22,7 +22,9 @@ void edge_cases(const outloud::Tokenizer& tokenizer) {
         rejected([&] { (void)tokenizer.encode(text); }, "Invalid UTF-8 accepted");
         rejected([&] { (void)prepare_text(text, tokenizer); }, "Invalid prompt UTF-8 accepted");
     }
-    require(prepare_text("go    now", tokenizer).text == "Go  now.", "Space replacement must be one pass");
+    require(prepare_text("go    now", tokenizer).text == "Go now.", "Model whitespace normalization");
+    require(prepare_text("The scout\xe2\x80\x99s ready", tokenizer).text == "The scout's ready.", "Model apostrophe replacement");
+    require(prepare_text("Wait? , Then go", tokenizer).text == "Wait? Then go.", "Model sentence punctuation cleanup");
     require(prepare_text("Bring ore:", tokenizer).text == "Bring ore.", "Trailing weak punctuation");
     require(prepare_text("'Help?'", tokenizer).text == "'Help?'", "Terminal punctuation behind closers");
     require(prepare_text("Bring ore,;—”", tokenizer).text == "Bring ore.”", "Weak punctuation and closer");
