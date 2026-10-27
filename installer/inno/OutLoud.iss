@@ -43,6 +43,7 @@ DisableDirPage=auto
 UsePreviousAppDir=yes
 DefaultGroupName=Out Loud
 PrivilegesRequired=admin
+SetupLogging=yes
 ArchitecturesAllowed=x64os
 ArchitecturesInstallIn64BitMode=x64os
 MinVersion=10.0.22000

@@ -4,7 +4,8 @@ param(
     [Parameter(Mandatory = $true)][string]$StageDirectory,
     [string]$OutputDirectory,
     [string]$CompilerPath = 'C:\Program Files\Inno Setup 7\ISCC.exe',
-    [switch]$PreserveHistoricalInstallers
+    [switch]$PreserveHistoricalInstallers,
+    [ValidateSet('OutLoud-Setup.exe')][string]$InstallerFilename
 )
 . (Join-Path $PSScriptRoot 'production-common.ps1')
 . (Join-Path $PSScriptRoot 'build-components.ps1')
@@ -36,13 +37,16 @@ Assert-ProductionPlainPath $output
 [ordered]@{ owner = 'OutLoud installer workflow'; status = 'compiling'; stage = $stage } |
     ConvertTo-Json | Set-Content -LiteralPath (Join-Path $output 'build-input.json') -Encoding UTF8
 # Compile only. No IDE-configured signer, installer execution or certificate use.
-& $CompilerPath --no-ide-signtools ('/DStageRoot=' + $stage) ('/O' + $output) (Join-Path $PSScriptRoot 'OutLoud.iss') | Out-Host
+$compilerArguments = @('--no-ide-signtools', ('/DStageRoot=' + $stage), ('/O' + $output))
+if ($InstallerFilename) { $compilerArguments += '/F' + [IO.Path]::GetFileNameWithoutExtension($InstallerFilename) }
+& $CompilerPath @compilerArguments (Join-Path $PSScriptRoot 'OutLoud.iss') | Out-Host
 if ($LASTEXITCODE -ne 0) { throw "Inno compilation failed; diagnostic output retained at $output" }
 [void](Assert-ProductionStage $stage)
 $after = Get-ProductionSourceIdentity
 if ($after.head -cne $identity.head -or $after.tree_sha256 -cne $identity.tree_sha256) { throw 'Source changed during compilation. Output is not a qualified candidate.' }
 $product = Get-OutLoudProductMetadata
-$installer = Join-Path $output $product.installer_filename
+$filename = if ($InstallerFilename) { $InstallerFilename } else { $product.installer_filename }
+$installer = Join-Path $output $filename
 Assert-ProductionPlainPath $installer
 $info = [Diagnostics.FileVersionInfo]::GetVersionInfo($installer)
 $fixedVersion = '{0}.{1}.{2}.{3}' -f $info.FileMajorPart,$info.FileMinorPart,$info.FileBuildPart,$info.FilePrivatePart
@@ -64,6 +68,10 @@ if ($signature.Status -ne 'NotSigned') { throw 'Unexpected installer signature. 
     source = $identity; executed = $false; validation_scope = 'build_and_packaging'; manual_release_approval = 'pending'
 } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $output 'installer-build.json') -Encoding UTF8
 Write-Output "BUILT $installer"
-& (Join-Path $PSScriptRoot 'publish-installer.ps1') -BuildDirectory $output -PreserveHistoricalInstallers:$PreserveHistoricalInstallers
+if ($InstallerFilename) {
+    & (Join-Path $PSScriptRoot 'publish-installer.ps1') -BuildDirectory $output -PreserveHistoricalInstallers:$PreserveHistoricalInstallers -InstallerFilename $InstallerFilename
+} else {
+    & (Join-Path $PSScriptRoot 'publish-installer.ps1') -BuildDirectory $output -PreserveHistoricalInstallers:$PreserveHistoricalInstallers
+}
 Write-Output 'Public release installer prepared for final manual approval. Publisher unsigned; setup was not executed.'
 } finally { Exit-OutLoudArtifactLock $artifactLock }

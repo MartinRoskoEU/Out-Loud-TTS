@@ -5,6 +5,46 @@ unsigned checks{};
 void check(bool value,const char* message){if(!value)throw std::runtime_error(message);++checks;}
 template<class F> void refuses(F&& f,const char* code){bool found=false;std::string observed="no refusal";try{f();}catch(const SigningError& e){observed=e.what();found=observed.find(code)!=std::string::npos;}
     if(!found)throw std::runtime_error(std::string("expected ")+code+", observed "+observed);check(found,code);}
+void volume_root_checks(const fs::path& fixture){
+    const auto open=[](const fs::path& p,Handle& h){h.value=CreateFileW(p.c_str(),FILE_READ_ATTRIBUTES,
+        FILE_SHARE_READ|FILE_SHARE_WRITE,nullptr,OPEN_EXISTING,FILE_FLAG_BACKUP_SEMANTICS|FILE_FLAG_OPEN_REPARSE_POINT,nullptr);};
+    DWORD error{};Handle root,directory;open(fixture.root_path(),root);open(fixture,directory);
+    const bool verified=actual_volume_root(root.value,error);
+    check(verified && error==ERROR_SUCCESS,"real volume root has positive physical identity proof");
+    check(!actual_volume_root(directory.value,error),"ordinary directory is not a volume root");
+    check(!actual_volume_root(INVALID_HANDLE_VALUE,error) && error==ERROR_INVALID_HANDLE,"failed proof grants no root exception");
+    const auto policy=[](const wchar_t* sddl,bool proof,bool ancestor=true,bool replacement=true){
+        Local descriptor;check(ConvertStringSecurityDescriptorToSecurityDescriptorW(sddl,SDDL_REVISION_1,
+            reinterpret_cast<PSECURITY_DESCRIPTOR*>(&descriptor.value),nullptr)!=FALSE,"private in-memory ACL fixture");
+        require_admin_descriptor(descriptor.value,ancestor,replacement,proof);};
+    // Exact root ACL captured from Windows Sandbox. Never applied to disk.
+    constexpr auto sandbox=L"O:SYD:(A;;0x1000a1;;;S-1-15-3-65536-1888954469-739942743-1668119174-2468466756-4239452838-1296943325-355587736-700089176)(A;;FA;;;BA)(A;OICIIO;GA;;;BA)(A;;FA;;;SY)(A;OICIIO;GA;;;SY)(A;;0x1301bf;;;AU)(A;OICIIO;SDGXGWGR;;;AU)(A;;0x1200a9;;;BU)(A;OICIIO;GXGR;;;BU)";
+    policy(sandbox,verified);check(true,"confirmed Sandbox ACL accepted on verified volume-root ancestor");
+    refuses([&]{policy(sandbox,false);},"state_acl_writable_by_user");
+    refuses([&]{policy(sandbox,verified,true,false);},"state_acl_writable_by_user");
+    refuses([&]{policy(L"O:SYD:(A;;SD;;;AU)",verified,false,true);},"state_acl_writable_by_user");
+    for(const auto* rights:{L"0x40",L"0x40000",L"0x80000",L"0x10000000"}){
+        const auto sddl=L"O:SYD:(A;;"+std::wstring(rights)+L";;;AU)";
+        refuses([&]{policy(sddl.c_str(),verified);},"state_acl_writable_by_user");}
+    refuses([&]{policy(L"O:AUD:(A;;SD;;;AU)",verified);},"state_owner_invalid");
+    // A SUBST-style drive spelling ending in a backslash is still an ordinary
+    // directory. Use an unused local DOS device and remove only our exact map.
+    struct Alias {std::wstring name,target;~Alias(){if(!name.empty())DefineDosDeviceW(
+        DDD_REMOVE_DEFINITION|DDD_EXACT_MATCH_ON_REMOVE|DDD_RAW_TARGET_PATH|DDD_NO_BROADCAST_SYSTEM,name.c_str(),target.c_str());}} alias;
+    for(wchar_t letter=L'Z';letter>=L'D';--letter){
+        const std::wstring name{letter,L':'};wchar_t existing[1024]{};
+        if(QueryDosDeviceW(name.c_str(),existing,1024) || GetLastError()!=ERROR_FILE_NOT_FOUND)continue;
+        alias.target=L"\\??\\"+fixture.native();
+        check(DefineDosDeviceW(DDD_RAW_TARGET_PATH|DDD_NO_BROADCAST_SYSTEM,name.c_str(),alias.target.c_str())!=FALSE,"private drive alias created");
+        alias.name=name;break;
+    }
+    check(!alias.name.empty(),"unused drive letter available for alias regression");
+    Handle aliased;open(alias.name+L"\\",aliased);
+    check(aliased.value!=INVALID_HANDLE_VALUE,"drive alias opens its directory target");
+    const bool alias_root=actual_volume_root(aliased.value,error);
+    check(!alias_root,"root-shaped drive alias has no volume-root proof");
+    refuses([&]{policy(sandbox,alias_root);},"state_acl_writable_by_user");
+}
 struct Fixture {
     MaintenanceFiles files;MaintenanceJournal state;std::vector<std::wstring> payload;std::wstring registry=L"abcd",host_registry;
     unsigned generation{},reuse{};bool host_confirmed=true;std::string fault;bool interrupt{},failed{};unsigned publications{};
@@ -206,8 +246,9 @@ void inventory_checks(const fs::path& suite){
 }
 }
 int wmain(int argc,wchar_t** argv){
-    try{check(argc==2 || (argc==3 && std::wstring(argv[2])==L"inventory"),"supply a workspace fixture parent [inventory]");const auto parent=installation_path(argv[1]);safe(parent);check(fs::is_directory(parent),"fixture parent exists");
+    try{check(argc==2 || (argc==3 && (std::wstring(argv[2])==L"inventory" || std::wstring(argv[2])==L"security")),"supply a workspace fixture parent [inventory|security]");const auto parent=installation_path(argv[1]);safe(parent);check(fs::is_directory(parent),"fixture parent exists");
         const auto suite=parent/(L"maintenance-"+maintenance_random());check(fs::create_directory(suite),"new private fixture suite");
+        if(argc==3 && std::wstring(argv[2])==L"security"){volume_root_checks(suite);std::wcout<<L"PASS: "<<checks<<L" focused directory security checks; no system ACLs changed.\n";return 0;}
         const auto child=[&](const wchar_t* name){return suite/name;};
         if(argc==3){inventory_checks(suite);std::wcout<<L"PASS: "<<checks<<L" focused inventory upgrade checks; private files, simulated signing/registry. Evidence: "<<suite.native()<<L"\n";return 0;}
         {

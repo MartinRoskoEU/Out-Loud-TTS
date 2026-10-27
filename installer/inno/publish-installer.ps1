@@ -1,6 +1,7 @@
 #Requires -Version 5.1
 [CmdletBinding()]
-param([Parameter(Mandatory = $true)][string]$BuildDirectory, [switch]$PreserveHistoricalInstallers)
+param([Parameter(Mandatory = $true)][string]$BuildDirectory, [switch]$PreserveHistoricalInstallers,
+    [ValidateSet('OutLoud-Setup.exe')][string]$InstallerFilename)
 . (Join-Path $PSScriptRoot 'production-common.ps1')
 . (Join-Path $PSScriptRoot 'build-components.ps1')
 $artifactLock = Enter-OutLoudArtifactLock
@@ -13,7 +14,8 @@ $recordPath = Join-Path $output 'installer-build.json'
 Assert-ProductionPlainPath $recordPath
 $record = Get-Content -LiteralPath $recordPath -Raw -Encoding UTF8 | ConvertFrom-Json
 $product = Get-OutLoudProductMetadata
-$installer = Join-Path $output $product.installer_filename
+$filename = if ($InstallerFilename) { $InstallerFilename } else { $product.installer_filename }
+$installer = Join-Path $output $filename
 if ($record.status -cne 'public-release' -or $record.version -cne $product.version -or
     $record.installer -cne $installer -or $record.sha256 -cnotmatch '^[0-9a-f]{64}$' -or
     $record.publisher_signed -ne $false -or $record.compiler_version -notmatch '^7\.\d+\.\d+$' -or
@@ -55,7 +57,7 @@ if (Test-Path -LiteralPath $publicationRecordPath) {
 $release = Join-Path $ProductionRepository 'release'
 Assert-ProductionPlainPath $release
 if (-not (Test-Path -LiteralPath $release)) { [void](New-Item -ItemType Directory -Path $release) }
-$destination = Join-Path $release $product.installer_filename
+$destination = Join-Path $release $filename
 Assert-ProductionPlainPath $destination
 $serial = [Guid]::NewGuid().ToString('N')
 $temporary = Join-Path $release ('.publish-' + $serial + '.tmp')
@@ -88,7 +90,7 @@ try {
     # verified publication and never operates on release/ itself.
     foreach ($old in Get-ChildItem -LiteralPath $release -File -Force) {
         if ($PreserveHistoricalInstallers) { continue }
-        if ($old.Name -cne $product.installer_filename -and $old.Name -cmatch '^OutLoud-Setup-\d+\.\d+\.\d+\.exe$') {
+        if ($old.Name -cne $filename -and $old.Name -cmatch '^OutLoud-Setup-\d+\.\d+\.\d+\.exe$') {
             try {
                 Assert-ProductionPlainPath $old.FullName
                 $archive = Join-Path $output ('release-obsolete-' + $serial + '-' + $old.Name)

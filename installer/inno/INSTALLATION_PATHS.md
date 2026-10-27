@@ -1,5 +1,51 @@
 # Installation directory and SAPI identity
 
+## Volume-root ancestor validation (0.3.0)
+
+The ancestor replacement check excludes self-`DELETE` only for a positively
+verified actual volume root. It opens the ancestor without following a final
+reparse point, resolves its normalized volume GUID path through the handle,
+opens that GUID root independently and compares volume serial/file identities.
+The ACL used for the exception comes from the verified handle. Failed proof or
+a drive alias to an ordinary directory retains the original DELETE check.
+Ownership, delete-child, security-modification, generic-all, inheritance and
+reparse checks remain enforced; destination/full-directory checks do not receive
+this exception. The check is shared by preflight and the existing native lifecycle.
+
+Focused regression mode in the existing test executable:
+`outloud-install-maintenance-tests.exe <private-fixture-parent> security`.
+It checks the captured Sandbox ACL in memory, prohibited permissions, failed
+proof, ordinary directories and a temporary drive alias, without changing system
+ACLs or installing/uninstalling Out Loud.
+
+## Installation inspection diagnostics (0.3.0)
+
+Setup always enables Inno logging and captures the installation inspection
+helper's stdout/stderr. A failed preflight displays the exact persistent log
+path. Setup also attempts a non-overwriting copy of that log to
+`%TEMP%\OutLoud-Setup-0.3.0-is-*.log`, outside its disposable extraction directory.
+If copying fails, the message points to Inno's original retained `Setup Log`
+file. Copy the displayed file out before closing Windows Sandbox. For a chosen
+filename, launch `OutLoud-Setup.exe /LOG="C:\path\OutLoud-diagnostics.log"`.
+
+Native inspection reports retain schema 1 and the `secure_candidate` success
+contract. Failures additionally emit `inspection_*` fields to stderr and attempt
+a rejected report: category, phase, exact reason, responsible path, Windows API
+and error (or `not_applicable` for a policy refusal), reparse attributes/tag or
+query error, and applicable owner SID/SDDL/ACE index, type, flags, mask and SID.
+Non-ASCII/control characters are escaped as `\uXXXX`; `inspection_path_utf16`
+retains the exact UTF-16 path. A secondary report-writing failure uses
+`report_failure_*` and never replaces the original validation reason. No private
+key or certificate material is logged. Logging does not alter validation,
+certificate handling, signing, SAPI registration or uninstall authorization.
+
+Focused native integration checks are in `test-installation-diagnostics.ps1`.
+To build the same 0.3.0 product with the unversioned delivery filename, pass
+`-InstallerFilename OutLoud-Setup.exe -PreserveHistoricalInstallers` to
+`build-installer.ps1`; the normal verified publication workflow writes into
+`release/` and retains existing versioned artifacts. Version metadata and the
+default versioned build filename remain unchanged.
+
 **Current status:** [A03.12](BUILD.md) supersedes earlier foundation/compiler-gate
 statements below. Shared native maintenance/uninstall and Inno lifecycle are
 integrated for a controlled-test build. Standalone legacy signing/registration

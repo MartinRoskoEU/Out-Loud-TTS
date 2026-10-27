@@ -240,5 +240,5 @@ void maintenance_path_budget(const fs::path& root,const std::vector<std::wstring
     paths.push_back(vault/L"frame-18446744073709551615-255.tmp");
     paths.push_back(vault/L"bootstrap/OutLoudPrerequisites.exe");
     for(const auto& relative:package)for(const auto* part:{L"new",L"backup",L"original",L"failed"})paths.push_back(vault/part/relative);
-    for(const auto& path:paths)signing_require(path.native().size()<MAX_PATH && path.parent_path().native().size()<MAX_PATH-12,"maintenance_path_budget_exceeded");
+    for(const auto& path:paths){inspection_path(path);signing_require(path.native().size()<MAX_PATH && path.parent_path().native().size()<MAX_PATH-12,"maintenance_path_budget_exceeded");}
 }

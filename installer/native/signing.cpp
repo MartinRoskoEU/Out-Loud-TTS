@@ -19,6 +19,7 @@
 #include <memory>
 #include <functional>
 #include <sstream>
+#include <string_view>
 #include <RestartManager.h>
 #include <winver.h>
 #include "maintenance_codec.hpp"
@@ -41,23 +42,31 @@ struct Store { HCERTSTORE value{}; ~Store(){if(value) CertCloseStore(value,0);} 
 struct Certificate { PCCERT_CONTEXT value{}; ~Certificate(){if(value) CertFreeCertificateContext(value);} };
 struct Key { NCRYPT_HANDLE value{}; ~Key(){if(value) NCryptFreeObject(value);} };
 struct Local { void* value{}; ~Local(){if(value) LocalFree(value);} };
+#include "installation_diagnostics.inc"
 void safe(const fs::path& p) {
+    inspection_path(p);
     const auto text=p.native();
     signing_require(p.is_absolute() && !text.starts_with(L"\\\\") && text.size()>=3 &&
         text.substr(2).find(L':')==std::wstring::npos && text.find_first_of(L"\r\n\"")==std::wstring::npos && text.find(L'\0')==text.npos,"unsafe_path");
     for(auto current=p;!current.empty();) {
+        inspection_path(current);
         const auto a=GetFileAttributesW(current.c_str());
-        if(a==INVALID_FILE_ATTRIBUTES)signing_require(GetLastError()==ERROR_FILE_NOT_FOUND || GetLastError()==ERROR_PATH_NOT_FOUND,"path_unreadable");
+        if(a==INVALID_FILE_ATTRIBUTES){const auto error=GetLastError();
+            if(error!=ERROR_FILE_NOT_FOUND && error!=ERROR_PATH_NOT_FOUND)inspection_error("GetFileAttributesW",error);
+            signing_require(error==ERROR_FILE_NOT_FOUND || error==ERROR_PATH_NOT_FOUND,"path_unreadable");}
+        else if(a&FILE_ATTRIBUTE_REPARSE_POINT)inspection_reparse(current,a);
         signing_require(a==INVALID_FILE_ATTRIBUTES || !(a&FILE_ATTRIBUTE_REPARSE_POINT),"unsafe_reparse_path");
         const auto parent=current.parent_path(); if(parent==current) break; current=parent;
     }
+    inspection_path(p);
 }
 void pin(const fs::path& p,Handle& h,bool writable=false) {
     safe(p); h.value=CreateFileW(p.c_str(),GENERIC_READ|(writable?GENERIC_WRITE:0),FILE_SHARE_READ,nullptr,
         OPEN_EXISTING,FILE_FLAG_OPEN_REPARSE_POINT,nullptr);
+    if(h.value==INVALID_HANDLE_VALUE)inspection_error("CreateFileW",GetLastError());
     signing_require(h.value!=INVALID_HANDLE_VALUE,"file_inaccessible_or_locked");
     BY_HANDLE_FILE_INFORMATION info{};
-    signing_require(GetFileInformationByHandle(h.value,&info) && info.nNumberOfLinks==1 &&
+    signing_require(inspection_api(GetFileInformationByHandle(h.value,&info),"GetFileInformationByHandle") && info.nNumberOfLinks==1 &&
         !(info.dwFileAttributes&(FILE_ATTRIBUTE_REPARSE_POINT|FILE_ATTRIBUTE_DIRECTORY)),"unsafe_file_identity");
 }
 std::wstring hex(const BYTE* p,size_t count) {
@@ -90,13 +99,15 @@ void write_new(const fs::path& path,const std::wstring& text,bool protected_stat
         L"O:BAG:BAD:P(A;;FA;;;SY)(A;;FA;;;BA)(A;;FR;;;BU)",SDDL_REVISION_1,
         reinterpret_cast<PSECURITY_DESCRIPTOR*>(&descriptor.value),nullptr),"state_acl_failed");attributes.lpSecurityDescriptor=descriptor.value;}
     Handle file;file.value=CreateFileW(path.c_str(),GENERIC_WRITE,0,protected_state?&attributes:nullptr,CREATE_NEW,FILE_ATTRIBUTE_NORMAL,nullptr);
+    if(file.value==INVALID_HANDLE_VALUE)inspection_error("CreateFileW",GetLastError());
     signing_require(file.value!=INVALID_HANDLE_VALUE,"report_already_exists_or_denied");
     // Reports contain ASCII identifiers only; no keys, user names or secret material.
     std::string bytes;for(auto ch:text){signing_require(ch<128,"report_encoding_failed");bytes+=static_cast<char>(ch);}
-    DWORD written{};signing_require(WriteFile(file.value,bytes.data(),static_cast<DWORD>(bytes.size()),&written,nullptr) &&
-        written==bytes.size() && FlushFileBuffers(file.value),"report_write_failed");
+    DWORD written{};signing_require(inspection_api(WriteFile(file.value,bytes.data(),static_cast<DWORD>(bytes.size()),&written,nullptr),"WriteFile") &&
+        written==bytes.size() && inspection_api(FlushFileBuffers(file.value),"FlushFileBuffers"),"report_write_failed");
 }
 std::wstring ini(const fs::path& path,const wchar_t* section,const wchar_t* key,bool optional=false) {
+    inspection_path(path);
     wchar_t text[256]{};const auto n=GetPrivateProfileStringW(section,key,L"",text,256,path.c_str());
     signing_require(n<255 && (optional || n>0),"metadata_missing_or_invalid");return text;
 }
@@ -148,53 +159,114 @@ bool system_admin_dacl(PSECURITY_DESCRIPTOR descriptor,const std::wstring& sid) 
     }return user && system;
 }
 inline constexpr wchar_t trusted_installer_sid[]=L"S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464";
-void require_admin_protected(const fs::path& path,bool ancestor=false,bool replacement_only=false) {
-    safe(path);Local descriptor;PSID owner{};PACL dacl{};
-    signing_require(GetNamedSecurityInfoW(path.c_str(),SE_FILE_OBJECT,OWNER_SECURITY_INFORMATION|DACL_SECURITY_INFORMATION,
-        &owner,nullptr,&dacl,nullptr,reinterpret_cast<PSECURITY_DESCRIPTOR*>(&descriptor.value))==ERROR_SUCCESS && owner && dacl,"state_security_unreadable");
-    Local value;signing_require(ConvertSidToStringSidW(owner,reinterpret_cast<LPWSTR*>(&value.value)),"state_security_unreadable");
+// Resolve an opened object through the kernel, then independently open the
+// returned volume GUID root and compare physical identities. A drive alias to
+// an ordinary directory must never receive the volume-root DELETE exception.
+bool actual_volume_root(HANDLE directory,DWORD& error){
+    error=ERROR_SUCCESS;
+    FILE_ATTRIBUTE_TAG_INFO attributes{};
+    if(!GetFileInformationByHandleEx(directory,FileAttributeTagInfo,&attributes,sizeof(attributes))){error=GetLastError();return false;}
+    if(!(attributes.FileAttributes&FILE_ATTRIBUTE_DIRECTORY) || (attributes.FileAttributes&FILE_ATTRIBUTE_REPARSE_POINT))return false;
+    wchar_t final_path[50]{};
+    const auto length=GetFinalPathNameByHandleW(directory,final_path,50,FILE_NAME_NORMALIZED|VOLUME_NAME_GUID);
+    if(!length){error=GetLastError();return false;}
+    // A GUID root is exactly \\?\Volume{xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}\.
+    // Longer resolved names (including SUBST targets) are ordinary directories.
+    if(length!=49 || std::wstring_view(final_path,11)!=L"\\\\?\\Volume{" || final_path[47]!=L'}' || final_path[48]!=L'\\')return false;
+    Handle root;root.value=CreateFileW(final_path,FILE_READ_ATTRIBUTES,FILE_SHARE_READ|FILE_SHARE_WRITE,nullptr,
+        OPEN_EXISTING,FILE_FLAG_BACKUP_SEMANTICS|FILE_FLAG_OPEN_REPARSE_POINT,nullptr);
+    if(root.value==INVALID_HANDLE_VALUE){error=GetLastError();return false;}
+    FILE_ID_INFO candidate_id{},root_id{};FILE_ATTRIBUTE_TAG_INFO root_attributes{};
+    if(!GetFileInformationByHandleEx(directory,FileIdInfo,&candidate_id,sizeof(candidate_id)) ||
+        !GetFileInformationByHandleEx(root.value,FileIdInfo,&root_id,sizeof(root_id)) ||
+        !GetFileInformationByHandleEx(root.value,FileAttributeTagInfo,&root_attributes,sizeof(root_attributes))){error=GetLastError();return false;}
+    return (root_attributes.FileAttributes&FILE_ATTRIBUTE_DIRECTORY) && !(root_attributes.FileAttributes&FILE_ATTRIBUTE_REPARSE_POINT) &&
+        candidate_id.VolumeSerialNumber==root_id.VolumeSerialNumber &&
+        std::equal(std::begin(candidate_id.FileId.Identifier),std::end(candidate_id.FileId.Identifier),std::begin(root_id.FileId.Identifier));
+}
+void require_admin_descriptor(PSECURITY_DESCRIPTOR descriptor,bool ancestor,bool replacement_only,bool verified_root){
+    PSID owner{};PACL dacl{};BOOL defaulted{},present{};
+    signing_require(inspection_api(GetSecurityDescriptorOwner(descriptor,&owner,&defaulted),"GetSecurityDescriptorOwner") && owner &&
+        inspection_api(GetSecurityDescriptorDacl(descriptor,&present,&dacl,&defaulted),"GetSecurityDescriptorDacl") && present && dacl,"state_security_unreadable");
+    inspection_security(descriptor);
+    Local value;signing_require(inspection_api(ConvertSidToStringSidW(owner,reinterpret_cast<LPWSTR*>(&value.value)),"ConvertSidToStringSidW"),"state_security_unreadable");
     const std::wstring name=static_cast<wchar_t*>(value.value);
+    if(installation_diagnostic)installation_diagnostic->owner=name;
     signing_require(name==L"S-1-5-18" || name==L"S-1-5-32-544" || (ancestor && name==trusted_installer_sid),"state_owner_invalid");
-    constexpr DWORD replacement=FILE_DELETE_CHILD|DELETE|WRITE_DAC|WRITE_OWNER|GENERIC_ALL;
+    const DWORD replacement=FILE_DELETE_CHILD|WRITE_DAC|WRITE_OWNER|GENERIC_ALL|
+        ((ancestor && replacement_only && verified_root)?0:DELETE);
     const DWORD writes=replacement|(replacement_only?0:FILE_WRITE_DATA|FILE_APPEND_DATA|FILE_WRITE_EA|FILE_WRITE_ATTRIBUTES|GENERIC_WRITE);
-    for(DWORD i=0;i<dacl->AceCount;++i){void* entry{};signing_require(GetAce(dacl,i,&entry),"state_acl_invalid");
-        auto header=static_cast<ACE_HEADER*>(entry);if(header->AceFlags&INHERIT_ONLY_ACE)continue;
+    for(DWORD i=0;i<dacl->AceCount;++i){void* entry{};signing_require(inspection_api(GetAce(dacl,i,&entry),"GetAce"),"state_acl_invalid");
+        auto header=static_cast<ACE_HEADER*>(entry);inspection_ace(i,header);if(header->AceFlags&INHERIT_ONLY_ACE)continue;
         if(header->AceType==ACCESS_DENIED_ACE_TYPE)continue;
         signing_require(header->AceType==ACCESS_ALLOWED_ACE_TYPE,"state_acl_invalid");auto ace=static_cast<ACCESS_ALLOWED_ACE*>(entry);
-        if(ace->Mask&writes){Local principal;signing_require(ConvertSidToStringSidW(&ace->SidStart,reinterpret_cast<LPWSTR*>(&principal.value)),"state_acl_invalid");
+        if(ace->Mask&writes){Local principal;signing_require(inspection_api(ConvertSidToStringSidW(&ace->SidStart,reinterpret_cast<LPWSTR*>(&principal.value)),"ConvertSidToStringSidW"),"state_acl_invalid");
             const std::wstring identity=static_cast<wchar_t*>(principal.value);
+            if(installation_diagnostic)installation_diagnostic->ace_sid=identity;
             signing_require(identity==L"S-1-5-18" || identity==L"S-1-5-32-544" || (ancestor && identity==trusted_installer_sid),"state_acl_writable_by_user");}
     }
 }
+void require_admin_protected(const fs::path& path,bool ancestor=false,bool replacement_only=false) {
+    if(installation_diagnostic){const auto phase=installation_diagnostic->phase;inspection_stage(phase.c_str(),path);}
+    safe(path);Local descriptor;Handle directory;bool verified_root=false;
+    if(ancestor && replacement_only){
+        directory.value=CreateFileW(path.c_str(),READ_CONTROL|FILE_READ_ATTRIBUTES,FILE_SHARE_READ|FILE_SHARE_WRITE,nullptr,
+            OPEN_EXISTING,FILE_FLAG_BACKUP_SEMANTICS|FILE_FLAG_OPEN_REPARSE_POINT,nullptr);
+        DWORD error=directory.value==INVALID_HANDLE_VALUE?GetLastError():ERROR_SUCCESS;
+        if(directory.value!=INVALID_HANDLE_VALUE)verified_root=actual_volume_root(directory.value,error);
+        if(installation_diagnostic){installation_diagnostic->volume_root_verified=verified_root?1:0;
+            installation_diagnostic->volume_root_error=error;}
+    }
+    // Bind the ACL to the exact object whose root identity was verified. If any
+    // proof step fails, keep the original named-object policy including DELETE.
+    const auto status=verified_root?
+        inspection_status(GetSecurityInfo(directory.value,SE_FILE_OBJECT,OWNER_SECURITY_INFORMATION|DACL_SECURITY_INFORMATION,
+            nullptr,nullptr,nullptr,nullptr,reinterpret_cast<PSECURITY_DESCRIPTOR*>(&descriptor.value)),"GetSecurityInfo"):
+        inspection_status(GetNamedSecurityInfoW(path.c_str(),SE_FILE_OBJECT,OWNER_SECURITY_INFORMATION|DACL_SECURITY_INFORMATION,
+            nullptr,nullptr,nullptr,nullptr,reinterpret_cast<PSECURITY_DESCRIPTOR*>(&descriptor.value)),"GetNamedSecurityInfoW");
+    signing_require(status==ERROR_SUCCESS && descriptor.value,"state_security_unreadable");
+    require_admin_descriptor(descriptor.value,ancestor,replacement_only,verified_root);
+}
 void require_installation_location(const fs::path& root) {
+    inspection_stage("path_attributes",root);
     safe(root);
     const auto volume=root.root_path();
+    inspection_stage("volume",volume);
     signing_require(GetDriveTypeW(volume.c_str())==DRIVE_FIXED,"installation_requires_fixed_local_drive");
     wchar_t filesystem[MAX_PATH]{};
-    signing_require(GetVolumeInformationW(volume.c_str(),nullptr,0,nullptr,nullptr,nullptr,filesystem,MAX_PATH) &&
+    signing_require(inspection_api(GetVolumeInformationW(volume.c_str(),nullptr,0,nullptr,nullptr,nullptr,filesystem,MAX_PATH),"GetVolumeInformationW") &&
         _wcsicmp(filesystem,L"NTFS")==0,"installation_requires_ntfs");
     auto existing=root;
-    while(!fs::exists(existing)){const auto parent=existing.parent_path();signing_require(parent!=existing,"installation_parent_missing");existing=parent;}
+    inspection_stage("parent_search",existing);
+    while(!fs::exists(existing)){const auto parent=existing.parent_path();signing_require(parent!=existing,"installation_parent_missing");existing=parent;inspection_path(existing);}
     signing_require(fs::is_directory(existing),"installation_parent_not_directory");
+    inspection_stage("directory_security",existing);
     require_admin_protected(existing,true);
     // New directories must not inherit ordinary-user write rights.
     Local descriptor;PACL dacl{};
-    signing_require(GetNamedSecurityInfoW(existing.c_str(),SE_FILE_OBJECT,DACL_SECURITY_INFORMATION,
-        nullptr,nullptr,&dacl,nullptr,reinterpret_cast<PSECURITY_DESCRIPTOR*>(&descriptor.value))==ERROR_SUCCESS && dacl,"state_security_unreadable");
+    const auto inspected_owner=installation_diagnostic?installation_diagnostic->owner:std::wstring{};
+    inspection_stage("inherited_acl",existing);
+    if(installation_diagnostic)installation_diagnostic->owner=inspected_owner;
+    signing_require(inspection_status(GetNamedSecurityInfoW(existing.c_str(),SE_FILE_OBJECT,DACL_SECURITY_INFORMATION,
+        nullptr,nullptr,&dacl,nullptr,reinterpret_cast<PSECURITY_DESCRIPTOR*>(&descriptor.value)),"GetNamedSecurityInfoW")==ERROR_SUCCESS && dacl,"state_security_unreadable");
+    inspection_security(descriptor.value);
     {
         constexpr DWORD writes=FILE_WRITE_DATA|FILE_APPEND_DATA|FILE_DELETE_CHILD|FILE_WRITE_EA|FILE_WRITE_ATTRIBUTES|DELETE|WRITE_DAC|WRITE_OWNER|GENERIC_WRITE|GENERIC_ALL;
-        for(DWORD i=0;i<dacl->AceCount;++i){void* entry{};signing_require(GetAce(dacl,i,&entry),"state_acl_invalid");
+        for(DWORD i=0;i<dacl->AceCount;++i){void* entry{};signing_require(inspection_api(GetAce(dacl,i,&entry),"GetAce"),"state_acl_invalid");
             auto ace=static_cast<ACCESS_ALLOWED_ACE*>(entry);
+            inspection_ace(i,&ace->Header);
             if(ace->Header.AceType==ACCESS_DENIED_ACE_TYPE)continue;
             signing_require(ace->Header.AceType==ACCESS_ALLOWED_ACE_TYPE,"state_acl_invalid");
             if((ace->Header.AceFlags&(OBJECT_INHERIT_ACE|CONTAINER_INHERIT_ACE)) && (ace->Mask&writes)){
-                Local principal;signing_require(ConvertSidToStringSidW(&ace->SidStart,reinterpret_cast<LPWSTR*>(&principal.value)),"state_acl_invalid");
+                Local principal;signing_require(inspection_api(ConvertSidToStringSidW(&ace->SidStart,reinterpret_cast<LPWSTR*>(&principal.value)),"ConvertSidToStringSidW"),"state_acl_invalid");
                 const std::wstring who=static_cast<wchar_t*>(principal.value);
+                if(installation_diagnostic)installation_diagnostic->ace_sid=who;
                 signing_require(who==L"S-1-5-18" || who==L"S-1-5-32-544" || who==L"S-1-3-0" || who==trusted_installer_sid,"installation_inheritance_writable_by_user");
             }
         }
     }
     for(auto current=existing.parent_path();!current.empty();){
+        inspection_stage("ancestor_security",current);
         require_admin_protected(current,true,true);
         const auto parent=current.parent_path();if(parent==current)break;current=parent;
     }
@@ -433,6 +505,7 @@ std::wstring maintenance_failed_fresh_identity(const fs::path& root,const std::v
     WindowsUninstall audit(root);return maintenance_failed_fresh_audit(audit,package);
 }
 #include "maintenance_fresh_cleanup.inc"
+#include "installation_inspection.inc"
 }
 #ifndef OUTLOUD_MAINTENANCE_CHECK
 int wmain(int argc,wchar_t** argv){
@@ -499,21 +572,7 @@ int wmain(int argc,wchar_t** argv){
             op.finish(outcome);
             write_new(argv[3],maintenance_result(op,outcome));return 0;
         }
-        if(command==L"--installation-inspect"){
-            signing_require(argc==4,"invalid_arguments");const auto root=installation_path(argv[2]);
-            require_installation_location(root);
-            maintenance_path_budget(root,{std::begin(registration_payload_paths),std::end(registration_payload_paths)});
-            if(fs::exists(root) && !fs::is_empty(root) && !fs::exists(root/L"configuration/signing.ini"))
-                static_cast<void>(maintenance_failed_fresh_identity(root,{std::begin(registration_payload_paths),std::end(registration_payload_paths)}));
-            const auto state=root/L"configuration/signing.ini";
-            if(fs::exists(state)){
-                require_admin_protected(state);Handle file;pin(state,file);
-                signing_require(ini(state,L"ownership",L"schema")==L"1" && ini(state,L"ownership",L"product")==L"OutLoud" &&
-                    ini(state,L"ownership",L"scope")==L"LocalMachine" && hexadecimal(ini(state,L"ownership",L"installation_id"),32) &&
-                    hexadecimal(ini(state,L"ownership",L"certificate_sha256"),64),"ownership_mismatch");
-            }
-            write_new(argv[3],L"[results]\nschema=1\nlocation=secure_candidate\n");return 0;
-        }
+        if(command==L"--installation-inspect")return run_installation_inspection(argc,argv);
         if(command==L"--registration-inspect"){
             signing_require(argc==4,"invalid_arguments");
             const auto report=registration_inspection(argv[2]);std::wcout<<report;write_new(argv[3],report);return 0;
