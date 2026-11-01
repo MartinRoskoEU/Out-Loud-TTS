@@ -113,8 +113,8 @@ struct Pins {
     std::filesystem::path path;
     std::vector<Handle> handles;
     bool exists=true;
-    Pins(const std::filesystem::path& input,bool create=false,bool missing_ok=false) : path(local(input,Code::unsafe_path)) {
-        auto current=path.root_path(); handles.push_back(directory(current));
+    Pins(const std::filesystem::path& input,bool create=false,bool missing_ok=false,DWORD extra_access=0) : path(local(input,Code::unsafe_path)) {
+        auto current=path.root_path(); handles.push_back(directory(current,extra_access));
         for (const auto& component : path.relative_path()) {
             current/=component;
             auto attributes=GetFileAttributesW(current.c_str());
@@ -127,7 +127,7 @@ struct Pins {
                 } else if (absent(error) && missing_ok) { exists=false; return; }
                 else { fail_access(Code::library_unavailable,"Cannot access local directory",current,error); }
             }
-            handles.push_back(directory(current));
+            handles.push_back(directory(current,extra_access));
         }
     }
 };

@@ -33,55 +33,43 @@ private:
     std::optional<VoiceImportError> import_error_;
     std::vector<std::string> duplicate_ids_;
 };
-enum class VoiceImportKind { pocket_prepared, olv };
+enum class VoiceImportKind { pocket_native };
 enum class VoiceHealth {
     valid, missing_voice, corrupt_voice, metadata_corrupt, unsupported_metadata_version,
     unsupported_voice_version, incompatible_model, hash_mismatch, unsafe_entry, unavailable, replacement_pending, removal_pending
 };
 [[nodiscard]] std::string_view voice_health_name(VoiceHealth health) noexcept;
 struct VoiceMetadata {
-    std::uint32_t schema_version = 1;
-    std::string library_id, display_name;
-    std::uint32_t olv_version = 1;
-    std::string olv_sha256, source_sha256, compatibility_id, imported_utc, source_filename;
-    VoiceImportKind import_kind = VoiceImportKind::olv;
-    // Retired schema-1 boolean, preserved only for metadata round trips.
-    bool reserved_metadata_flag = false;
+    std::uint32_t schema_version = 2;
+    std::string library_id, display_name, source_sha256, imported_utc, source_filename;
+    VoiceImportKind import_kind = VoiceImportKind::pocket_native;
+    // Native profiles have no model identity, revision or provenance.
+    std::string profile_sha256;
+    [[nodiscard]] const std::string& content_sha256() const noexcept { return profile_sha256; }
 };
 struct LibraryVoice {
     // Directory identity is authoritative even when metadata is corrupt.
     std::string library_id;
     std::optional<VoiceMetadata> metadata;
-    std::filesystem::path managed_olv_path;
     VoiceHealth health = VoiceHealth::unavailable;
     std::string detail;
+    std::filesystem::path managed_native_path;
 };
 enum class DuplicateContentPolicy { reject, allow_separate_entry };
 struct LibraryImportResult {
     LibraryVoice voice;
     std::vector<std::string> duplicate_ids;
 };
-struct VoiceReplaceOptions {
-    VoiceImportOptions import;
-    // Required optimistic concurrency assertions from a native read snapshot.
-    std::string expected_display_name, expected_olv_sha256;
-    // Called under the library lock with validated target and staged asset.
-    // Must not re-enter VoiceLibrary. Exceptions propagate without publication.
-    std::function<void(const LibraryVoice&, const std::filesystem::path&)> validate_before_publish;
-};
-struct LibraryReplaceResult {
-    LibraryVoice voice;
-    bool changed = false, cleanup_pending = false;
-    std::string detail;
-};
+
+
 struct VoiceExportOptions {
     bool replace_existing = false;
-    std::string expected_display_name, expected_olv_sha256;
+    std::string expected_display_name, expected_content_sha256;
     // "absent" or the native destination fingerprint captured before overwrite confirmation.
     std::optional<std::string> expected_destination;
 };
 // Read-only, local destination inspection; never creates a file or a library.
-[[nodiscard]] std::string inspect_olv_export_destination(const std::filesystem::path&);
+[[nodiscard]] std::string inspect_native_export_destination(const std::filesystem::path&);
 struct VoiceRemovalResult {
     // Successful removal leaves no active entry. Trash cleanup can be retried.
     bool cleanup_pending = false;
@@ -99,7 +87,7 @@ struct RemovalRecoveryResult {
 struct VoiceRemoveOptions {
     // Name/hash/health assertions are required for coordinated removal. Empty
     // name/hash assert absent metadata; standalone removal remains available.
-    std::optional<std::string> expected_display_name, expected_olv_sha256, expected_health;
+    std::optional<std::string> expected_display_name, expected_content_sha256, expected_health;
     // Runs under the library lock AFTER reversible detach, BEFORE file deletion.
     // Must not re-enter VoiceLibrary. Failure attempts to restore the directory.
     RemovalRegistrationIdentity registration_identity;
@@ -121,25 +109,15 @@ public:
     // isolated test storage; they do not grant machine-token eligibility.
     [[nodiscard]] bool is_machine_storage() const noexcept { return machine_storage_; }
     [[nodiscard]] std::vector<LibraryVoice> list_voices() const;
-    [[nodiscard]] LibraryVoice inspect_voice(std::string_view id) const;
-    [[nodiscard]] LibraryImportResult import_pocket_voice(const std::filesystem::path& source,
-        std::string_view display_name, const VoiceImportOptions& options,
-        DuplicateContentPolicy duplicates = DuplicateContentPolicy::reject);
-    [[nodiscard]] LibraryImportResult import_olv(const std::filesystem::path& source,
+    [[nodiscard]] LibraryVoice inspect_voice(std::string_view id, std::stop_token cancellation = {}) const;
+    [[nodiscard]] LibraryImportResult import_native_profile(const std::filesystem::path& source,
         std::string_view display_name, DuplicateContentPolicy duplicates = DuplicateContentPolicy::reject);
-    [[nodiscard]] LibraryReplaceResult replace_pocket_voice(std::string_view id,
-        const std::filesystem::path& source, const VoiceReplaceOptions& options);
-    [[nodiscard]] LibraryReplaceResult replace_olv(std::string_view id,
-        const std::filesystem::path& source, const VoiceReplaceOptions& options);
-    [[nodiscard]] OlvInfo export_olv(std::string_view id, const std::filesystem::path& destination,
-                                   bool replace_existing = false) const;
-    [[nodiscard]] OlvInfo export_olv(std::string_view id, const std::filesystem::path& destination,
-                                   const VoiceExportOptions&) const;
+    [[nodiscard]] std::string export_native_profile(std::string_view id, const std::filesystem::path& destination,
+        const VoiceExportOptions& options = {}) const;
     [[nodiscard]] LibraryVoice rename_voice(std::string_view id, std::string_view display_name);
     [[nodiscard]] VoiceRemovalResult remove_voice(std::string_view id);
     [[nodiscard]] VoiceRemovalResult remove_voice(std::string_view id, const VoiceRemoveOptions&);
     // Explicitly discards unpublished staging work and completes already committed removals.
-    // Also recovers journalled replacements in place; never deletes an active entry.
     // Unsafe/locked/unknown recovery state is retained and reported.
     [[nodiscard]] LibraryCleanupResult cleanup_pending(const RemovalRegistrationIdentity& registration_identity = {});
     // Explicit mutation/maintenance only; read snapshots never invoke recovery.
@@ -152,5 +130,6 @@ private:
     void with_read_snapshot(const std::function<void(std::vector<LibraryVoice>&&)>&) const;
     std::filesystem::path root_;
     bool machine_storage_ = false;
+    [[nodiscard]] std::string export_asset(std::string_view, const std::filesystem::path&, const VoiceExportOptions&) const;
 };
 } // namespace outloud

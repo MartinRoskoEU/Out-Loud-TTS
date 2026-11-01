@@ -99,6 +99,7 @@ begin
     Helper := ExpandConstant('{tmp}\OutLoudInstallSigning.exe');
     RuntimeReportSerial := RuntimeReportSerial + 1;
     Report := ExpandConstant('{tmp}\installation-inspect-') + IntToStr(RuntimeReportSerial) + '.ini';
+    OutLoudDiagnosticReport := Report;
     Log('OutLoud inspection: version={#ProductVersion}; directory=' + Directory);
     Log('OutLoud inspection: helper=' + Helper + '; report=' + Report);
     Phase := 'report_preparation';
@@ -149,7 +150,8 @@ begin
     if (Phase = 'helper_extraction') or (Phase = 'helper_execution') then
       ErrorText := 'Installation inspection execution failed (' + Phase + '): ' + ErrorText;
     Log('OutLoud inspection: setup_phase=' + Phase + '; failure=' + ErrorText);
+    OutLoudDiagnosticReport := InstallationDiagnosticLog;
     ErrorText := ErrorText + #13#10#13#10 + 'Diagnostic log (copy it before closing Windows Sandbox):' + #13#10 +
-      InstallationDiagnosticLog;
+      OutLoudDiagnosticReport;
   end;
 end;

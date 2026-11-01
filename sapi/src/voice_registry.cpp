@@ -101,8 +101,9 @@ void writable(const SapiTokenTree& tree,std::wstring_view key) {
         get(L"LibraryId")!=key.substr(15) || tree.children.size()!=1 || !tree.children.contains(L"Attributes") ||
         !tree.children.at(L"Attributes").children.empty()) { throw SapiVoiceError(Code::malformed_token,"Backend refuses unowned or unexpected token tree."); }
     // Managers define the full allowed schema; backend additionally bounds edits.
-    static const std::set<std::wstring> allowed{L"",L"409",L"CLSID",L"OutLoudManagedOwner",L"LibraryId",L"AssetRoot",L"ModelPath",
-        L"TokenizerPath",L"VoicePath",L"Seed",L"MaximumSegmentTokens",L"KernelPath"};
+    static const std::set<std::wstring> native{L"",L"409",L"CLSID",L"OutLoudManagedOwner",L"LibraryId",L"AssetRoot",L"Backend",L"RustRuntimePath",L"VoicePath"};
+    const auto& allowed=native;
+    if (get(L"Backend")!=L"Rust") { throw SapiVoiceError(Code::malformed_token,"Unexpected synthesis backend."); }
     static const std::set<std::wstring> attributes{L"Name",L"Language",L"Vendor"};
     if (tree.values.size()!=allowed.size() || tree.children.at(L"Attributes").values.size()!=attributes.size()) { throw SapiVoiceError(Code::malformed_token,"Unexpected token schema."); }
     for (const auto& [name,value] : tree.values) {

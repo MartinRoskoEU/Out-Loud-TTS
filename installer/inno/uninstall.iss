@@ -55,11 +55,11 @@ begin
   Result := '';
   if not LoadStringFromFile(UninstallRoot + '\configuration\inventory.dat', Raw) then RaiseException('Native inventory is inaccessible.');
   Text := String(Raw);
-  if Copy(Text, 1, 20) <> 'OutLoud.Inventory.2' + #10 then RaiseException('Native inventory schema is unsupported.');
+  if Copy(Text, 1, 20) <> 'OutLoud.Inventory.3' + #10 then RaiseException('Native inventory schema is unsupported.');
   Cursor := 21;
   for Index := 1 to 6 do ReadUninstallInventoryField(Text, Cursor);
   Count := StrToInt(ReadUninstallInventoryField(Text, Cursor));
-  if (Count <= 0) or (Count > 64) then RaiseException('Native inventory count is invalid.');
+  if (Count <= 0) or (Count > 4096) then RaiseException('Native inventory count is invalid.');
   for Index := 1 to Count do begin
     Path := ReadUninstallInventoryField(Text, Cursor);
     if ReadUninstallInventoryField(Text, Cursor) <> '1' then RaiseException('Native inventory file stamp is absent.');
@@ -74,50 +74,144 @@ begin
   if (Cursor <> Length(Text) + 1) or (Length(Result) <> 64) then RaiseException('Native inventory is malformed.');
 end;
 
+function UninstallFailureDescription(const Reason: String): String;
+begin
+  if Reason = 'uninstall_unverified_voice_path' then
+    Result := 'A voice registration points outside Out Loud''s verified shared voice library. It was preserved because its ownership could not be verified. You do not need to delete voices or models manually. Keep the diagnostic report for support.'
+  else if (Reason = 'uninstall_unowned_voice_dependency') or (Reason = 'uninstall_voice_schema_changed') then
+    Result := 'An existing voice registration could not be verified as Out Loud-managed. It was preserved to protect other applications and users. You do not need to delete voices or models manually. Keep the diagnostic report for support.'
+  else if (Reason = 'uninstall_foreign_voice_dependency') or (Reason = 'uninstall_foreign_com_override') then
+    Result := 'An Out Loud-related speech registration was found in a Windows location this installation does not manage, possibly for another user. It was preserved. Keep the diagnostic report for support.'
+  else if Reason = 'uninstall_directory_not_empty_preserved' then
+    Result := 'Out Loud could not finish removing a folder because files or subfolders remain inside it. The remaining content was kept. Keep the diagnostic report for support.'
+  else if (Pos('in_use', Reason) > 0) or (Reason = 'maintenance_resources_active_close_clients') or
+    (Reason = 'maintenance_resource_in_use_or_denied') or (Reason = 'uninstall_plan_locked') then
+    Result := 'Out Loud files are still in use or Windows has denied access. Close Out Loud, World of Warcraft and other speech applications in all signed-in accounts, then retry. No application is closed automatically.'
+  else if (Reason = 'uninstall_maintenance_recovery_required') or (Reason = 'uninstall_legacy_recovery_required') then
+    Result := 'An earlier Out Loud update has not finished. Complete or recover that update before uninstalling. Keep the protected recovery records.'
+  else if (Pos('uninstall_unbound_', Reason) = 1) or (Pos('uninstall_unknown_', Reason) = 1) or
+    (Pos('uninstall_unverified_', Reason) = 1) or (Reason = 'uninstall_new_resource_preserved') then
+    Result := 'Out Loud found files or application data whose ownership or integrity could not be verified. They were preserved instead of being deleted. Keep the diagnostic report for support.'
+  else if (Pos('certificate', Reason) > 0) or (Pos('private_key', Reason) > 0) or (Pos('uninstall_key_', Reason) = 1) then
+    Result := 'Windows could not safely verify or remove the Out Loud installation''s signing certificate or private key. Keep the diagnostic report for support; do not remove other certificates manually.'
+  else
+    Result := 'Out Loud could not complete its safety checks or cleanup. Keep the diagnostic report for support. You do not need to delete voices or models manually.';
+end;
+
 function RunOutLoudUninstall(Command, Expected: String; var ErrorText: String): Boolean;
 var
   ExitCode, Remaining, Index: Integer;
-  Parameters: String;
+  Parameters, Reason, DiagnosticText, VoiceName, VoiceToken, PreviousStatus: String;
+  PreviousStyle: TNewProgressBarStyle;
+  PreviousPosition: Longint;
+  ShowProgress, Launched: Boolean;
+  Output: TExecOutput;
 begin
   Result := False;
   UninstallReportSerial := UninstallReportSerial + 1;
   UninstallReport := ExpandConstant('{tmp}\outloud-uninstall-') + IntToStr(UninstallReportSerial) + '.ini';
+  OutLoudDiagnosticReport := UninstallReport;
+  { Inno destroys UninstallProgressForm before usPostUninstall. Finalization
+    must run without reading or writing any of its controls. }
+  ShowProgress := Command <> '--uninstall-finalize';
+  if ShowProgress then begin
+    PreviousStyle := UninstallProgressForm.ProgressBar.Style;
+    PreviousPosition := UninstallProgressForm.ProgressBar.Position;
+    PreviousStatus := UninstallProgressForm.StatusLabel.Caption;
+    UninstallProgressForm.ProgressBar.State := npbsNormal;
+    UninstallProgressForm.ProgressBar.Style := npbstMarquee;
+    if Command = '--uninstall-check' then
+      UninstallProgressForm.StatusLabel.Caption := 'Checking Out Loud files and shared data...'
+    else
+      UninstallProgressForm.StatusLabel.Caption := 'Removing Out Loud components and shared data...';
+  end;
   try
+    try
     if FileExists(UninstallReport) then RaiseException('Uninstall report already exists.');
     Parameters := Command + ' "' + UninstallRoot + '"';
     if Command = '--uninstall' then Parameters := Parameters + ' --confirmed-complete';
-    if not Exec(UninstallHelper, Parameters + ' "' + UninstallReport + '"',
-      ExpandConstant('{tmp}'), SW_HIDE, ewWaitUntilTerminated, ExitCode) or (ExitCode <> 0) then
+    Log('Out Loud native uninstall: command=' + Command + '; helper=' + UninstallHelper + '; report=' + UninstallReport);
+    ExitCode := -1;
+    Launched := ExecAndCaptureOutput(UninstallHelper, Parameters + ' "' + UninstallReport + '"',
+      ExpandConstant('{tmp}'), SW_HIDE, ewWaitUntilTerminated, ExitCode, Output);
+    Log('Out Loud native uninstall: launched=' + IntToStr(Ord(Launched)) + '; exit_code=' + IntToStr(ExitCode));
+    LogInspectionOutput('uninstall stdout', Output.StdOut);
+    LogInspectionOutput('uninstall stderr', Output.StdErr);
+    if not Launched then
+      RaiseException('The Out Loud cleanup helper could not start. Windows error ' + IntToStr(ExitCode) + ': ' + SysErrorMessage(ExitCode));
+    if Output.Error then
+      RaiseException('The Out Loud cleanup helper output could not be completely captured.');
+    if ExitCode <> 0 then
       RaiseException('Out Loud removal stopped: ' + GetIniString('results', 'reason', 'native cleanup refused or failed', UninstallReport));
     if (GetIniString('results', 'schema', '', UninstallReport) <> '1') or
       (GetIniString('results', 'uninstall', '', UninstallReport) <> Expected) then
       RaiseException('Out Loud cleanup completion could not be verified.');
     Result := True;
   except
-    ErrorText := GetExceptionMessage + #13#10#13#10 +
-      'Close Voice Manager and applications using Out Loud, including World of Warcraft, and retry. No application is closed automatically.' + #13#10#13#10 +
-      'Preserve .outloud-uninstall.dat and maintenance journals. Cleanup is not atomic; some components may already have been removed. ' +
-      'Report: ' + UninstallReport;
+    DiagnosticText := GetExceptionMessage + #13#10 + 'Operation: ' + Command + #13#10 + 'Report: ' + UninstallReport;
+    VoiceToken := GetIniString('results', 'blocked_voice', '', UninstallReport);
+    if GetIniString('results', 'blocked_voice_encoding', '', UninstallReport) = 'utf16le-hex' then
+      VoiceToken := UninstallReadablePath(VoiceToken);
+    if VoiceToken <> '' then
+      DiagnosticText := DiagnosticText + #13#10 + 'Voice token: ' + VoiceToken + #13#10 +
+        'Voice field: ' + GetIniString('results', 'voice_field', '', UninstallReport) + #13#10 +
+        'Registered path: ' + UninstallReadablePath(GetIniString('results', 'voice_actual', '', UninstallReport)) + #13#10 +
+        'Expected path: ' + UninstallReadablePath(GetIniString('results', 'voice_expected', '', UninstallReport));
     if FileExists(UninstallRoot + '\configuration\uninstall.failure.ini') then
-      ErrorText := ErrorText + #13#10 + 'Retained report: ' + UninstallRoot + '\configuration\uninstall.failure.ini';
+      DiagnosticText := DiagnosticText + #13#10 + 'Retained report: ' + UninstallRoot + '\configuration\uninstall.failure.ini';
     if GetIniString('results', 'blocked_resource', '', UninstallReport) <> '' then
-      ErrorText := ErrorText + #13#10 + 'Resource preserved for review: ' + UninstallReadablePath(GetIniString('results', 'blocked_resource', '', UninstallReport));
+      DiagnosticText := DiagnosticText + #13#10 + 'Resource preserved for review: ' + UninstallReadablePath(GetIniString('results', 'blocked_resource', '', UninstallReport));
     if GetIniString('results', 'certificate_source', '', UninstallReport) <> '' then
-      ErrorText := ErrorText + #13#10 + 'Certificate store: ' + UninstallReadablePath(GetIniString('results', 'certificate_source', '', UninstallReport)) +
+      DiagnosticText := DiagnosticText + #13#10 + 'Certificate store: ' + UninstallReadablePath(GetIniString('results', 'certificate_source', '', UninstallReport)) +
         '; Windows error: ' + GetIniString('results', 'certificate_source_error', 'unknown', UninstallReport);
     Remaining := StrToIntDef(GetIniString('results', 'remaining_files', '0', UninstallReport), 0);
-    ErrorText := ErrorText + #13#10 + 'Inventory state: ' + GetIniString('results', 'inventory', 'unverified', UninstallReport) +
+    DiagnosticText := DiagnosticText + #13#10 + 'Inventory state: ' + GetIniString('results', 'inventory', 'unverified', UninstallReport) +
       '. Remaining recorded files: ' + IntToStr(Remaining);
     for Index := 0 to Remaining - 1 do begin
       if Index >= 12 then Break;
-      ErrorText := ErrorText + #13#10 + UninstallReadablePath(GetIniString('results', 'remaining' + IntToStr(Index), '', UninstallReport));
+      DiagnosticText := DiagnosticText + #13#10 + UninstallReadablePath(GetIniString('results', 'remaining' + IntToStr(Index), '', UninstallReport));
     end;
-    ErrorText := ErrorText + #13#10 + 'COM: ' + GetIniString('results', 'registration', 'unknown', UninstallReport) +
+    DiagnosticText := DiagnosticText + #13#10 + 'COM: ' + GetIniString('results', 'registration', 'unknown', UninstallReport) +
       '; voice dependencies: ' + GetIniString('results', 'remaining_voice_dependencies', 'unknown', UninstallReport) +
       '; Personal certificate: ' + GetIniString('results', 'certificate_my', 'unknown', UninstallReport) +
       '; Root certificate: ' + GetIniString('results', 'certificate_root', 'unknown', UninstallReport) +
       '; private key: ' + GetIniString('results', 'private_key', 'unknown', UninstallReport);
+    Reason := GetIniString('results', 'reason', '', UninstallReport);
+    ErrorText := UninstallFailureDescription(Reason);
+    if (Reason = 'uninstall_directory_not_empty_preserved') and
+      (GetIniString('results', 'blocked_resource', '', UninstallReport) <> '') then
+      ErrorText := ErrorText + #13#10#13#10 + 'Folder: ' + UninstallReadablePath(GetIniString('results', 'blocked_resource', '', UninstallReport));
+    VoiceName := GetIniString('results', 'blocked_voice_name', '', UninstallReport);
+    if VoiceName <> '' then
+      ErrorText := ErrorText + #13#10#13#10 + 'Voice: ' + UninstallReadablePath(VoiceName);
+    if (Command = '--uninstall-check') or
+      ((Command = '--uninstall') and (GetIniString('results', 'inventory', '', UninstallReport) = 'preflight_incomplete')) then
+      ErrorText := ErrorText + #13#10#13#10 + 'No files were removed during this safety check.'
+    else
+      ErrorText := ErrorText + #13#10#13#10 + 'Removal is incomplete. Keep the diagnostic report and recovery records before retrying.';
+    ErrorText := ErrorText + #13#10#13#10 + 'Uninstall log: ' + ExpandConstant('{log}');
+    if FileExists(UninstallRoot + '\configuration\uninstall.failure.ini') then begin
+      OutLoudDiagnosticReport := UninstallRoot + '\configuration\uninstall.failure.ini';
+      ErrorText := ErrorText + #13#10 + 'Diagnostic report: ' + UninstallRoot + '\configuration\uninstall.failure.ini'
+    end else if FileExists(UninstallReport) then
+      ErrorText := ErrorText + #13#10 + 'Diagnostic report (copy before closing this window): ' + UninstallReport
+    else begin
+      OutLoudDiagnosticReport := ExpandConstant('{log}');
+      ErrorText := ErrorText + #13#10 + 'The native report was not created. The uninstall log contains the helper launch result and any captured error output.';
+    end;
+    Log(DiagnosticText);
     Log(ErrorText);
+    end;
+  finally
+    if ShowProgress then begin
+      UninstallProgressForm.ProgressBar.Style := PreviousStyle;
+      UninstallProgressForm.ProgressBar.Position := PreviousPosition;
+      if Result then UninstallProgressForm.StatusLabel.Caption := PreviousStatus
+      else begin
+        UninstallProgressForm.ProgressBar.State := npbsError;
+        UninstallProgressForm.StatusLabel.Caption := 'Removal stopped. See the diagnostic report.';
+      end;
+    end;
   end;
 end;
 
@@ -128,7 +222,8 @@ var
 begin
   Result := False;
   { Never allow removing only the Inno host while native cleanup is gated. }
-  if not FoundationLifecycleReady then begin
+  { WizardSilent is setup-only; uninstall checks its own mode below. }
+  if not IsAdmin then begin
     MsgBox('Administrator privileges are required for complete Out Loud uninstallation.', mbError, MB_OK);
     Exit;
   end;
@@ -170,41 +265,49 @@ begin
     MsgBox('The maintenance helper ownership could not be verified. The installation is preserved for checked recovery.', mbError, MB_OK);
     Exit;
   end;
-  if not RunOutLoudUninstall('--uninstall-check', 'ready', ErrorText) then begin
-    MsgBox(ErrorText, mbError, MB_OK); Exit;
-  end;
   Result := True;
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
-  ErrorText, SavedReport: String;
+  ErrorText: String;
 begin
   if CurUninstallStep = usUninstall then begin
-    if MsgBox('Completely uninstall Out Loud?' + #13#10#13#10 +
-      'ALL managed voices, the complete managed voice library and metadata, settings, logs, caches and application data will be permanently deleted, ' +
-      'together with the engine, Voice Manager, models and installation-owned signing certificate/private key.' + #13#10#13#10 +
-      'Independently exported backups and shared Microsoft runtimes are preserved. This cannot be undone.',
-      mbConfirmation, MB_YESNO or MB_DEFBUTTON2) <> IDYES then Abort;
+    { Inno's standard confirmation already explains complete, all-user removal. }
+    if not RunOutLoudUninstall('--uninstall-check', 'ready', ErrorText) then begin
+      ShowOutLoudDiagnostic('Out Loud uninstall', ErrorText, OutLoudDiagnosticReport); Abort;
+    end;
     { Abort from usUninstall stops Inno before it processes host removal. }
     if not RunOutLoudUninstall('--uninstall', 'awaiting_host', ErrorText) then begin
-      MsgBox(ErrorText, mbError, MB_OK); Abort;
+      ShowOutLoudDiagnostic('Out Loud uninstall', ErrorText, OutLoudDiagnosticReport); Abort;
     end;
     UninstallNativeComplete := True;
   end;
   if (CurUninstallStep = usPostUninstall) and UninstallNativeComplete then begin
-    if not RunOutLoudUninstall('--uninstall-finalize', 'complete', ErrorText) then begin
-      { Inno has already processed its host. Preserve recovery state and a durable report. }
-      SavedReport := UninstallRoot + '\configuration\uninstall.failure.ini';
-      MsgBox(ErrorText + #13#10 + 'The Inno host may already be removed. Checked native finalization is required. Recovery report: ' + SavedReport + #13#10 +
-        'Preserved recovery helper: ' + UninstallHelper, mbError, MB_OK);
-      ExitIncompleteOutLoudUninstall(2);
-    end;
-    { Empty-only removal; never recurse over the chosen directory. }
-    if DirExists(UninstallRoot) and not RemoveDir(UninstallRoot) then begin
-      MsgBox('Native components were removed, but the installation directory remains: ' + UninstallRoot + #13#10 +
-        'It may contain a remaining Inno host file or unrelated content. It was preserved; inspect it before deletion.', mbError, MB_OK);
-      ExitIncompleteOutLoudUninstall(2);
+    try
+      if not RunOutLoudUninstall('--uninstall-finalize', 'complete', ErrorText) then begin
+        { Inno has already processed its host. Preserve recovery state and a durable report. }
+        RaiseException(ErrorText + #13#10 + 'The Inno host may already be removed. Checked native finalization is required. Preserve the remaining recovery records in: ' + UninstallRoot);
+      end;
+      { Empty-only removal; never recurse over the chosen directory. }
+      if DirExists(UninstallRoot) and not RemoveDir(UninstallRoot) then begin
+        OutLoudDiagnosticReport := UninstallRoot;
+        RaiseException('Native components were removed, but the installation directory remains: ' + UninstallRoot + #13#10 +
+          'It may contain a remaining Inno host file or unrelated content. It was preserved; inspect it before deletion.');
+      end;
+    except
+      { Inno catches post-uninstall script exceptions and can still show success.
+        Include unexpected script failures in the existing nonzero-exit path. }
+      ErrorText := GetExceptionMessage;
+      Log('Out Loud uninstall finalization failed: ' + ErrorText);
+      if Pos(ExpandConstant('{log}'), ErrorText) = 0 then
+        ErrorText := ErrorText + #13#10#13#10 + 'Uninstall log: ' + ExpandConstant('{log}');
+      try
+        ShowOutLoudDiagnostic('Out Loud uninstall', ErrorText + #13#10#13#10 +
+          'Preserved recovery helper: ' + UninstallHelper, OutLoudDiagnosticReport);
+      finally
+        ExitIncompleteOutLoudUninstall(2);
+      end;
     end;
   end;
 end;

@@ -1,16 +1,569 @@
 {
-  "schema": 2,
+  "schema": 3,
+  "purpose": "OutLoud.WinUI clean development deployment",
   "engine_clsid": "{F38C3398-3552-43B9-8350-7DD301327D70}",
-  "binaries": [
-    { "path": "bin/OutLoudPocketSAPI.dll", "kind": "project", "signing": "project-sign", "machine": "8664" },
-    { "path": "bin/outloud-sapi-check.exe", "kind": "project", "signing": "project-sign", "machine": "8664" },
-    { "path": "bin/msvcp140.dll", "kind": "microsoft-runtime", "signing": "preserve-microsoft", "machine": "8664" },
-    { "path": "bin/msvcp140_atomic_wait.dll", "kind": "microsoft-runtime", "signing": "preserve-microsoft", "machine": "8664" },
-    { "path": "bin/vcruntime140.dll", "kind": "microsoft-runtime", "signing": "preserve-microsoft", "machine": "8664" },
-    { "path": "bin/vcruntime140_1.dll", "kind": "microsoft-runtime", "signing": "preserve-microsoft", "machine": "8664" }
+  "files": [
+    {
+      "path": "bin/OutLoudPocketSAPI.dll",
+      "source": "native",
+      "name": "OutLoudPocketSAPI.dll",
+      "signing": "project-sign",
+      "machine": "8664"
+    },
+    {
+      "path": "bin/outloud-sapi-voices.exe",
+      "source": "native",
+      "name": "outloud-sapi-voices.exe",
+      "signing": "project-sign",
+      "machine": "8664"
+    },
+    {
+      "path": "OutLoudVoiceManagerNative.dll",
+      "source": "native",
+      "name": "OutLoudVoiceManagerNative.dll",
+      "signing": "project-sign",
+      "machine": "8664"
+    },
+    {
+      "path": "OutLoudVoiceImportHelper.exe",
+      "source": "native",
+      "name": "OutLoudVoiceImportHelper.exe",
+      "signing": "project-sign",
+      "machine": "8664"
+    },
+    {
+      "path": "bin/msvcp140.dll",
+      "source": "system",
+      "name": "msvcp140.dll",
+      "signing": "preserve-microsoft",
+      "machine": "8664"
+    },
+    {
+      "path": "bin/msvcp140_atomic_wait.dll",
+      "source": "system",
+      "name": "msvcp140_atomic_wait.dll",
+      "signing": "preserve-microsoft",
+      "machine": "8664"
+    },
+    {
+      "path": "bin/vcruntime140.dll",
+      "source": "system",
+      "name": "vcruntime140.dll",
+      "signing": "preserve-microsoft",
+      "machine": "8664"
+    },
+    {
+      "path": "bin/vcruntime140_1.dll",
+      "source": "system",
+      "name": "vcruntime140_1.dll",
+      "signing": "preserve-microsoft",
+      "machine": "8664"
+    },
+    {
+      "path": "OutLoud.WinUI.exe",
+      "source": "publish",
+      "name": "OutLoud.WinUI.exe",
+      "signing": "project-sign",
+      "machine": "8664"
+    },
+    {
+      "path": "OutLoud.WinUI.dll",
+      "source": "publish",
+      "name": "OutLoud.WinUI.dll",
+      "signing": "project-sign",
+      "machine": "8664"
+    },
+    {
+      "path": "DirectML.dll",
+      "source": "publish",
+      "name": "DirectML.dll",
+      "signing": "preserve-microsoft",
+      "machine": "8664",
+      "sha256": "257c75b2f607940c986d0b96d9309a2c897e57ef3192b6c678d707c22d747611"
+    },
+    {
+      "path": "Microsoft.Graphics.Imaging.Projection.dll",
+      "source": "publish",
+      "name": "Microsoft.Graphics.Imaging.Projection.dll",
+      "signing": "preserve-microsoft",
+      "machine": "msil",
+      "sha256": "47c36c633b6b7fdfcf9ae7016328568b09745cbf58ffc64f6718ff8a0cd21512"
+    },
+    {
+      "path": "Microsoft.InteractiveExperiences.Projection.dll",
+      "source": "publish",
+      "name": "Microsoft.InteractiveExperiences.Projection.dll",
+      "signing": "preserve-microsoft",
+      "machine": "msil",
+      "sha256": "588f22ec752374bc7fbc8c4dd53a1eee36850eaaad94d175da09d3caeda1395a"
+    },
+    {
+      "path": "Microsoft.ML.OnnxRuntime.dll",
+      "source": "publish",
+      "name": "Microsoft.ML.OnnxRuntime.dll",
+      "signing": "preserve-microsoft",
+      "machine": "msil",
+      "sha256": "3a54782bfcaad084c528bee89e34584660ec31770b7eff8c28b7d253a0a36c9a"
+    },
+    {
+      "path": "Microsoft.Security.Authentication.OAuth.Projection.dll",
+      "source": "publish",
+      "name": "Microsoft.Security.Authentication.OAuth.Projection.dll",
+      "signing": "preserve-microsoft",
+      "machine": "msil",
+      "sha256": "4bbfce3f3e7d15625681dae8f2caec2e4f3d5133d806037ccf0ccb97bab4c939"
+    },
+    {
+      "path": "Microsoft.Web.WebView2.Core.dll",
+      "source": "publish",
+      "name": "Microsoft.Web.WebView2.Core.dll",
+      "signing": "preserve-microsoft",
+      "machine": "8664",
+      "sha256": "17ccd9141c486d7a3689ed38d72d3bd8bb0e216b7990fcc76c132dc9102c6320"
+    },
+    {
+      "path": "Microsoft.Web.WebView2.Core.Projection.dll",
+      "source": "publish",
+      "name": "Microsoft.Web.WebView2.Core.Projection.dll",
+      "signing": "preserve-microsoft",
+      "machine": "msil",
+      "sha256": "c0036e5306aa9758b6ce0c1b2da2aea9ac58ce2c2b328c52d15b22b720aeadf7"
+    },
+    {
+      "path": "Microsoft.Windows.AI.ContentSafety.Projection.dll",
+      "source": "publish",
+      "name": "Microsoft.Windows.AI.ContentSafety.Projection.dll",
+      "signing": "preserve-microsoft",
+      "machine": "msil",
+      "sha256": "ad9d16a091d06d28b956312f8f58de0423c133166271d32e2cfb8a32dd0b39ee"
+    },
+    {
+      "path": "Microsoft.Windows.AI.Foundation.Projection.dll",
+      "source": "publish",
+      "name": "Microsoft.Windows.AI.Foundation.Projection.dll",
+      "signing": "preserve-microsoft",
+      "machine": "msil",
+      "sha256": "d091292edbc84bc8a76c32760a7801a8fee51f3555041d0684273843235feae9"
+    },
+    {
+      "path": "Microsoft.Windows.AI.Imaging.Projection.dll",
+      "source": "publish",
+      "name": "Microsoft.Windows.AI.Imaging.Projection.dll",
+      "signing": "preserve-microsoft",
+      "machine": "msil",
+      "sha256": "d11edbadc08b9de6a26a234d7cbd7766497334a3528dc64bc26dabbf1c8cde29"
+    },
+    {
+      "path": "Microsoft.Windows.AI.MachineLearning.dll",
+      "source": "publish",
+      "name": "Microsoft.Windows.AI.MachineLearning.dll",
+      "signing": "preserve-microsoft",
+      "machine": "8664",
+      "sha256": "bbbb34415d8ce303f8a2a2c524c46bd749e21423ccabeb7d38c5fc7334a7848f"
+    },
+    {
+      "path": "Microsoft.Windows.AI.MachineLearning.Projection.dll",
+      "source": "publish",
+      "name": "Microsoft.Windows.AI.MachineLearning.Projection.dll",
+      "signing": "preserve-microsoft",
+      "machine": "msil",
+      "sha256": "60eb181b3d30bbd0fe7cf9f5ea2d2ce5e0a8fb56da6cf9db91a373af1abc306a"
+    },
+    {
+      "path": "Microsoft.Windows.AI.Projection.dll",
+      "source": "publish",
+      "name": "Microsoft.Windows.AI.Projection.dll",
+      "signing": "preserve-microsoft",
+      "machine": "msil",
+      "sha256": "69ff5b2fb68daabc49579340153922538c5ca14d6e5ae85aa10934f0ec9f77be"
+    },
+    {
+      "path": "Microsoft.Windows.AI.Text.Projection.dll",
+      "source": "publish",
+      "name": "Microsoft.Windows.AI.Text.Projection.dll",
+      "signing": "preserve-microsoft",
+      "machine": "msil",
+      "sha256": "e51d9ac687b7d1759c686e81037eb7653dc0f0f896af41a69e21ef5c4d980ade"
+    },
+    {
+      "path": "Microsoft.Windows.AI.Video.Projection.dll",
+      "source": "publish",
+      "name": "Microsoft.Windows.AI.Video.Projection.dll",
+      "signing": "preserve-microsoft",
+      "machine": "msil",
+      "sha256": "f8cd6de86665c983d4b362e4fb3b3839ddcde5354f3f8edf9178a4839b81e75f"
+    },
+    {
+      "path": "Microsoft.Windows.ApplicationModel.Background.Projection.dll",
+      "source": "publish",
+      "name": "Microsoft.Windows.ApplicationModel.Background.Projection.dll",
+      "signing": "preserve-microsoft",
+      "machine": "msil",
+      "sha256": "93fc465da0b8eff22356c46d7fa17882adbe67b8f48e50ab6d7987cd358d01ff"
+    },
+    {
+      "path": "Microsoft.Windows.ApplicationModel.Background.UniversalBGTask.dll",
+      "source": "publish",
+      "name": "Microsoft.Windows.ApplicationModel.Background.UniversalBGTask.dll",
+      "signing": "preserve-microsoft",
+      "machine": "8664",
+      "sha256": "e673e036e8ca3134984103ec188a4a288e5738849d4cdeec8d912b8a64c6956b"
+    },
+    {
+      "path": "Microsoft.Windows.ApplicationModel.DynamicDependency.Projection.dll",
+      "source": "publish",
+      "name": "Microsoft.Windows.ApplicationModel.DynamicDependency.Projection.dll",
+      "signing": "preserve-microsoft",
+      "machine": "msil",
+      "sha256": "8f9a81f9c426b5340d6a80692ffd496a7a3d8e715d3e86160ca00e31580b4a11"
+    },
+    {
+      "path": "Microsoft.Windows.ApplicationModel.Resources.Projection.dll",
+      "source": "publish",
+      "name": "Microsoft.Windows.ApplicationModel.Resources.Projection.dll",
+      "signing": "preserve-microsoft",
+      "machine": "msil",
+      "sha256": "ab664c65b10d51dddbb6e237abd4eb1da2c05b075e787352f1ba6403a53594c8"
+    },
+    {
+      "path": "Microsoft.Windows.ApplicationModel.WindowsAppRuntime.Projection.dll",
+      "source": "publish",
+      "name": "Microsoft.Windows.ApplicationModel.WindowsAppRuntime.Projection.dll",
+      "signing": "preserve-microsoft",
+      "machine": "msil",
+      "sha256": "1eb499c9d2e95bb5836510ff4c5175b67787bfb2cadc98ba7c0419b4de3f03f1"
+    },
+    {
+      "path": "Microsoft.Windows.AppLifecycle.Projection.dll",
+      "source": "publish",
+      "name": "Microsoft.Windows.AppLifecycle.Projection.dll",
+      "signing": "preserve-microsoft",
+      "machine": "msil",
+      "sha256": "2069e1089147641400908e3379479877eb77f40cf01e48b81bcfbcd7bcd5e64f"
+    },
+    {
+      "path": "Microsoft.Windows.AppNotifications.Builder.Projection.dll",
+      "source": "publish",
+      "name": "Microsoft.Windows.AppNotifications.Builder.Projection.dll",
+      "signing": "preserve-microsoft",
+      "machine": "msil",
+      "sha256": "c2ccc60c6ca0e193617e5a68d6b3bcaec829427b44c92523f69d714cd5d78a37"
+    },
+    {
+      "path": "Microsoft.Windows.AppNotifications.Projection.dll",
+      "source": "publish",
+      "name": "Microsoft.Windows.AppNotifications.Projection.dll",
+      "signing": "preserve-microsoft",
+      "machine": "msil",
+      "sha256": "185dac5d668e42b05b3be6f399c577abe05b0e3751965337d4550c4132e2157a"
+    },
+    {
+      "path": "Microsoft.Windows.BadgeNotifications.Projection.dll",
+      "source": "publish",
+      "name": "Microsoft.Windows.BadgeNotifications.Projection.dll",
+      "signing": "preserve-microsoft",
+      "machine": "msil",
+      "sha256": "3f5ef67aec6441e465413371ffdb2063073f43b598cd5b8f8270f56793309114"
+    },
+    {
+      "path": "Microsoft.Windows.Foundation.Projection.dll",
+      "source": "publish",
+      "name": "Microsoft.Windows.Foundation.Projection.dll",
+      "signing": "preserve-microsoft",
+      "machine": "msil",
+      "sha256": "860b2369b8cbd3fcd179f96f278f65981b9bf5461b29c722cc78eae1b477cdc5"
+    },
+    {
+      "path": "Microsoft.Windows.Management.Deployment.Projection.dll",
+      "source": "publish",
+      "name": "Microsoft.Windows.Management.Deployment.Projection.dll",
+      "signing": "preserve-microsoft",
+      "machine": "msil",
+      "sha256": "0da7f4fa936b65b14d8597724083202074eb4c5258aaead99144c593c415681e"
+    },
+    {
+      "path": "Microsoft.Windows.Media.Capture.Projection.dll",
+      "source": "publish",
+      "name": "Microsoft.Windows.Media.Capture.Projection.dll",
+      "signing": "preserve-microsoft",
+      "machine": "msil",
+      "sha256": "95a8d7bc06d03763aec537b10ca3449adbb0134aad4ee6e42df83ce4c2df3315"
+    },
+    {
+      "path": "Microsoft.Windows.PushNotifications.Projection.dll",
+      "source": "publish",
+      "name": "Microsoft.Windows.PushNotifications.Projection.dll",
+      "signing": "preserve-microsoft",
+      "machine": "msil",
+      "sha256": "d1551c8233e4eebb5944eb82731e87dcdc5e05a558a7910bd1f1f0f6a654ebce"
+    },
+    {
+      "path": "Microsoft.Windows.SDK.NET.dll",
+      "source": "publish",
+      "name": "Microsoft.Windows.SDK.NET.dll",
+      "signing": "preserve-microsoft",
+      "machine": "msil",
+      "sha256": "c633ab241cd09846c2aa409f0bee2026962610404a7bf132c75cbd66b0e5a9f4"
+    },
+    {
+      "path": "Microsoft.Windows.Search.Projection.dll",
+      "source": "publish",
+      "name": "Microsoft.Windows.Search.Projection.dll",
+      "signing": "preserve-microsoft",
+      "machine": "msil",
+      "sha256": "9af7733db0af35f370ec792afe1a0a70eed0e6d8a8713ef936eb433eef1a2dcd"
+    },
+    {
+      "path": "Microsoft.Windows.Security.AccessControl.Projection.dll",
+      "source": "publish",
+      "name": "Microsoft.Windows.Security.AccessControl.Projection.dll",
+      "signing": "preserve-microsoft",
+      "machine": "msil",
+      "sha256": "c333b08e77b089c8165ca02a079f0eeae323f2c338d503a3a9964fb0a61709a3"
+    },
+    {
+      "path": "Microsoft.Windows.Storage.Pickers.Projection.dll",
+      "source": "publish",
+      "name": "Microsoft.Windows.Storage.Pickers.Projection.dll",
+      "signing": "preserve-microsoft",
+      "machine": "msil",
+      "sha256": "ed6c1d4b64680ad9695f68a8fc66b0306bb5341bf3083689d3625e7fafa7aa42"
+    },
+    {
+      "path": "Microsoft.Windows.Storage.Projection.dll",
+      "source": "publish",
+      "name": "Microsoft.Windows.Storage.Projection.dll",
+      "signing": "preserve-microsoft",
+      "machine": "msil",
+      "sha256": "b02beea6e73508e7ffa0fe4038bf81968c71125f4c13e4b93f72a779d2d7fea2"
+    },
+    {
+      "path": "Microsoft.Windows.System.Power.Projection.dll",
+      "source": "publish",
+      "name": "Microsoft.Windows.System.Power.Projection.dll",
+      "signing": "preserve-microsoft",
+      "machine": "msil",
+      "sha256": "25230734062eb1a6b8937f4892365cc4ab00b09e39527b45c3111d9269965f63"
+    },
+    {
+      "path": "Microsoft.Windows.System.Projection.dll",
+      "source": "publish",
+      "name": "Microsoft.Windows.System.Projection.dll",
+      "signing": "preserve-microsoft",
+      "machine": "msil",
+      "sha256": "24db5c2c0e4c5a4abc5c2d1e9e0b69c57056ee60d56033b6ba767ab599104bdd"
+    },
+    {
+      "path": "Microsoft.Windows.Widgets.Projection.dll",
+      "source": "publish",
+      "name": "Microsoft.Windows.Widgets.Projection.dll",
+      "signing": "preserve-microsoft",
+      "machine": "msil",
+      "sha256": "8d6e5d3418e2f6eff2b27df0ac51b7dc452a40fc4c98c86f61e305d04b21f89f"
+    },
+    {
+      "path": "Microsoft.WindowsAppRuntime.Bootstrap.dll",
+      "source": "publish",
+      "name": "Microsoft.WindowsAppRuntime.Bootstrap.dll",
+      "signing": "preserve-microsoft",
+      "machine": "8664",
+      "sha256": "e4acd665ff39f8a0d591459bd5901482e71b4ffbe644f421ffad9431b5fed438"
+    },
+    {
+      "path": "Microsoft.WindowsAppRuntime.Bootstrap.Net.dll",
+      "source": "publish",
+      "name": "Microsoft.WindowsAppRuntime.Bootstrap.Net.dll",
+      "signing": "preserve-microsoft",
+      "machine": "msil",
+      "sha256": "8014a0d9a8c9e376d7e620f350933b42056cfc5f9cf1eb67feced096ec9b9c21"
+    },
+    {
+      "path": "Microsoft.WinUI.dll",
+      "source": "publish",
+      "name": "Microsoft.WinUI.dll",
+      "signing": "preserve-microsoft",
+      "machine": "msil",
+      "sha256": "c3b1c90d3a1c5966f19db50fb9e9849f8115e8d22abe9dd614584c2d74bc8c1c"
+    },
+    {
+      "path": "onnxruntime.dll",
+      "source": "publish",
+      "name": "onnxruntime.dll",
+      "signing": "preserve-microsoft",
+      "machine": "8664",
+      "sha256": "3cffeff2d7c25b247a814212baab70eb1f37d727335d4c813ed73785df80a794"
+    },
+    {
+      "path": "System.Numerics.Tensors.dll",
+      "source": "publish",
+      "name": "System.Numerics.Tensors.dll",
+      "signing": "preserve-microsoft",
+      "machine": "msil",
+      "sha256": "9d96dc759fdb54cbc3c26ee65cfd78ff32e3745f418119cc0811e63d3f29ecb9"
+    },
+    {
+      "path": "WebView2Loader.dll",
+      "source": "publish",
+      "name": "WebView2Loader.dll",
+      "signing": "preserve-microsoft",
+      "machine": "8664",
+      "sha256": "ae69309c5e356350ea28d6b71a900bc43ee7e3f7a457d80a1f82efe6c419cc08"
+    },
+    {
+      "path": "WinRT.Runtime.dll",
+      "source": "publish",
+      "name": "WinRT.Runtime.dll",
+      "signing": "preserve-microsoft",
+      "machine": "msil",
+      "sha256": "bcf3a14e8712a90837fc5c0d8c8a24696af2bd7f74e9767597ec81ededfb23db"
+    },
+    {
+      "path": "OutLoud.WinUI.deps.json",
+      "source": "publish",
+      "name": "OutLoud.WinUI.deps.json"
+    },
+    {
+      "path": "OutLoud.WinUI.runtimeconfig.json",
+      "source": "publish",
+      "name": "OutLoud.WinUI.runtimeconfig.json"
+    },
+    {
+      "path": "Assets/OutLoud.ico",
+      "source": "publish",
+      "name": "Assets/OutLoud.ico"
+    },
+    {
+      "path": "Assets/AppTitleIcon.png",
+      "source": "publish",
+      "name": "Assets/AppTitleIcon.png"
+    },
+    {
+      "path": "RuntimeMetadata/v4.0.1/LICENSE",
+      "source": "publish",
+      "name": "RuntimeMetadata/v4.0.1/LICENSE"
+    },
+    {
+      "path": "App.xbf",
+      "source": "winui-build",
+      "name": "App.xbf"
+    },
+    {
+      "path": "MainWindow.xbf",
+      "source": "winui-build",
+      "name": "MainWindow.xbf"
+    },
+    {
+      "path": "SettingsView.xbf",
+      "source": "winui-build",
+      "name": "SettingsView.xbf"
+    },
+    {
+      "path": "VoiceLibraryView.xbf",
+      "source": "winui-build",
+      "name": "VoiceLibraryView.xbf"
+    },
+    {
+      "path": "VoiceTesterView.xbf",
+      "source": "winui-build",
+      "name": "VoiceTesterView.xbf"
+    },
+    {
+      "path": "OutLoud.WinUI.pri",
+      "source": "winui-build",
+      "name": "OutLoud.WinUI.pri"
+    },
+    {
+      "path": "runtime/pocket-tts/pocket-tts.exe",
+      "source": "publish",
+      "name": "runtime/pocket-tts/pocket-tts.exe",
+      "signing": "preserve-pinned",
+      "machine": "8664",
+      "sha256": "813cabfc2f8fc7a4e5310deda6025426b3164610dd9f3c3098a6078e5cc1895a"
+    },
+    {
+      "path": "runtime/pocket-tts/LICENSE",
+      "source": "publish",
+      "name": "runtime/pocket-tts/LICENSE",
+      "sha256": "36516aefdc84c5d5a1e7485425913a22dbda69eb1930c5e84d6ae4972b5194b9"
+    },
+    {
+      "path": "LICENSE",
+      "source": "repository",
+      "name": "LICENSE"
+    },
+    {
+      "path": "THIRD_PARTY_NOTICES.md",
+      "source": "repository",
+      "name": "THIRD_PARTY_NOTICES.md"
+    },
+    {
+      "path": "docs/SAPI_ADAPTER.md",
+      "source": "repository",
+      "name": "docs/SAPI_ADAPTER.md"
+    },
+    {
+      "path": "docs/MULTI_VOICE_SAPI.md",
+      "source": "repository",
+      "name": "docs/MULTI_VOICE_SAPI.md"
+    },
+    {
+      "path": "docs/SAPI_CANCELLATION.md",
+      "source": "repository",
+      "name": "docs/SAPI_CANCELLATION.md"
+    },
+    {
+      "path": "scripts/deployment-common.ps1",
+      "source": "repository",
+      "name": "sapi/scripts/deployment-common.ps1"
+    },
+    {
+      "path": "scripts/prepare-deployment.ps1",
+      "source": "repository",
+      "name": "sapi/scripts/prepare-deployment.ps1"
+    },
+    {
+      "path": "scripts/sign-deployment.ps1",
+      "source": "repository",
+      "name": "sapi/scripts/sign-deployment.ps1"
+    },
+    {
+      "path": "scripts/verify-deployment.ps1",
+      "source": "repository",
+      "name": "sapi/scripts/verify-deployment.ps1"
+    },
+    {
+      "path": "scripts/registry-common.ps1",
+      "source": "repository",
+      "name": "sapi/scripts/registry-common.ps1"
+    },
+    {
+      "path": "scripts/register.ps1",
+      "source": "repository",
+      "name": "sapi/scripts/register.ps1"
+    },
+    {
+      "path": "scripts/unregister.ps1",
+      "source": "repository",
+      "name": "sapi/scripts/unregister.ps1"
+    },
+    {
+      "path": "deployment-inventory.json",
+      "source": "repository",
+      "name": "sapi/deployment-inventory.json"
+    },
+    {
+      "path": "bin/OutLoudInstallSigning.exe",
+      "source": "security-helper",
+      "name": "OutLoudInstallSigning.exe",
+      "signing": "project-sign",
+      "machine": "8664"
+    }
   ],
-  "assets": ["runtime/pocket-english.olp", "runtime/pocket-english-tokenizer.bin"],
-  "system_not_shipped": ["ole32.dll", "bcrypt.dll", "KERNEL32.dll", "ADVAPI32.dll", "api-ms-win-core-synch-l1-2-0.dll", "api-ms-win-crt-*.dll", "ucrtbase.dll"],
-  "static_internal": ["outloud_orchestration", "outloud_workers", "outloud_text", "outloud_noise", "outloud_generation", "outloud_flow_sampler", "outloud_flowlm", "outloud_mimi", "outloud_cpu", "outloud_cpu_avx2", "outloud_assets", "outloud_asset_io"],
-  "discovery": "Step 2N Release x64 dumpbin /dependents on both project images and all four System32 VC runtime images. MSVC stop-token callback synchronization adds msvcp140_atomic_wait.dll; its closure adds only already listed VC images and Windows ADVAPI32/synch API set. Windows 10/11 UCRT/API sets remain OS prerequisites. No external neural runtime."
+  "prerequisites": [
+    "Windows 11 x64",
+    "Microsoft .NET 10 x64",
+    "Windows App Runtime 2.5.1",
+    "Microsoft VC v14 x64"
+  ],
+  "vendor_policy": "Preserve Microsoft signatures and reviewed package hashes. Preserve official Rust bytes and pinned hash; never re-sign the runtime."
 }

@@ -116,12 +116,12 @@ std::string quote(std::string_view text) {
     out+='"'; return out;
 }
 std::string serialize(const VoiceMetadata& m) {
-    return "{\n  \"schema_version\":1,\n  \"library_id\":"+quote(m.library_id)+
-        ",\n  \"display_name\":"+quote(m.display_name)+",\n  \"olv_version\":1,\n  \"olv_sha256\":"+quote(m.olv_sha256)+
-        ",\n  \"source_sha256\":"+quote(m.source_sha256)+",\n  \"compatibility_id\":"+quote(m.compatibility_id)+
-        ",\n  \"imported_utc\":"+quote(m.imported_utc)+",\n  \"source_filename\":"+quote(m.source_filename)+
-        ",\n  \"import_kind\":"+quote(m.import_kind==VoiceImportKind::pocket_prepared?"pocket_prepared":"olv")+
-        ",\n  \"model_provenance_verified\":"+(m.reserved_metadata_flag?"true":"false")+"\n}\n";
+
+        return "{\n  \"schema_version\":2,\n  \"library_id\":"+quote(m.library_id)+
+            ",\n  \"display_name\":"+quote(m.display_name)+",\n  \"profile_sha256\":"+quote(m.profile_sha256)+
+            ",\n  \"source_sha256\":"+quote(m.source_sha256)+",\n  \"imported_utc\":"+quote(m.imported_utc)+
+            ",\n  \"source_filename\":"+quote(m.source_filename)+",\n  \"import_kind\":\"pocket_native\"\n}\n";
+
 }
 VoiceMetadata metadata(const std::filesystem::path& path,std::string_view expected_id) {
     detail::refresh_audit::event(detail::refresh_audit::Event::metadata);
@@ -141,27 +141,20 @@ VoiceMetadata metadata(const std::filesystem::path& path,std::string_view expect
     auto string=[&](const char* name) {
         const auto& value=field(name); if (value.kind!=Json::Kind::string) { bad(); } return value.text;
     };
-    if (integer("schema_version")!=1) { fs::fail(Code::unsupported_metadata_version,"Unsupported metadata version; no automatic migration",path); }
-    if (root.object.size()!=11) { bad(); }
-    VoiceMetadata result; result.library_id=string("library_id"); result.display_name=string("display_name");
-    const auto version=integer("olv_version"); if (!version || version>UINT32_MAX) { bad(); }
-    result.olv_version=static_cast<std::uint32_t>(version);
-    result.olv_sha256=string("olv_sha256"); result.source_sha256=string("source_sha256"); result.compatibility_id=string("compatibility_id");
-    result.imported_utc=string("imported_utc"); result.source_filename=string("source_filename"); const auto kind=string("import_kind");
-    // Reserved schema-1 key retained for existing metadata; no model tracking.
-    const auto& reserved=field("model_provenance_verified");
-    if (reserved.kind!=Json::Kind::literal || (reserved.text!="false" && reserved.text!="true") ||
-        result.library_id!=expected_id || !fs::id(result.library_id) || !hash(result.olv_sha256) ||
-        !hash(result.source_sha256) || !hash(result.compatibility_id) || !timestamp(result.imported_utc) ||
-        result.source_filename.empty() || result.source_filename.size()>1024 ||
-        result.source_filename.find_first_of("/\\:\0",0,4)!=std::string::npos) { bad(); }
-    try { if (display_name(result.display_name,path)!=result.display_name) { bad(); } }
-    catch (const VoiceLibraryError&) { bad(); }
-    if (kind=="pocket_prepared") { result.import_kind=VoiceImportKind::pocket_prepared; }
-    else if (kind=="olv") { result.import_kind=VoiceImportKind::olv; }
-    else { bad(); }
-    result.reserved_metadata_flag=reserved.text=="true";
-    return result;
+    if (integer("schema_version")==2) {
+        if (root.object.size()!=8 || string("import_kind")!="pocket_native") { bad(); }
+        VoiceMetadata result; result.schema_version=2; result.import_kind=VoiceImportKind::pocket_native;
+        result.library_id=string("library_id"); result.display_name=string("display_name");
+        result.profile_sha256=string("profile_sha256"); result.source_sha256=string("source_sha256");
+        result.imported_utc=string("imported_utc"); result.source_filename=string("source_filename");
+        if (result.library_id!=expected_id || !fs::id(result.library_id) || !hash(result.profile_sha256) ||
+            result.source_sha256!=result.profile_sha256 || !timestamp(result.imported_utc) ||
+            result.source_filename.empty() || result.source_filename.size()>1024 ||
+            result.source_filename.find_first_of("/\\:\0",0,4)!=std::string::npos ||
+            display_name(result.display_name,path)!=result.display_name) { bad(); }
+        return result;
+    }
+    fs::fail(Code::unsupported_metadata_version,"Unsupported metadata version; no automatic migration",path);
 }
 void save_metadata(const std::filesystem::path& path,const VoiceMetadata& record,bool machine) {
     const auto text=serialize(record);
@@ -204,7 +197,7 @@ struct Session {
 };
 bool replacement_pending(Session&, std::string_view);
 bool removal_pending(Session&, std::string_view);
-LibraryVoice inspect(const std::filesystem::path& entry,const std::string& id,bool machine) {
+LibraryVoice inspect(const std::filesystem::path& entry,const std::string& id,bool machine,std::stop_token cancellation = {}) {
     LibraryVoice result; result.library_id=id;
     try {
         const auto pinned=fs::directory(entry,machine ? READ_CONTROL : 0);
@@ -214,26 +207,18 @@ LibraryVoice inspect(const std::filesystem::path& entry,const std::string& id,bo
             detail::library_security::validate(record.value,entry/L"metadata.json",false);
         }
         result.metadata=metadata(entry/L"metadata.json",id);
-        const auto path=entry/L"voice.olv";
-        if (!fs::exists(path)) { result.health=VoiceHealth::missing_voice; result.detail="Managed voice.olv is missing"; return result; }
-        const auto file=fs::file(path);
-        detail::refresh_audit::event(detail::refresh_audit::Event::olv_mapping);
-        const detail::MappedFile mapping(path,maximum_voice); const auto bytes=mapping.bytes();
-        if (machine) { detail::library_security::validate(file.value,path,false); }
-        if (bytes.size()>=12 && std::string_view(reinterpret_cast<const char*>(bytes.data()),8)=="OLVPKT01" && detail::u32(bytes,8)!=1) {
-            result.health=VoiceHealth::unsupported_voice_version; result.detail="Unsupported .olv format version"; return result;
-        }
-        detail::refresh_audit::event(detail::refresh_audit::Event::olv_validation);
-        const auto validated=validate_olv(path);
-        const auto& m=*result.metadata;
-        if (m.olv_version!=validated.format_version || m.olv_sha256!=validated.file_sha256 ||
-                 m.source_sha256!=validated.source_sha256 || m.compatibility_id!=validated.compatibility_id) {
-            result.health=VoiceHealth::hash_mismatch; result.detail="Managed asset identity disagrees with metadata";
-        } else {
-            result.health=VoiceHealth::valid; result.managed_olv_path=path;
+        if (result.metadata->import_kind==VoiceImportKind::pocket_native) {
+            const auto path=entry/L"voice.safetensors";
+            if (!fs::exists(path)) { result.health=VoiceHealth::missing_voice; result.detail="Managed voice.safetensors is missing"; return result; }
+            const auto file=fs::file(path);
+            if (machine) { detail::library_security::validate(file.value,path,false); }
+            if (validate_native_profile(path,cancellation)!=result.metadata->profile_sha256) {
+                result.health=VoiceHealth::hash_mismatch; result.detail="Native profile content disagrees with managed metadata";
+            } else { result.health=VoiceHealth::valid; result.managed_native_path=path; }
+            return result;
         }
     } catch (const VoiceImportError& error) {
-        result.health=error.code()==VoiceImportErrorCode::incompatible_model?VoiceHealth::incompatible_model:VoiceHealth::corrupt_voice;
+        result.health=VoiceHealth::corrupt_voice;
         result.detail=error.what();
     } catch (const VoiceLibraryError& error) {
         if (error.code()==Code::library_access_denied || error.code()==Code::library_security_invalid) { throw; }
@@ -272,9 +257,10 @@ LibraryVoice healthy(Session& session,std::string_view id) {
 }
 // Preflight all expected objects before any deletion. No recursive traversal or arbitrary metadata paths.
 void removal_files(const std::filesystem::path& path,std::vector<fs::Handle>& files,bool machine = false) {
+
     // Keep acquired handles in the caller's already-constructed scope, including exceptional preflight exits.
     for (const auto& name : fs::children(path)) {
-        if (name!=L"voice.olv" && name!=L"metadata.json") { fs::fail(Code::remove_failed,"Unknown files retained for manual review",path/name); }
+        if (name!=L"voice.safetensors" && name!=L"metadata.json") { fs::fail(Code::remove_failed,"Unknown files retained for manual review",path/name); }
         auto file=fs::file(path/name,GENERIC_READ|DELETE,FILE_SHARE_READ|FILE_SHARE_DELETE,OPEN_EXISTING,Code::remove_failed);
         if (machine) { detail::library_security::validate(file.value,path/name,false); }
         if (fs::info(file.value,path/name,false).dwFileAttributes&FILE_ATTRIBUTE_READONLY) {
@@ -287,7 +273,6 @@ void finish_removal(const std::filesystem::path& path,fs::Handle& directory,std:
     for (auto& file : files) { fs::discard(file.value,path); file.close(); }
     fs::discard(directory.value,path); directory.close();
 }
-void discard_replacement(const std::filesystem::path&,fs::Handle&,bool);
 struct Stage {
     std::filesystem::path path;
     std::string id;
@@ -311,53 +296,33 @@ struct Stage {
     ~Stage() {
         if (!published && directory.value!=INVALID_HANDLE_VALUE) {
             try {
-                if (fs::exists(path/L"old.olv") || fs::exists(path/L"old.json")) {
-                    if (!fs::exists(path/L"replace.json")) { discard_replacement(path,directory,machine); } return;
-                }
+
                 std::vector<fs::Handle> files; removal_files(path,files,machine); finish_removal(path,directory,files);
             } catch (...) {}
         }
     }
 };
-std::vector<std::string> duplicates(Session& session,std::string_view file_hash) {
-    std::vector<std::string> result;
-    for (const auto& name : fs::children(session.voices->path)) {
-        try {
-            const auto id=fs::utf8(name); if (!fs::id(id)) { continue; }
-            const auto path=session.voices->path/name; const auto pinned=fs::directory(path);
-            const auto file=fs::file(path/L"voice.olv");
-            if (validate_olv(path/L"voice.olv").file_sha256==file_hash) { result.push_back(id); }
-        } catch (const std::exception&) {} // Unverifiable assets do not establish duplicate content.
+
+LibraryImportResult publish_native(Session& session,Stage& stage,const VoiceMetadata& record,DuplicateContentPolicy policy) {
+    std::vector<std::string> matches;
+    for (const auto& name:fs::children(session.voices->path)) {
+        const auto id=fs::utf8(name); if (!fs::id(id)) { continue; }
+        const auto voice=inspect(session.voices->path/name,id,session.machine);
+        if (voice.health==VoiceHealth::valid && voice.metadata->import_kind==VoiceImportKind::pocket_native &&
+            voice.metadata->profile_sha256==record.profile_sha256) { matches.push_back(id); }
     }
-    return result;
-}
-VoiceMetadata new_metadata(const std::string& id,const std::string& name,const OlvInfo& voice,
-                           const std::filesystem::path& source,VoiceImportKind kind) {
-    VoiceMetadata result; result.library_id=id; result.display_name=name; result.olv_version=voice.format_version;
-    result.olv_sha256=voice.file_sha256; result.source_sha256=voice.source_sha256; result.compatibility_id=voice.compatibility_id;
-    result.imported_utc=utc(); result.source_filename=fs::utf8(source.filename().native()); result.import_kind=kind; return result;
-}
-LibraryImportResult publish(Session& session,Stage& stage,const VoiceMetadata& record,DuplicateContentPolicy policy) {
-    auto matches=duplicates(session,record.olv_sha256);
     if (!matches.empty() && policy==DuplicateContentPolicy::reject) {
-        throw VoiceLibraryError(Code::duplicate_content,"Duplicate .olv content exists; explicitly allow a separate entry",
-                                session.root.path,0,{},std::move(matches));
+        throw VoiceLibraryError(Code::duplicate_content,"Duplicate native profile content exists",session.root.path,0,{},std::move(matches));
     }
     save_metadata(stage.path/L"metadata.json",record,session.machine);
-    if (session.machine) {
-        for (const auto* name : {L"metadata.json",L"voice.olv"}) {
-            const auto pinned = fs::file(stage.path/name);
-            detail::library_security::validate(pinned.value,stage.path/name,false);
-        }
-    }
-    const auto voice=validate_olv(stage.path/L"voice.olv");
-    if (voice.file_sha256!=record.olv_sha256 || voice.source_sha256!=record.source_sha256) {
-        fs::fail(Code::corrupt_voice,"Staged voice identity changed",stage.path);
-    }
+    const auto checked=inspect(stage.path,record.library_id,session.machine);
+    if (checked.health!=VoiceHealth::valid) { fs::fail(Code::corrupt_voice,"Native profile staging verification failed",stage.path); }
     const auto final=session.voices->path/fs::wide(record.library_id);
     fs::rename(stage.directory.value,final,false,Code::destination_io); stage.published=true;
     return {inspect(final,record.library_id,session.machine),std::move(matches)};
 }
+
+
 void copy_voice(const std::filesystem::path& source,const std::filesystem::path& target,bool machine) {
     const detail::MappedFile mapping(source,maximum_voice);
     detail::library_security::FileCreationSecurity security(machine);
@@ -387,7 +352,22 @@ std::string export_destination(const std::filesystem::path& path,fs::Handle& pin
     }
     return detail::hex(digest.finish());
 }
-#include "voice_library_replace.inc"
+
+std::string handle_hash(HANDLE handle,const std::filesystem::path& path) {
+    LARGE_INTEGER zero{}; if (!SetFilePointerEx(handle,zero,nullptr,FILE_BEGIN)) { fs::fail(Code::source_io,"Cannot rewind pinned file",path,GetLastError()); }
+    detail::Sha256 digest; std::array<unsigned char,65536> bytes{};
+    for (;;) { DWORD count=0; if (!ReadFile(handle,bytes.data(),static_cast<DWORD>(bytes.size()),&count,nullptr)) { fs::fail(Code::source_io,"Cannot hash pinned file",path,GetLastError()); }
+        if (!count) { break; } digest.update({bytes.data(),count}); }
+    return detail::hex(digest.finish());
+}
+FILE_ID_INFO directory_identity(HANDLE directory,const std::filesystem::path& path) {
+    FILE_ID_INFO result{}; if (!GetFileInformationByHandleEx(directory,FileIdInfo,&result,sizeof(result))) { fs::fail(Code::unsafe_path,"Cannot identify replacement directory",path,GetLastError()); } return result;
+}
+void save_control(const std::filesystem::path& path,std::string_view text,bool machine) {
+    detail::library_security::FileCreationSecurity security(machine);
+    auto file=fs::file(path,GENERIC_WRITE,0,CREATE_NEW,Code::destination_io,security.get()); fs::write(file.value,{reinterpret_cast<const unsigned char*>(text.data()),text.size()},path);
+}
+#include "voice_library_pending.inc"
 #include "voice_library_remove.inc"
 #include "voice_library_snapshot.inc"
 } // namespace
@@ -437,67 +417,63 @@ void VoiceLibrary::with_read_snapshot(const std::function<void(std::vector<Libra
         catch (...) { throw ValidationFailure{std::current_exception()}; }
     });
 }
-LibraryVoice VoiceLibrary::inspect_voice(std::string_view id) const {
-    return guarded(root_,[&] { Session session(root_,false,machine_storage_); auto voice=inspect(entry_path(session,id),std::string(id),session.machine);
-        if (replacement_pending(session,id)) { voice.health=VoiceHealth::replacement_pending; voice.detail="Interrupted replacement needs cleanup_pending recovery; close active consumers first."; }
+LibraryVoice VoiceLibrary::inspect_voice(std::string_view id,std::stop_token cancellation) const {
+    return guarded(root_,[&] { Session session(root_,false,machine_storage_); auto voice=inspect(entry_path(session,id),std::string(id),session.machine,cancellation);
+        if (replacement_pending(session,id)) { voice.health=VoiceHealth::replacement_pending; voice.detail="Unsupported pending transaction retained for manual review."; }
         if (removal_pending(session,id)) { voice.health=VoiceHealth::removal_pending; voice.detail="Interrupted removal requires authorized token-aware recovery; data retained."; } return voice; });
 }
-LibraryReplaceResult VoiceLibrary::replace_pocket_voice(std::string_view id,const std::filesystem::path& input,const VoiceReplaceOptions& options) {
-    return guarded(input,[&] { Session session(root_,true,machine_storage_); return replace_prepared(session,id,input,options); });
-}
-LibraryReplaceResult VoiceLibrary::replace_olv(std::string_view id,const std::filesystem::path& input,const VoiceReplaceOptions& options) {
-    return guarded(input,[&] { Session session(root_,true,machine_storage_); return replace_prepared(session,id,input,options,true); });
-}
-LibraryImportResult VoiceLibrary::import_pocket_voice(const std::filesystem::path& input,std::string_view name,
-    const VoiceImportOptions& options,DuplicateContentPolicy policy) {
+
+
+
+
+LibraryImportResult VoiceLibrary::import_native_profile(const std::filesystem::path& input,std::string_view name,DuplicateContentPolicy policy) {
     return guarded(input,[&] {
         const auto normalized=display_name(name,root_); const auto source=fs::local(input,Code::source_io);
+        if (_wcsicmp(source.extension().c_str(),L".safetensors")!=0) { fs::fail(Code::source_io,"Native profiles must be .safetensors files",source); }
         const fs::Pins parents(source.parent_path()); const auto snapshot=fs::file(source);
-        if (options.replace_existing) { fs::fail(Code::replace_required,"Managed imports never replace entries; Step 3A replacement must be false",root_); }
+        const auto digest=validate_native_profile(source);
         Session session(root_,true,machine_storage_); Stage stage(session);
-        const auto converted=convert_pocket_voice_to_olv(source,stage.path/L"voice.olv",options);
-        if (machine_storage_) { detail::library_security::protect_created_file(stage.path/L"voice.olv"); }
-        return publish(session,stage,new_metadata(stage.id,normalized,converted.voice,source,VoiceImportKind::pocket_prepared),policy);
+        copy_voice(source,stage.path/L"voice.safetensors",machine_storage_);
+        VoiceMetadata record; record.schema_version=2; record.import_kind=VoiceImportKind::pocket_native;
+        record.library_id=stage.id; record.display_name=normalized; record.profile_sha256=digest; record.source_sha256=digest;
+        record.imported_utc=utc(); record.source_filename=fs::utf8(source.filename().native());
+        return publish_native(session,stage,record,policy);
     });
 }
-LibraryImportResult VoiceLibrary::import_olv(const std::filesystem::path& input,std::string_view name,DuplicateContentPolicy policy) {
-    return guarded(input,[&] {
-        const auto normalized=display_name(name,root_); const auto source=fs::local(input,Code::source_io);
-        const fs::Pins parents(source.parent_path()); const auto snapshot=fs::file(source); const auto voice=validate_olv(source);
-        Session session(root_,true,machine_storage_); Stage stage(session); copy_voice(source,stage.path/L"voice.olv",machine_storage_);
-        return publish(session,stage,new_metadata(stage.id,normalized,voice,source,VoiceImportKind::olv),policy);
-    });
-}
-std::string inspect_olv_export_destination(const std::filesystem::path& output) {
+
+std::string inspect_native_export_destination(const std::filesystem::path& output) {
     return guarded(output,[&] {
         const auto destination=fs::local(output,Code::destination_io);
-        const auto extension=destination.extension().native();
-        if (CompareStringOrdinal(extension.c_str(),static_cast<int>(extension.size()),L".olv",4,TRUE)!=CSTR_EQUAL) {
-            fs::fail(Code::destination_io,"Export destination must end in .olv",destination);
+        if (_wcsicmp(destination.extension().c_str(),L".safetensors")!=0) {
+            fs::fail(Code::destination_io,"Native export destination must end in .safetensors",destination);
         }
         const fs::Pins parents(destination.parent_path()); fs::Handle target;
         return export_destination(destination,target);
     });
 }
-OlvInfo VoiceLibrary::export_olv(std::string_view id,const std::filesystem::path& output,bool replace) const {
-    VoiceExportOptions options; options.replace_existing=replace;
-    return export_olv(id,output,options);
+
+
+std::string VoiceLibrary::export_native_profile(std::string_view id,const std::filesystem::path& output,const VoiceExportOptions& options) const {
+    return export_asset(id,output,options);
 }
-OlvInfo VoiceLibrary::export_olv(std::string_view id,const std::filesystem::path& output,const VoiceExportOptions& options) const {
+std::string VoiceLibrary::export_asset(std::string_view id,const std::filesystem::path& output,const VoiceExportOptions& options) const {
     return guarded(output,[&] {
         Session session(root_,false,machine_storage_); const auto voice=healthy(session,id);
-        if ((!options.expected_olv_sha256.empty() || !options.expected_display_name.empty()) &&
-            (!hash(options.expected_olv_sha256) || voice.metadata->olv_sha256!=options.expected_olv_sha256 || voice.metadata->display_name!=options.expected_display_name)) {
-            fs::fail(Code::export_conflict,"Selected voice changed. Refresh and select it again.",voice.managed_olv_path);
+
+        const auto& managed_path=voice.managed_native_path;
+        if ((!options.expected_content_sha256.empty() || !options.expected_display_name.empty()) &&
+            (!hash(options.expected_content_sha256) || voice.metadata->content_sha256()!=options.expected_content_sha256 || voice.metadata->display_name!=options.expected_display_name)) {
+            fs::fail(Code::export_conflict,"Selected voice changed. Refresh and select it again.",managed_path);
         }
-        const auto entry=fs::directory(voice.managed_olv_path.parent_path()); const auto source=fs::file(voice.managed_olv_path);
+        const auto entry=fs::directory(managed_path.parent_path()); const auto source=fs::file(managed_path);
         const auto destination=fs::local(output,Code::destination_io); const fs::Pins parent(destination.parent_path());
         const auto physical_root=fs::final_path(session.root.handles.back().value,root_);
         const auto physical_parent=fs::final_path(parent.handles.back().value,parent.path);
         if (fs::within(physical_parent,physical_root)) { fs::fail(Code::destination_io,"Export destination must be outside this library",destination); }
         const auto extension=destination.extension().native();
-        if (CompareStringOrdinal(extension.c_str(),static_cast<int>(extension.size()),L".olv",4,TRUE)!=CSTR_EQUAL) {
-            fs::fail(Code::destination_io,"Export destination must end in .olv",destination);
+        const std::wstring_view expected_extension=L".safetensors";
+        if (CompareStringOrdinal(extension.c_str(),static_cast<int>(extension.size()),expected_extension.data(),static_cast<int>(expected_extension.size()),TRUE)!=CSTR_EQUAL) {
+            fs::fail(Code::destination_io,"Export extension must match the native stored format",destination);
         }
         fs::Handle target;
         const auto destination_state=export_destination(destination,target);
@@ -517,7 +493,7 @@ OlvInfo VoiceLibrary::export_olv(std::string_view id,const std::filesystem::path
         };
         fs::Handle verification;
         try {
-            const detail::MappedFile mapping(voice.managed_olv_path,maximum_voice);
+            const detail::MappedFile mapping(managed_path,maximum_voice);
             #ifdef OUTLOUD_REPLACEMENT_AUDIT
             detail::export_audit::point(0,owner.value);
             #endif
@@ -532,8 +508,8 @@ OlvInfo VoiceLibrary::export_olv(std::string_view id,const std::filesystem::path
             #ifdef OUTLOUD_REPLACEMENT_AUDIT
             detail::export_audit::point(3,verification.value);
             #endif
-            const auto validated=validate_olv(temporary);
-            if (validated.file_sha256!=voice.metadata->olv_sha256) { fs::fail(Code::corrupt_voice,"Export copy identity mismatch",temporary); }
+            const auto validated=validate_native_profile(temporary);
+            if (validated!=voice.metadata->content_sha256()) { fs::fail(Code::corrupt_voice,"Export copy identity mismatch",temporary); }
             owner=fs::file(temporary,DELETE,FILE_SHARE_READ,OPEN_EXISTING,Code::destination_io);
             if (!same_file(owner.value)) { fs::fail(Code::destination_io,"Export temporary identity changed",temporary); }
             #ifdef OUTLOUD_REPLACEMENT_AUDIT
@@ -564,9 +540,10 @@ OlvInfo VoiceLibrary::export_olv(std::string_view id,const std::filesystem::path
 LibraryVoice VoiceLibrary::rename_voice(std::string_view id,std::string_view name) {
     return guarded(root_,[&] {
         const auto normalized=display_name(name,root_); Session session(root_,true,machine_storage_); auto voice=healthy(session,id);
-        const auto entry=fs::directory(voice.managed_olv_path.parent_path()); const auto source=fs::file(voice.managed_olv_path);
-        if (validate_olv(voice.managed_olv_path).file_sha256!=voice.metadata->olv_sha256) {
-            fs::fail(Code::corrupt_voice,"Managed voice changed before rename",voice.managed_olv_path);
+        const auto& path=voice.managed_native_path;
+        const auto entry=fs::directory(path.parent_path()); const auto source=fs::file(path);
+        if (validate_native_profile(path)!=voice.metadata->content_sha256()) {
+            fs::fail(Code::corrupt_voice,"Managed voice changed before rename",path);
         }
         Stage stage(session); voice.metadata->display_name=normalized;
         const auto temporary=stage.path/L"metadata.json"; save_metadata(temporary,*voice.metadata,machine_storage_);
@@ -574,7 +551,7 @@ LibraryVoice VoiceLibrary::rename_voice(std::string_view id,std::string_view nam
             const auto record = fs::file(temporary); detail::library_security::validate(record.value,temporary,false);
         }
         auto owner=fs::file(temporary,DELETE,0,OPEN_EXISTING,Code::destination_io);
-        fs::rename(owner.value,voice.managed_olv_path.parent_path()/L"metadata.json",true,Code::destination_io);
+        fs::rename(owner.value,path.parent_path()/L"metadata.json",true,Code::destination_io);
         return voice;
     });
 }
@@ -615,12 +592,8 @@ LibraryCleanupResult VoiceLibrary::cleanup_pending(const RemovalRegistrationIden
                         else { fs::fail(Code::removal_pending,"Unjournaled trash outcome is unknown; files retained",path); }
                         ++result.cleaned; continue;
                     }
-                    if (fs::exists(path/L"replace.json")) {
-                        recover_replacement(session,path,directory); ++result.cleaned; continue;
-                    }
-                    if (fs::exists(path/L"commit")) {
-                        discard_replacement(path,directory,machine_storage_); ++result.cleaned; continue;
-                    }
+                    if (fs::exists(path/L"replace.json")) { fs::fail(Code::replacement_pending,"Unsupported pending transaction retained for manual review",path); }
+                    if (fs::exists(path/L"commit")) { fs::fail(Code::replacement_pending,"Unsupported pending transaction retained for manual review",path); }
                     std::vector<fs::Handle> files; removal_files(path,files,machine_storage_);
                     finish_removal(path,directory,files); ++result.cleaned;
                 } catch (const VoiceLibraryError& error) { result.pending.push_back(path); result.problems.push_back(error); }

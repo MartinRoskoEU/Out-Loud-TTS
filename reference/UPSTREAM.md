@@ -1,172 +1,39 @@
-# Pocket TTS Upstream Reference
+# Current upstream inputs
 
-This directory documents the untouched upstream Pocket TTS implementation used
-as the reference oracle for the Out Loud Pocket engine.
+Out Loud 0.4.0 uses the official [Kyutai Pocket TTS](https://github.com/kyutai-labs/pocket-tts)
+Rust executable. C++ supplies the Windows COM/SAPI integration and native voice
+management; it does not implement neural inference.
 
-## Environment
+## Bundled runtime
 
-- Python: 3.12.10
-- Pocket TTS: 3.3.0
-- PyTorch: 2.14.1+cpu
-- huggingface-hub: 1.33.0
-- safetensors: 0.8.0
-- Device: CPU
-- Platform: Windows 11
+- Official release: `v4.0.1`.
+- Source commit: `a922b912dfa366975294afb568d815b305acde5d`.
+- Windows x64 CLI diagnostic version: `pocket-tts 3.3.0`.
+- Executable SHA-256: `813CABFC2F8FC7A4E5310DEDA6025426B3164610DD9F3C3098A6078E5CC1895A`.
+- Original LICENSE SHA-256: `36516AEFDC84C5D5A1E7485425913A22DBDA69EB1930C5E84D6AE4972B5194B9`.
 
-## Runtime policy
+The retained executable/license inputs are under
+`development/runtime/pocket-tts/v4.0.1/windows-x64/extracted/pocket-tts-3.3.0-x86_64-pc-windows-msvc/`.
+The build copies them to `runtime/pocket-tts/` and verifies executable identity.
+The adjacent provenance/checksum files record the upstream release source.
 
-- PyTorch intra-op threads before Pocket import: 12
-- PyTorch inter-op threads before Pocket import: 12
-- PyTorch intra-op threads after Pocket import: 1
-- PyTorch inter-op threads after Pocket import: 12
-- MKLDNN: enabled
-- dtype: float32
+This baseline content pin is not a runtime-version allowlist. Verified runtime
+updates activated through Settings use the existing protected update receipt,
+content verification and file leases.
 
-## English model
+## Model and profile inputs
 
-Repository:
+Settings uses the public `kyutai/pocket-tts-without-voice-cloning` model repository.
+Embedded configurations and immutable repository metadata under the WinUI
+project's `RuntimeMetadata/v4.0.1` establish trusted asset mappings. Each installed
+model's inventory records its actual asset revisions, sizes and content hashes.
+No Python oracle, converted model container or reference recording is required.
 
-`kyutai/pocket-tts`
+Users supply native `.safetensors` voice profiles. Import/export preserves their
+bytes; voices are not bound to model identifiers or revisions. Synthesis uses
+the model explicitly selected in shared Settings.
 
-File:
-
-`languages/english/model.safetensors`
-
-Revision:
-
-`983151f13aaeab1b13c1e5e3c2c383d49a9edf3f`
-
-SHA-256:
-
-`fb0dc01b0d4d2e1c905b7a3e0676e3d9c96d5ae460e24e3ab94981805babf997`
-
-## Tokenizer
-
-Repository:
-
-`kyutai/pocket-tts-without-voice-cloning`
-
-File:
-
-`languages/english/tokenizer.json`
-
-Revision:
-
-`00eac05ed3d16bdc3f6b5d598874019c34a89214`
-
-SHA-256:
-
-`f498428e1eafee50492f7be13dc9bfafcfc12e508cd0eb1b01c92ecd5d8c6687`
-
-## Generation defaults
-
-- Temperature: 0.3
-- Sample rate: 24000 Hz
-- Channels: 1
-- FlowLM dtype: float32
-- Mimi dtype: float32
-- Mimi frame rate: 12.5 Hz
-- Audio frame duration: 80 ms
-
-## Reference performance
-
-Initial upstream CLI test:
-
-- Text: `The watch captain needs your help before the next caravan arrives.`
-- Audio duration: 3.360 s
-- Generation time: 0.875 s
-- Speed: 3.84x realtime
-- Prompting time: 46 ms
-- Average generation step: 17 ms
-
-INT8 test:
-
-- Audio duration: 3.280 s
-- Generation time: 1.031 s
-- Speed: 3.18x realtime
-- Prompting time: 47 ms
-- Average generation step: 22 ms
-
-On this machine, the upstream FP32 configuration is currently faster than the
-tested dynamic INT8 configuration.
-
-## Reference voices
-
-### Gnome male
-
-File:
-
-`voices/gnome_male.safetensors`
-
-SHA-256:
-
-`2118ea60dfe87bd515b27e051e1d677a7fe15663875740599147bde37a9c4cea`
-
-### Undead male
-
-File:
-
-`voices/undead_male.safetensors`
-
-SHA-256:
-
-`dce632cddb3a33203e140c73b2fa3970325bfbe3984813ddfe3e43e328037b6`
-
-The voice files themselves are local runtime/test assets and are intentionally
-not tracked by Git.
-
-## Oracle baseline
-
-The upstream Python implementation is used as the authoritative reference
-during development of the native Out Loud Pocket engine.
-
-### Test configuration
-
-- Voice: `gnome_male.safetensors`
-- Voice SHA-256: `2118ea60dfe87bd515b27e051e1d677a7fe15663875740599147bde37a9c4cea`
-- Seed: 73
-- Temperature: 0.3
-- Sampler decode steps: 1
-- Quantization: disabled
-- Sample rate: 24000 Hz
-- Output type used for exact comparison: float32 PCM
-
-### Test text
-
-`The watch captain needs your help before the next caravan arrives. Follow the river to the abandoned tower, speak with the scout waiting at its gate, and bring his report back to the village. Keep your lantern burning, for the path is narrow.`
-
-### Deterministic output
-
-- Audio duration: 13.600 s
-- Samples: 326400
-- Streaming chunks: 170
-- Chunk duration: 80 ms
-- Float32 SHA-256: `e4e1004ffda5a83b205a6d131d34209a88596012b249657702657c924ec529b9`
-
-Repeated generation in the same process with the same seed produced an exact
-bit-for-bit float32 match.
-
-### Reference performance
-
-Model load:
-
-- 0.515 s
-
-Voice state load:
-
-- 0.001 s
-
-Cold generation:
-
-- First PCM: 99.6 ms
-- Generation time: 3.493 s
-- Speed: 3.894x realtime
-
-Warm generation:
-
-- First PCM: 90.4 ms
-- Generation time: 3.523 s
-- Speed: 3.861x realtime
-
-These timings are informational performance baselines. Exact regression
-comparison is based on the deterministic float32 output, not timing.
+See [third-party licenses and source availability](../THIRD_PARTY_NOTICES.md),
+[model management](../docs/MODEL_UPDATES.md),
+[Sonic sources](../third_party/sonic/) and
+[production integration](../docs/RUST_RUNTIME_SESSION.md).

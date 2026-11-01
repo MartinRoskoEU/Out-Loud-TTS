@@ -16,7 +16,8 @@ struct Value {
 };
 class Parser {
 public:
-    explicit Parser(std::string_view input) : input_(input) {}
+    explicit Parser(std::string_view input, std::size_t nodes = 1024, std::size_t members = 128,
+                    std::size_t elements = 32) : input_(input), max_nodes_(nodes), max_members_(members), max_elements_(elements) {}
     Value parse() {
         if (!valid_utf8(input_)) { fail("Invalid UTF-8 in Safetensors header"); }
         auto result = value(0); whitespace();
@@ -87,7 +88,7 @@ private:
         do { ++at_; } while (digit());
     }
     Value value(unsigned depth) {
-        if (depth > 8 || ++nodes_ > 1024) { fail("Safetensors JSON nesting/member limit exceeded"); }
+        if (depth > 8 || ++nodes_ > max_nodes_) { fail("JSON nesting/member limit exceeded"); }
         whitespace(); if (at_ == input_.size()) { fail("Truncated JSON value"); }
         Value result;
         if (take('{')) {
@@ -96,7 +97,7 @@ private:
             do {
                 auto key = string(); expect(':'); auto child = value(depth + 1);
                 if (!result.object.emplace(std::move(key), std::move(child)).second) { fail("Duplicate JSON key"); }
-                if (result.object.size() > 128) { fail("Safetensors JSON object limit exceeded"); }
+                if (result.object.size() > max_members_) { fail("JSON object limit exceeded"); }
             } while (take(','));
             expect('}'); return result;
         }
@@ -105,7 +106,7 @@ private:
             if (take(']')) { return result; }
             do {
                 result.array.push_back(value(depth + 1));
-                if (result.array.size() > 32) { fail("Safetensors JSON array limit exceeded"); }
+                if (result.array.size() > max_elements_) { fail("JSON array limit exceeded"); }
             } while (take(','));
             expect(']'); return result;
         }
@@ -130,6 +131,7 @@ private:
     }
     std::string_view input_;
     std::size_t at_ = 0, nodes_ = 0;
+    std::size_t max_nodes_, max_members_, max_elements_;
 };
 
 inline bool unsigned_integer(const Value& value, std::uint64_t& result) {

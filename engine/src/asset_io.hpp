@@ -41,8 +41,6 @@ private:
 
 [[nodiscard]] std::array<unsigned char, 32> sha256_parts(std::initializer_list<Bytes> parts);
 [[nodiscard]] std::array<unsigned char, 32> sha256(Bytes bytes);
-[[nodiscard]] std::array<unsigned char, 32> asset_integrity(Bytes bytes);
 [[nodiscard]] std::string hex(Bytes bytes);
-[[nodiscard]] std::uint32_t u32(Bytes bytes, std::size_t offset);
 [[nodiscard]] std::uint64_t u64(Bytes bytes, std::size_t offset);
 } // namespace outloud::detail

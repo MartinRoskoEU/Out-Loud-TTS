@@ -5,15 +5,15 @@
 
 namespace outloud::frontend::mutation {
 inline constexpr std::uint32_t magic = 0x314d4c4f, version = 3, limit = 65536;
-enum class Operation : std::uint32_t { import = 1, replace = 2, remove = 3, import_olv = 4, replace_olv = 5 };
-enum class Outcome : std::uint32_t { success = 1, failed = 2, partial = 3, started = 4, replaced = 5, unchanged = 6, replacement_warning = 7, removed = 8, removal_warning = 9 };
-struct Request { std::filesystem::path source; std::string display_name; Operation kind=Operation::import; std::string target_id, expected_hash, expected_health; };
+enum class Operation : std::uint32_t { remove = 3, import_native = 7 };
+enum class Outcome : std::uint32_t { success = 1, failed = 2, partial = 3, started = 4, removed = 8, removal_warning = 9 };
+struct Request { std::filesystem::path source; std::string display_name; Operation kind=Operation::import_native; std::string target_id, expected_hash, expected_health; };
 struct Error {
     std::string domain, code, message, path, library_code, import_code, tensor;
     std::uint32_t system_error = 0;
     std::vector<std::string> duplicate_ids;
 };
-struct Result { Outcome outcome = Outcome::failed; std::string library_id; Error error; Operation kind=Operation::import; };
+struct Result { Outcome outcome = Outcome::failed; std::string library_id; Error error; Operation kind=Operation::import_native; };
 // Private, statically linked seams. No injection/root/scope options in the helper.
 Request decode_request(std::span<const std::uint8_t>);
 std::vector<std::uint8_t> encode_result(const Result&);

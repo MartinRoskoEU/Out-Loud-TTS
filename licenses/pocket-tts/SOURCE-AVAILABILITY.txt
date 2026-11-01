@@ -1,0 +1,9 @@
+The official Pocket TTS executable includes unmodified MPL-2.0 components.
+Their complete published Source Code Form is provided in the adjacent sources/
+directory as checksum-verified original .crate (gzip tar) archives. Versions and
+SHA256 checksums are recorded in components.json and upstream Cargo.lock.
+You may obtain the same source at no charge from the static.crates.io URLs
+recorded in THIRD-PARTY-NOTICES.txt. No app source license is changed.
+MPL-2.0 terms: https://www.mozilla.org/MPL/2.0/
+Other dual-licensed dependencies are redistributed under their permissive
+MIT/Apache/ISC/BSL/Zlib alternatives; LGPL alternatives are not selected.

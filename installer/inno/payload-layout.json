@@ -1,0 +1,2409 @@
+﻿{
+    "schema":  1,
+    "description":  "Exact self-contained win-x64 publish paths. Upstream images require original Microsoft signatures; Rust has its pinned upstream digest.",
+    "files":  [
+                  {
+                      "path":  "clretwrc.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "clrgc.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "clrgcexp.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "clrjit.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "coreclr.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "CoreMessagingXP.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "createdump.exe",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "dcompi.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "DirectML.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "dwmcorei.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "DwmSceneI.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "DWriteCore.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "hostfxr.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "hostpolicy.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "marshal.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "Microsoft.Asg.SemanticIndex.AiFabric.Compatibility.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "Microsoft.CSharp.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "Microsoft.DiaSymReader.Native.amd64.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "Microsoft.DirectManipulation.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "Microsoft.Foundation.winmd",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "Microsoft.Graphics.Display.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "Microsoft.Graphics.Imaging.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "Microsoft.Graphics.Imaging.Projection.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "Microsoft.Graphics.Imaging.winmd",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "Microsoft.Graphics.ImagingInternal.ImageObjectRemover.winmd",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "Microsoft.Graphics.ImagingInternal.winmd",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "Microsoft.Graphics.Internal.Imaging.winmd",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "Microsoft.Graphics.winmd",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "Microsoft.InputStateManager.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "Microsoft.InteractiveExperiences.Projection.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "Microsoft.Internal.FrameworkUdk.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "Microsoft.ML.OnnxRuntime.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "Microsoft.Security.Authentication.OAuth.Projection.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "Microsoft.Security.Authentication.OAuth.winmd",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "Microsoft.UI.Composition.OSSupport.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "Microsoft.UI.Designer.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "Microsoft.UI.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "Microsoft.UI.Input.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "Microsoft.UI.pri",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "Microsoft.UI.Text.winmd",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "Microsoft.UI.Windowing.Core.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "Microsoft.UI.Windowing.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "Microsoft.UI.winmd",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "Microsoft.UI.Xaml.Controls.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "Microsoft.UI.Xaml.Controls.pri",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "Microsoft.ui.xaml.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "Microsoft.UI.Xaml.Internal.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "Microsoft.UI.Xaml.Phone.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "Microsoft.ui.xaml.resources.19h1.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "Microsoft.ui.xaml.resources.common.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "Microsoft.UI.Xaml.winmd",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "Microsoft.VisualBasic.Core.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "Microsoft.VisualBasic.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "Microsoft.Web.WebView2.Core.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "Microsoft.Web.WebView2.Core.Projection.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "Microsoft.Win32.Primitives.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "Microsoft.Win32.Registry.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.AI.AICapabilities.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.AI.ContentModerationInternal.winmd",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.AI.ContentSafety.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.AI.ContentSafety.Projection.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.AI.ContentSafety.winmd",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.AI.Foundation.Projection.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.AI.Foundation.winmd",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.AI.FoundationInternal.winmd",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.AI.GenerativeInternal.winmd",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.AI.Imaging.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.AI.Imaging.Projection.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.AI.Imaging.winmd",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.AI.MachineLearning.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.AI.MachineLearning.Projection.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.AI.Projection.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.AI.Search.Experimental.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.AI.Text.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.AI.Text.Projection.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.AI.Text.winmd",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.AI.Video.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.AI.Video.Projection.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.AI.Video.winmd",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.AI.winmd",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.ApplicationModel.Background.Projection.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.ApplicationModel.Background.UniversalBGTask.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.ApplicationModel.Background.UniversalBGTask.winmd",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.ApplicationModel.Background.winmd",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.ApplicationModel.DynamicDependency.Projection.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.ApplicationModel.DynamicDependency.winmd",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.ApplicationModel.Resources.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.ApplicationModel.Resources.Projection.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.ApplicationModel.Resources.winmd",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.ApplicationModel.WindowsAppRuntime.Projection.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.ApplicationModel.WindowsAppRuntime.winmd",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.AppLifecycle.Projection.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.AppLifecycle.winmd",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.AppNotifications.Builder.Projection.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.AppNotifications.Builder.winmd",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.AppNotifications.Projection.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.AppNotifications.winmd",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.BadgeNotifications.Projection.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.BadgeNotifications.winmd",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.Foundation.Projection.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.Foundation.winmd",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.Globalization.winmd",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.ImageCreationInternal.winmd",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.Internal.AI.ContentModeration.winmd",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.Internal.AI.Generative.winmd",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.Internal.ImageCreation.winmd",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.Internal.SemanticSearch.winmd",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.Internal.Vision.winmd",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.Management.Deployment.Projection.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.Management.Deployment.winmd",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.Media.Capture.Projection.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.Media.Capture.winmd",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.Private.Workloads.SessionManager.winmd",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.PrivateCommon.winmd",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.PushNotifications.Projection.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.PushNotifications.winmd",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.SDK.NET.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.Search.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.Search.Projection.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.Search.winmd",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.Security.AccessControl.Projection.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.Security.AccessControl.winmd",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.SemanticSearch.winmd",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.SemanticSearchInternal.winmd",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.Storage.Pickers.Projection.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.Storage.Pickers.winmd",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.Storage.Projection.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.Storage.winmd",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.System.Power.Projection.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.System.Power.winmd",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.System.Projection.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.System.winmd",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.Vision.winmd",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.VisionInternal.winmd",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.Widgets.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.Widgets.Projection.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.Widgets.winmd",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.Workloads.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.Workloads.pri",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.Workloads.Resources.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.Workloads.Resources_ec.dll",
+                      "publisher":  "Microsoft",
+                      "sha256":  "639f7dd3130d22c0929e5a86fb722b754be6457cbf65593303e257178d5aebe7",
+                      "machine":  "aa64-sdk-auxiliary"
+                  },
+                  {
+                      "path":  "Microsoft.Windows.Workloads.winmd",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "Microsoft.WindowsAppRuntime.Bootstrap.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "Microsoft.WindowsAppRuntime.Bootstrap.Net.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "Microsoft.WindowsAppRuntime.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "Microsoft.WindowsAppRuntime.pri",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "Microsoft.WinUI.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "MRM.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "mscordaccore.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "mscordaccore_amd64_amd64_10.0.1226.42308.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "mscordbi.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "mscorlib.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "mscorrc.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "msquic.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "netstandard.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "NPUDetect.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "onnxruntime.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "OutLoud.WinUI.deps.json",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "OutLoud.WinUI.dll",
+                      "publisher":  "OutLoud",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "OutLoud.WinUI.exe",
+                      "publisher":  "OutLoud",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "OutLoud.WinUI.runtimeconfig.json",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "OutLoudVoiceImportHelper.exe",
+                      "publisher":  "OutLoud",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "OutLoudVoiceManagerNative.dll",
+                      "publisher":  "OutLoud",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "PerceptiveStreaming.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "PushNotificationsLongRunningTask.ProxyStub.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "RestartAgent.exe",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "SessionHandleIPCProxyStub.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.AppContext.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "System.Buffers.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "System.Collections.Concurrent.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.Collections.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.Collections.Immutable.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.Collections.NonGeneric.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.Collections.Specialized.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.ComponentModel.Annotations.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.ComponentModel.DataAnnotations.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "System.ComponentModel.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.ComponentModel.EventBasedAsync.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.ComponentModel.Primitives.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.ComponentModel.TypeConverter.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.Configuration.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "System.Console.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.Core.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "System.Data.Common.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.Data.DataSetExtensions.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "System.Data.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "System.Diagnostics.Contracts.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "System.Diagnostics.Debug.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "System.Diagnostics.DiagnosticSource.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.Diagnostics.FileVersionInfo.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.Diagnostics.Process.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.Diagnostics.StackTrace.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.Diagnostics.TextWriterTraceListener.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.Diagnostics.Tools.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "System.Diagnostics.TraceSource.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.Diagnostics.Tracing.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "System.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "System.Drawing.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "System.Drawing.Primitives.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.Dynamic.Runtime.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "System.Formats.Asn1.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.Formats.Tar.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.Globalization.Calendars.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "System.Globalization.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "System.Globalization.Extensions.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "System.IO.Compression.Brotli.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.IO.Compression.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.IO.Compression.FileSystem.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "System.IO.Compression.Native.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.IO.Compression.ZipFile.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.IO.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "System.IO.FileSystem.AccessControl.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.IO.FileSystem.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "System.IO.FileSystem.DriveInfo.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.IO.FileSystem.Primitives.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "System.IO.FileSystem.Watcher.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.IO.IsolatedStorage.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.IO.MemoryMappedFiles.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.IO.Pipelines.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.IO.Pipes.AccessControl.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "System.IO.Pipes.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.IO.UnmanagedMemoryStream.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "System.Linq.AsyncEnumerable.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.Linq.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.Linq.Expressions.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.Linq.Parallel.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.Linq.Queryable.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.Memory.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.Net.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "System.Net.Http.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.Net.Http.Json.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.Net.HttpListener.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.Net.Mail.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.Net.NameResolution.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.Net.NetworkInformation.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.Net.Ping.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.Net.Primitives.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.Net.Quic.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.Net.Requests.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.Net.Security.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.Net.ServerSentEvents.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.Net.ServicePoint.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "System.Net.Sockets.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.Net.WebClient.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.Net.WebHeaderCollection.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.Net.WebProxy.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.Net.WebSockets.Client.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.Net.WebSockets.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.Numerics.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "System.Numerics.Tensors.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "System.Numerics.Vectors.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "System.ObjectModel.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.Private.CoreLib.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.Private.DataContractSerialization.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.Private.Uri.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.Private.Xml.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.Private.Xml.Linq.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.Reflection.DispatchProxy.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.Reflection.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "System.Reflection.Emit.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.Reflection.Emit.ILGeneration.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "System.Reflection.Emit.Lightweight.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "System.Reflection.Extensions.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "System.Reflection.Metadata.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.Reflection.Primitives.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "System.Reflection.TypeExtensions.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.Resources.Reader.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "System.Resources.ResourceManager.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "System.Resources.Writer.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.Runtime.CompilerServices.Unsafe.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "System.Runtime.CompilerServices.VisualC.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.Runtime.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "System.Runtime.Extensions.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "System.Runtime.Handles.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "System.Runtime.InteropServices.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.Runtime.InteropServices.JavaScript.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.Runtime.InteropServices.RuntimeInformation.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "System.Runtime.Intrinsics.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "System.Runtime.Loader.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "System.Runtime.Numerics.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.Runtime.Serialization.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "System.Runtime.Serialization.Formatters.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.Runtime.Serialization.Json.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "System.Runtime.Serialization.Primitives.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.Runtime.Serialization.Xml.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "System.Security.AccessControl.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.Security.Claims.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.Security.Cryptography.Algorithms.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "System.Security.Cryptography.Cng.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "System.Security.Cryptography.Csp.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "System.Security.Cryptography.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.Security.Cryptography.Encoding.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "System.Security.Cryptography.OpenSsl.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "System.Security.Cryptography.Primitives.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "System.Security.Cryptography.X509Certificates.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "System.Security.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "System.Security.Principal.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "System.Security.Principal.Windows.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.Security.SecureString.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "System.ServiceModel.Web.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "System.ServiceProcess.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "System.Text.Encoding.CodePages.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.Text.Encoding.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "System.Text.Encoding.Extensions.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "System.Text.Encodings.Web.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.Text.Json.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.Text.RegularExpressions.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.Threading.AccessControl.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.Threading.Channels.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.Threading.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.Threading.Overlapped.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "System.Threading.Tasks.Dataflow.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.Threading.Tasks.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "System.Threading.Tasks.Extensions.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "System.Threading.Tasks.Parallel.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.Threading.Thread.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "System.Threading.ThreadPool.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "System.Threading.Timer.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "System.Transactions.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "System.Transactions.Local.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.ValueTuple.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "System.Web.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "System.Web.HttpUtility.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "System.Windows.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "System.Xml.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "System.Xml.Linq.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "System.Xml.ReaderWriter.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "System.Xml.Serialization.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "System.Xml.XDocument.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "System.Xml.XmlDocument.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "System.Xml.XmlSerializer.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "System.Xml.XPath.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "System.Xml.XPath.XDocument.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "WebView2Loader.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "WindowsBase.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "WinRT.Runtime.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "msil"
+                  },
+                  {
+                      "path":  "WinUIEdit.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "workloads.365.json",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "workloads.j32.json",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "workloads.json",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "workloads.lnl.json",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "workloads.qnn.json",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "workloads.stx.json",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "wuceffectsi.dll",
+                      "publisher":  "Microsoft",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "af-ZA/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "af-ZA/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "am-ET/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "am-ET/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "ar-SA/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "ar-SA/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "as-IN/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "as-IN/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "Assets/AppTitleIcon.png",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "Assets/OutLoud.ico",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "az-Latn-AZ/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "az-Latn-AZ/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "bg-BG/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "bg-BG/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "bn-IN/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "bn-IN/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "bs-Latn-BA/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "bs-Latn-BA/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "ca-ES/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "ca-ES/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "ca-Es-VALENCIA/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "ca-Es-VALENCIA/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "cs-CZ/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "cs-CZ/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "cy-GB/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "cy-GB/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "da-DK/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "da-DK/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "de-DE/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "de-DE/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "el-GR/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "el-GR/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "en-GB/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "en-GB/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "en-us/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "en-us/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "es-ES/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "es-ES/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "es-MX/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "es-MX/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "et-EE/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "et-EE/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "eu-ES/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "eu-ES/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "fa-IR/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "fa-IR/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "fi-FI/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "fi-FI/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "fil-PH/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "fil-PH/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "fr-CA/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "fr-CA/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "fr-FR/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "fr-FR/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "ga-IE/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "ga-IE/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "gd-gb/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "gd-gb/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "gl-ES/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "gl-ES/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "gu-IN/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "gu-IN/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "he-IL/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "he-IL/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "hi-IN/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "hi-IN/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "hr-HR/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "hr-HR/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "hu-HU/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "hu-HU/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "hy-AM/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "hy-AM/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "id-ID/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "id-ID/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "is-IS/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "is-IS/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "it-IT/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "it-IT/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "ja-JP/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "ja-JP/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "ka-GE/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "ka-GE/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "kk-KZ/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "kk-KZ/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "km-KH/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "km-KH/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "kn-IN/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "kn-IN/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "ko-KR/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "ko-KR/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "kok-IN/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "kok-IN/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "lb-LU/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "lb-LU/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "lo-LA/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "lo-LA/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "lt-LT/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "lt-LT/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "lv-LV/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "lv-LV/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "mi-NZ/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "mi-NZ/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "Microsoft.UI.Xaml/Assets/map.html",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "Microsoft.UI.Xaml/Assets/NoiseAsset_256x256_PNG.png",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "mk-MK/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "mk-MK/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "ml-IN/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "ml-IN/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "mr-IN/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "mr-IN/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "ms-MY/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "ms-MY/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "mt-MT/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "mt-MT/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "nb-NO/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "nb-NO/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "ne-NP/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "ne-NP/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "nl-NL/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "nl-NL/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "nn-NO/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "nn-NO/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "or-IN/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "or-IN/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "pa-IN/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "pa-IN/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "pl-PL/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "pl-PL/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "pt-BR/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "pt-BR/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "pt-PT/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "pt-PT/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "quz-PE/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "quz-PE/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "ro-RO/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "ro-RO/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "ru-RU/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "ru-RU/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "runtime/pocket-tts/LICENSE",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "runtime/pocket-tts/pocket-tts.exe",
+                      "publisher":  "Kyutai-pinned",
+                      "machine":  "8664"
+                  },
+                  {
+                      "path":  "RuntimeMetadata/v4.0.1/LICENSE",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "sk-SK/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "sk-SK/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "sl-SI/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "sl-SI/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "sq-AL/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "sq-AL/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "sr-Cyrl-BA/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "sr-Cyrl-BA/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "sr-Cyrl-RS/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "sr-Cyrl-RS/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "sr-Latn-RS/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "sr-Latn-RS/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "sv-SE/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "sv-SE/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "ta-IN/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "ta-IN/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "te-IN/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "te-IN/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "th-TH/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "th-TH/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "tr-TR/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "tr-TR/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "tt-RU/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "tt-RU/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "ug-CN/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "ug-CN/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "uk-UA/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "uk-UA/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "ur-PK/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "ur-PK/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "uz-Latn-UZ/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "uz-Latn-UZ/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "vi-VN/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "vi-VN/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "zh-CN/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "zh-CN/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "zh-TW/Microsoft.ui.xaml.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "zh-TW/Microsoft.UI.Xaml.Phone.dll.mui",
+                      "publisher":  "resource"
+                  },
+                  {
+                      "path":  "App.xbf",
+                      "publisher":  "resource",
+                      "source":  "winui-build"
+                  },
+                  {
+                      "path":  "MainWindow.xbf",
+                      "publisher":  "resource",
+                      "source":  "winui-build"
+                  },
+                  {
+                      "path":  "SettingsView.xbf",
+                      "publisher":  "resource",
+                      "source":  "winui-build"
+                  },
+                  {
+                      "path":  "VoiceLibraryView.xbf",
+                      "publisher":  "resource",
+                      "source":  "winui-build"
+                  },
+                  {
+                      "path":  "VoiceTesterView.xbf",
+                      "publisher":  "resource",
+                      "source":  "winui-build"
+                  },
+                  {
+                      "path":  "OutLoud.WinUI.pri",
+                      "publisher":  "resource",
+                      "source":  "winui-build"
+                  }
+              ]
+}

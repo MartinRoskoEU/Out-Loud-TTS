@@ -8,6 +8,6 @@ $null = Assert-Bundle $DeploymentRoot $RequireSignatures.IsPresent
 foreach ($entry in (Read-BundleInventory $DeploymentRoot).binaries) {
     $path = Resolve-BundlePath $DeploymentRoot $entry.path
     $signature = Get-AuthenticodeSignature -LiteralPath $path
-    Write-Output "$($entry.path): x64, $($signature.Status), policy=$($entry.signing)"
+    Write-Output "$($entry.path): architecture=$($entry.machine), $($signature.Status), policy=$($entry.signing)"
 }
-Write-Output 'PASS: inventory, file hashes, architecture and signature policy. No registry operations.'
+Write-Output 'PASS: inventory, file hashes, architecture and signature/pinned-runtime policy. No registry operations.'

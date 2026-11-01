@@ -35,7 +35,11 @@ foreach ($entry in $inventory.binaries) {
 foreach ($entry in $inventory.binaries) {
     $target = Resolve-BundlePath $DeploymentRoot $entry.path
     $signature = Get-AuthenticodeSignature -LiteralPath $target
-    if ($entry.signing -eq 'preserve-microsoft') {
+    if ($entry.signing -eq 'preserve-pinned') {
+        Assert-BundlePinnedFile $target $entry
+        Write-Output "PRESERVED pinned official runtime bytes: $($entry.path)"
+        continue
+    } elseif ($entry.signing -eq 'preserve-microsoft') {
         Assert-MicrosoftSignature $target
         Write-Output "PRESERVED Microsoft signature: $($entry.path)"
     } else {
@@ -60,4 +64,4 @@ foreach ($entry in $inventory.binaries) {
 $manifest.signing_executed = $true
 $manifest | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $DeploymentRoot 'deployment.json') -Encoding UTF8
 $null = Assert-Bundle $DeploymentRoot $true
-Write-Output 'PASS: all six shipped PE images have valid signatures. Registration is a separate manual action.'
+Write-Output 'PASS: all inventoried images satisfy signature or official-runtime hash policy. Registration is a separate manual action.'

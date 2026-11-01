@@ -11,6 +11,9 @@ Assert-RegistryAdministrator
 Assert-GameClosed
 $DeploymentRoot = (Resolve-Path -LiteralPath $DeploymentRoot).Path
 $null = Assert-Bundle $DeploymentRoot $true
+if ((Read-BundleInventory $DeploymentRoot).schema -eq 3) {
+    Assert-DevelopmentBundleSecurity $DeploymentRoot (Resolve-BundlePath $DeploymentRoot 'bin/OutLoudInstallSigning.exe')
+}
 $dll = Resolve-BundlePath $DeploymentRoot 'bin/OutLoudPocketSAPI.dll'
 if (-not $ReportDirectory) { $ReportDirectory = Join-Path $DeploymentRoot ('reports/register-' + [DateTime]::UtcNow.ToString('yyyyMMddTHHmmssfffZ')) }
 Assert-NoUserOverride

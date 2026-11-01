@@ -82,11 +82,7 @@ std::array<unsigned char, 32> sha256_parts(std::initializer_list<Bytes> parts) {
     return hash.finish();
 }
 std::array<unsigned char, 32> sha256(Bytes bytes) { return sha256_parts({bytes}); }
-std::array<unsigned char, 32> asset_integrity(Bytes bytes) {
-    if (bytes.size() < 256) { throw std::runtime_error("Truncated asset header"); }
-    const std::array<unsigned char, 32> zero{};
-    return sha256_parts({bytes.first(96), zero, bytes.subspan(128)});
-}
+
 std::string hex(Bytes bytes) {
     constexpr char alphabet[] = "0123456789abcdef";
     std::string result;
@@ -94,12 +90,7 @@ std::string hex(Bytes bytes) {
     for (auto b : bytes) { result += alphabet[b >> 4]; result += alphabet[b & 15]; }
     return result;
 }
-std::uint32_t u32(Bytes bytes, std::size_t offset) {
-    if (offset > bytes.size() || bytes.size() - offset < 4) { throw std::runtime_error("Truncated asset field"); }
-    std::uint32_t result = 0;
-    for (std::size_t i = 0; i < 4; ++i) { result |= std::uint32_t(bytes[offset + i]) << (8 * i); }
-    return result;
-}
+
 std::uint64_t u64(Bytes bytes, std::size_t offset) {
     if (offset > bytes.size() || bytes.size() - offset < 8) { throw std::runtime_error("Truncated asset field"); }
     std::uint64_t result = 0;

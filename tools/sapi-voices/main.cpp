@@ -52,7 +52,7 @@ int wmain(int argc,wchar_t** argv) {
         // configuration reconciliation needs the intended shared deployment.
         outloud::SapiVoiceRuntime runtime;
         if (!deployment.empty()) { runtime = {deployment,(deployment/L"bin/OutLoudPocketSAPI.dll").lexically_normal(),
-            (deployment/L"runtime/pocket-english.olp").lexically_normal(),(deployment/L"runtime/pocket-english-tokenizer.bin").lexically_normal()}; }
+            (deployment/L"runtime/pocket-tts/pocket-tts.exe").lexically_normal()}; }
         if (command==L"verify-engine") {
             outloud::windows_sapi_voice_registry()->verify_engine(runtime.engine_dll);
             std::cout << "result=engine_verified\nselected_dll=" << fs::utf8(runtime.engine_dll.wstring()) << '\n'; return 0;

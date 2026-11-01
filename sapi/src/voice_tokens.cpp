@@ -1,11 +1,10 @@
 #include "outloud/sapi_voices.hpp"
-#include "outloud/assets.hpp"
-#include "outloud/tokenizer.hpp"
 #include "identity.hpp"
 #include "token_comparison.hpp"
 #include "voice_library_fs.hpp"
 #include <cstring>
 #include "asset_io.hpp"
+#include "outloud/rust_model_selection.hpp"
 #include <set>
 
 namespace outloud {
@@ -26,11 +25,12 @@ bool owned(const SapiTokenTree& tree,std::string_view id) {
         text(tree,L"CLSID")==sapi::clsid_text;
 }
 bool shape(const SapiTokenTree& tree) {
-    static const std::set<std::wstring> root{L"",L"409",L"CLSID",L"OutLoudManagedOwner",L"LibraryId",L"AssetRoot",
-        L"ModelPath",L"TokenizerPath",L"VoicePath",L"Seed",L"MaximumSegmentTokens",L"KernelPath"};
     static const std::set<std::wstring> attributes{L"Name",L"Language",L"Vendor"};
-    if (tree.values.size()!=root.size() || tree.children.size()!=1 || !tree.children.contains(L"Attributes")) { return false; }
-    for (const auto& [key,value] : tree.values) { if (!root.contains(key) || !sapi_registry_text(value)) { return false; } }
+    static const std::set<std::wstring> native{L"",L"409",L"CLSID",L"OutLoudManagedOwner",L"LibraryId",L"AssetRoot",L"Backend",L"RustRuntimePath",L"VoicePath"};
+    const auto& allowed=native;
+    if (text(tree,L"Backend")!=L"Rust") { return false; }
+    if (tree.values.size()!=allowed.size() || tree.children.size()!=1 || !tree.children.contains(L"Attributes")) { return false; }
+    for (const auto& [key,value] : tree.values) { if (!allowed.contains(key) || !sapi_registry_text(value)) { return false; } }
     const auto& attr = tree.children.at(L"Attributes");
     if (!attr.children.empty() || attr.values.size()!=attributes.size()) { return false; }
     for (const auto& [key,value] : attr.values) { if (!attributes.contains(key) || !sapi_registry_text(value)) { return false; } }
@@ -111,30 +111,26 @@ SapiTokenTree SapiVoiceManager::desired(const LibraryVoice& v) const {
     const auto name = wide(v.metadata->display_name);
     set(tree,L"",name); set(tree,L"409",name); set(tree,L"CLSID",sapi::clsid_text);
     set(tree,L"OutLoudManagedOwner",marker); set(tree,L"LibraryId",wide(v.library_id));
-    set(tree,L"AssetRoot",runtime_.asset_root.wstring()); set(tree,L"ModelPath",runtime_.model.wstring());
-    set(tree,L"TokenizerPath",runtime_.tokenizer.wstring()); set(tree,L"VoicePath",v.managed_olv_path.wstring());
-    set(tree,L"Seed",L"73"); set(tree,L"MaximumSegmentTokens",L"128"); set(tree,L"KernelPath",L"Auto");
+    set(tree,L"AssetRoot",runtime_.asset_root.wstring());
+
+    set(tree,L"Backend",L"Rust"); set(tree,L"RustRuntimePath",runtime_.rust_runtime.wstring());
+    set(tree,L"VoicePath",v.managed_native_path.wstring());
+
     auto& attr = tree.children[L"Attributes"];
     set(attr,L"Name",name); set(attr,L"Language",L"409"); set(attr,L"Vendor",L"Out Loud"); return tree;
 }
 void SapiVoiceManager::validate_runtime(const LibraryVoice& v) const {
     if (v.health!=VoiceHealth::valid) { throw SapiVoiceError(Code::unhealthy_voice,v.detail); }
+
     try {
-        detail::library_fs::Pins root(runtime_.asset_root);
-        for (const auto& path : {runtime_.asset_root,runtime_.engine_dll,runtime_.model,runtime_.tokenizer,v.managed_olv_path}) {
-            const auto safe = detail::library_fs::local(path,VoiceLibraryErrorCode::unsafe_path);
-            if (safe!=path || !path.is_absolute()) { throw SapiVoiceError(Code::invalid_runtime,"Runtime paths must be normalized absolute local paths."); }
-            detail::library_fs::Pins pins(path.parent_path());
-            if (path!=runtime_.asset_root) { auto pinned = detail::library_fs::file(path); }
+        if (!runtime_.rust_runtime.is_absolute() || detail::library_fs::local(runtime_.rust_runtime,VoiceLibraryErrorCode::unsafe_path)!=runtime_.rust_runtime) {
+            throw SapiVoiceError(Code::invalid_runtime,"The native voice runtime path must be normalized and absolute.");
         }
-        (void)validate_olv(v.managed_olv_path);
-        PocketModelAsset model(runtime_.model); OutLoudVoice asset(v.managed_olv_path); asset.validate_against(model);
-        Tokenizer tokenizer(runtime_.tokenizer);
-    } catch (const VoiceImportError& e) { throw SapiVoiceError(Code::incompatible_voice,e.what(),e.system_error(),{},e); }
-    catch (const VoiceLibraryError& e) { throw SapiVoiceError(e.code()==VoiceLibraryErrorCode::library_access_denied ? Code::library_access_denied : Code::invalid_runtime,e.what(),e.system_error(),e); }
-    catch (const SapiVoiceError&) { throw; }
+        verify_rust_runtime(runtime_.rust_runtime);
+    }
     catch (const std::exception& e) { throw SapiVoiceError(Code::invalid_runtime,e.what()); }
-    registry_->verify_engine(runtime_.engine_dll);
+    registry_->verify_engine(runtime_.engine_dll); return;
+
 }
 SapiVoiceToken SapiVoiceManager::inspect(std::string_view id) const {
     return inspect_impl(id,nullptr);
@@ -173,8 +169,10 @@ SapiVoiceToken SapiVoiceManager::inspect_impl(std::string_view id,const LibraryV
     }
     else {
         auto expected = desired(*v);
-        if (runtime_.asset_root.empty() && runtime_.model.empty() && runtime_.tokenizer.empty()) {
-            for (const auto* key : {L"AssetRoot",L"ModelPath",L"TokenizerPath"}) { expected.values[key] = result.tree->values.at(key); }
+        if (runtime_.asset_root.empty() && runtime_.rust_runtime.empty()) {
+
+                for (const auto* key : {L"AssetRoot",L"RustRuntimePath"}) { expected.values[key]=result.tree->values.at(key); }
+
             result.detail = "Library identity/path/name checked; shared runtime configuration was not supplied.";
         }
         if (text(*result.tree,L"VoicePath")!=text(expected,L"VoicePath")) { result.status = SapiTokenStatus::wrong_path; }
@@ -229,15 +227,7 @@ SapiTokenChange SapiVoiceManager::install(std::string_view id) {
     if (old) { throw SapiVoiceError(Code::token_conflict,"Token exists with different contents; reconcile before changing it."); }
     registry_->exchange(key,{},next); return SapiTokenChange::installed;
 }
-void SapiVoiceManager::validate_replacement(const LibraryVoice& current,const std::filesystem::path& staged) const {
-    validate_machine_library();
-    if (!current.metadata || current.health!=VoiceHealth::valid || current.managed_olv_path!=library_.root()/L"voices"/wide(current.library_id)/L"voice.olv") {
-        throw SapiVoiceError(Code::unhealthy_voice,"Replacement target must be a healthy managed entry.");
-    }
-    auto candidate=current; candidate.managed_olv_path=staged; validate_runtime(candidate);
-    const auto expected=desired(current); const auto actual=registry_->read(managed_sapi_token_key(current.library_id));
-    if (!actual || !sapi::same_token(*actual,expected)) { throw SapiVoiceError(Code::reconciliation_required,"Replacement requires the existing owned machine token to be correct. Reconcile it first; no content was published."); }
-}
+
 SapiTokenChange SapiVoiceManager::update(std::string_view id) {
     validate_machine_library(); const auto v = voice(id); validate_runtime(v); auto next = desired(v);
     const auto key = managed_sapi_token_key(id); const auto old = registry_->read(key);

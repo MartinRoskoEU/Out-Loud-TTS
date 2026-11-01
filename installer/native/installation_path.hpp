@@ -4,7 +4,7 @@
 #include <filesystem>
 #include <cwctype>
 namespace outloud::installer {
-// No default directory or product discovery here: Inno supplies the selected app path.
+// No default directory or product discovery: deployment supplies the explicit app path.
 inline std::filesystem::path installation_path(const std::filesystem::path& input) {
     const auto text=input.native();
     signing_require(input.is_absolute() && text.size()>3 && std::iswalpha(text[0]) &&

@@ -1,0 +1,142 @@
+<UserControl x:Class="OutLoud.WinUI.VoiceLibraryView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:OutLoud.WinUI"
+    xmlns:voices="using:OutLoud.WinUI.Voices">
+    <UserControl.Resources>
+        <Style x:Key="VoiceCardStyle" TargetType="Border">
+            <Setter Property="Padding" Value="20" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}" />
+            <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+        </Style>
+        <Style x:Key="VoiceStatusNeutralStyle" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+        </Style>
+        <Style x:Key="VoiceStatusSuccessStyle" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{ThemeResource SystemFillColorSuccessBrush}" />
+        </Style>
+        <Style x:Key="VoiceStatusWarningStyle" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{ThemeResource SystemFillColorCautionBrush}" />
+        </Style>
+        <Style x:Key="VoiceStatusErrorStyle" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{ThemeResource SystemFillColorCriticalBrush}" />
+        </Style>
+        <local:VoiceLibraryStatusStyleConverter x:Key="VoiceStatusStyle"
+            Success="{StaticResource VoiceStatusSuccessStyle}"
+            Warning="{StaticResource VoiceStatusWarningStyle}"
+            Error="{StaticResource VoiceStatusErrorStyle}"
+            Neutral="{StaticResource VoiceStatusNeutralStyle}" />
+        <Style x:Key="VoiceActionButtonStyle" TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}">
+            <Setter Property="Height" Value="36" />
+            <Setter Property="MinWidth" Value="104" />
+            <Setter Property="Padding" Value="16,0" />
+            <Setter Property="CornerRadius" Value="{ThemeResource ControlCornerRadius}" />
+            <Setter Property="Margin" Value="0,0,8,8" />
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+        </Style>
+    </UserControl.Resources>
+    <ScrollViewer Padding="28" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto" HorizontalContentAlignment="Stretch">
+        <StackPanel Spacing="20">
+            <StackPanel Spacing="8">
+                <TextBlock Text="Voice Library" FontSize="28" FontWeight="SemiBold" />
+                <TextBlock Text="Installed voices and Windows speech status." FontSize="13" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
+            </StackPanel>
+            <Border x:Name="RefreshErrorPanel" Style="{StaticResource VoiceCardStyle}" Visibility="Collapsed">
+                <StackPanel Spacing="8">
+                    <TextBlock Text="Could not refresh voices" MinHeight="28" FontSize="17" FontWeight="SemiBold" Foreground="{ThemeResource SystemFillColorCriticalBrush}" />
+                    <TextBlock x:Name="RefreshErrorText" FontSize="13" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                    <TextBlock Text="Try Refresh again. Any previously loaded voices are kept." FontSize="13" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
+                    <Expander Header="Diagnostic details" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                        <ScrollViewer MaxHeight="160" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto" HorizontalContentAlignment="Stretch">
+                            <TextBlock x:Name="RefreshDiagnosticText" FontSize="13" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                        </ScrollViewer>
+                    </Expander>
+                </StackPanel>
+            </Border>
+            <Border x:Name="OperationPanel" Style="{StaticResource VoiceCardStyle}" Visibility="Collapsed">
+                <Grid ColumnSpacing="16" RowSpacing="8">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                    <TextBlock x:Name="OperationTitleText" MinHeight="28" FontSize="17" FontWeight="SemiBold" TextWrapping="Wrap" VerticalAlignment="Center" AutomationProperties.LiveSetting="Polite" />
+                    <StackPanel Grid.Row="1" Grid.ColumnSpan="2" Spacing="12">
+                        <TextBlock x:Name="OperationMessageText" FontSize="13" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                        <Expander x:Name="OperationDiagnostic" Header="Diagnostic details" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Visibility="Collapsed">
+                            <ScrollViewer MaxHeight="160" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto" HorizontalContentAlignment="Stretch">
+                                <TextBlock x:Name="OperationDiagnosticText" FontSize="13" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                            </ScrollViewer>
+                        </Expander>
+                    </StackPanel>
+                    <Button Grid.Column="1" Click="Dismiss_Click" Width="28" Height="28" MinWidth="0" MinHeight="0" Padding="0" Background="Transparent" BorderThickness="0" VerticalAlignment="Center" ToolTipService.ToolTip="Dismiss notification" AutomationProperties.Name="Dismiss notification"><FontIcon Glyph="&#xE711;" FontSize="12" /></Button>
+                </Grid>
+            </Border>
+            <TextBlock x:Name="SapiWarningText" Text="Some SAPI states could not be read. Select a voice and open Detail to see its diagnostic." Foreground="{ThemeResource SystemFillColorCautionBrush}" TextWrapping="Wrap" Visibility="Collapsed" />
+            <Border Style="{StaticResource VoiceCardStyle}">
+                <StackPanel>
+                    <Grid ColumnSpacing="16">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                        <TextBlock Text="Voice library" FontSize="17" FontWeight="SemiBold" VerticalAlignment="Center" />
+                        <TextBlock Grid.Column="1" Text="Machine-wide" FontSize="13" Foreground="{ThemeResource TextFillColorSecondaryBrush}" VerticalAlignment="Center" />
+                    </Grid>
+                    <ItemsControl Margin="0,16,0,12" HorizontalAlignment="Left">
+                        <ItemsControl.ItemsPanel><ItemsPanelTemplate><ItemsWrapGrid Orientation="Horizontal" ItemWidth="112" ItemHeight="44" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                        <Button x:Name="DetailButton" Content="Detail" Click="Detail_Click" IsEnabled="False" Style="{StaticResource VoiceActionButtonStyle}" />
+                        <Button x:Name="RefreshButton" Click="Refresh_Click" Style="{StaticResource VoiceActionButtonStyle}" ToolTipService.ToolTip="Refresh the voice list">
+                            <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center"><FontIcon Glyph="&#xE72C;" FontSize="14" VerticalAlignment="Center" /><TextBlock Text="Refresh" VerticalAlignment="Center" /></StackPanel>
+                        </Button>
+                        <Button x:Name="ImportButton" Content="Import" Click="Import_Click" Style="{StaticResource VoiceActionButtonStyle}" ToolTipService.ToolTip="Import a native .safetensors voice for all users" />
+                        <Button x:Name="ExportButton" Content="Export" Click="Export_Click" IsEnabled="False" Style="{StaticResource VoiceActionButtonStyle}" ToolTipService.ToolTip="Export the selected native voice as .safetensors" />
+                        <Button x:Name="RemoveButton" Content="Remove" Click="Remove_Click" IsEnabled="False" Style="{StaticResource VoiceActionButtonStyle}" ToolTipService.ToolTip="Remove the selected voice and its Windows speech registration for all users" />
+                    </ItemsControl>
+                    <!-- Match the row's content padding so all three column starts align. -->
+                    <Grid ColumnSpacing="16" Margin="16,0,12,4">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="3*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                        <TextBlock Text="Name" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                        <TextBlock Grid.Column="1" Text="Library Status" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
+                        <TextBlock Grid.Column="2" Text="SAPI Status" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
+                    </Grid>
+                    <ListView x:Name="VoiceList" SelectionMode="Single" SelectionChanged="VoiceList_SelectionChanged"
+                              MaxHeight="360" Padding="0" HorizontalContentAlignment="Stretch" AutomationProperties.Name="Managed voices">
+                        <ListView.ItemContainerStyle>
+                            <Style TargetType="ListViewItem" BasedOn="{StaticResource DefaultListViewItemStyle}">
+                                <Setter Property="MinHeight" Value="44" />
+                                <Setter Property="Padding" Value="16,0,12,0" />
+                                <Setter Property="Margin" Value="0" />
+                                <Setter Property="CornerRadius" Value="{ThemeResource ControlCornerRadius}" />
+                                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                <Setter Property="VerticalContentAlignment" Value="Stretch" />
+                                <Setter Property="UseSystemFocusVisuals" Value="True" />
+                            </Style>
+                        </ListView.ItemContainerStyle>
+                        <ListView.ItemTemplate>
+                            <DataTemplate x:DataType="voices:VoiceRecord">
+                                <Border Padding="0,6" BorderThickness="0,0,0,1" BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}">
+                                    <Grid ColumnSpacing="16" VerticalAlignment="Center">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="3*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                        <TextBlock Text="{x:Bind NameText}" FontSize="14" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="{x:Bind NameText}" />
+                                        <TextBlock Grid.Column="1" Text="{x:Bind Health}" FontSize="13" Style="{x:Bind Health, Converter={StaticResource VoiceStatusStyle}, ConverterParameter=Library}" VerticalAlignment="Center" TextWrapping="Wrap" />
+                                        <TextBlock Grid.Column="2" Text="{x:Bind SapiStatusText}" FontSize="13" Style="{x:Bind SapiStatusText, Converter={StaticResource VoiceStatusStyle}, ConverterParameter=Sapi}" VerticalAlignment="Center" TextWrapping="Wrap" />
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ListView.ItemTemplate>
+                    </ListView>
+                    <StackPanel x:Name="EmptyState" Spacing="8" Padding="20" Visibility="Collapsed">
+                        <TextBlock Text="No voice profiles installed yet" FontSize="17" FontWeight="SemiBold" HorizontalAlignment="Center" />
+                        <TextBlock Text="Import a native .safetensors voice profile to get started." FontSize="13" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" TextAlignment="Center" />
+                    </StackPanel>
+                    <ProgressBar x:Name="BusyProgress" Margin="0,16,0,0" IsIndeterminate="True" Visibility="Collapsed" />
+                    <TextBlock x:Name="StateText" Margin="0,12,0,0" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
+                </StackPanel>
+            </Border>
+            <StackPanel Spacing="4">
+                <TextBlock Text="Library root" FontSize="12" FontWeight="SemiBold" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                <TextBlock x:Name="LibraryRootText" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+            </StackPanel>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

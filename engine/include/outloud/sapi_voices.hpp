@@ -51,7 +51,8 @@ public:
 };
 [[nodiscard]] std::shared_ptr<SapiVoiceRegistry> windows_sapi_voice_registry();
 struct SapiVoiceRuntime {
-    std::filesystem::path asset_root, engine_dll, model, tokenizer;
+    std::filesystem::path asset_root, engine_dll;
+    std::filesystem::path rust_runtime;
 };
 enum class SapiTokenStatus { missing, correct, stale_name, orphan, wrong_path, unhealthy_voice, malformed, conflict };
 [[nodiscard]] std::string_view sapi_token_status_name(SapiTokenStatus) noexcept;
@@ -83,9 +84,6 @@ public:
     [[nodiscard]] std::vector<SapiVoiceSnapshotRow> read_snapshot() const;
     [[nodiscard]] std::vector<SapiVoiceToken> reconcile() const;
     [[nodiscard]] SapiTokenChange install(std::string_view id);
-    // Read-only preflight under VoiceLibrary's replace lock: do not re-enter it.
-    // Requires an already-correct owned token; validates staged content/runtime.
-    void validate_replacement(const LibraryVoice& current, const std::filesystem::path& staged) const;
     [[nodiscard]] SapiTokenChange update(std::string_view id);
     // Exact owned-token snapshot for coordinated remove/recovery; never reads library/runtime.
     [[nodiscard]] std::string removal_registration_identity(std::string_view id) const;

@@ -32,12 +32,15 @@ struct outloud_vm_result {
     std::vector<Row> rows;
     std::vector<outloud_vm_voice_v1> records;
     std::vector<outloud_vm_content_v1> contents;
+    std::vector<std::string> native_paths;
+    std::vector<outloud_vm_native_profile_v1> native_profiles;
     std::optional<Error> error;
     outloud_vm_snapshot_v1 snapshot{};
     void bind() {
         if (error) { error->bind(); return; }
         records.reserve(rows.size());
         contents.reserve(rows.size());
+        native_paths.reserve(rows.size()); native_profiles.reserve(rows.size());
         for (auto& row : rows) {
             auto& v = row.voice; outloud_vm_voice_v1 record{};
             record.library_id = v.library_id.c_str(); record.health = voice_health_name(v.health).data();
@@ -47,11 +50,12 @@ struct outloud_vm_result {
             if (v.metadata) {
                 const auto& m = *v.metadata;
                 record.metadata_present = 1; record.display_name = m.display_name.c_str();
-                record.olv_version = m.olv_version; record.compatibility_id = m.compatibility_id.c_str();
-                record.import_kind = m.import_kind==VoiceImportKind::olv ? "olv" : "pocket_prepared";
+                record.import_kind = "pocket_native";
             }
             records.push_back(record);
-            contents.push_back(v.metadata ? outloud_vm_content_v1{v.metadata->olv_sha256.c_str(),v.metadata->source_sha256.c_str(),v.metadata->source_filename.c_str(),v.metadata->imported_utc.c_str()} : outloud_vm_content_v1{});
+            contents.push_back(v.metadata ? outloud_vm_content_v1{nullptr,v.metadata->source_sha256.c_str(),v.metadata->source_filename.c_str(),v.metadata->imported_utc.c_str()} : outloud_vm_content_v1{});
+            native_paths.push_back(detail::library_fs::utf8(v.managed_native_path.native()));
+            native_profiles.push_back({native_paths.back().c_str(),v.metadata ? v.metadata->profile_sha256.c_str() : ""});
         }
         snapshot = {root.c_str(),static_cast<uint64_t>(records.size()),records.empty() ? nullptr : records.data()};
     }
@@ -122,36 +126,35 @@ template<class Function> int32_t export_operation(Function function,outloud_vm_r
     } catch (const std::bad_alloc&) { return OUTLOUD_VM_OUT_OF_MEMORY; }
     catch (...) { return OUTLOUD_VM_INTERNAL_ERROR; }
 }
-void checked_export(VoiceLibrary library,std::string_view id,std::string_view name,std::string_view hash,
-    const std::filesystem::path& destination,std::string_view identity) {
-    if (!detail::library_fs::id(id) || hash.size()!=64 || hash.find_first_not_of("0123456789abcdef")!=hash.npos || name.empty() ||
-        (identity!="absent" && (identity.size()!=64 || identity.find_first_not_of("0123456789abcdef")!=identity.npos))) {
-        throw VoiceLibraryError(VoiceLibraryErrorCode::export_conflict,"Export requires a valid selected voice and destination snapshot.");
-    }
-    VoiceExportOptions options; options.expected_display_name=name; options.expected_olv_sha256=hash;
-    options.expected_destination=std::string(identity); options.replace_existing=identity!="absent";
-    (void)library.export_olv(id,destination,options);
-}
+
 bool bounded(const char* text) { return text && strnlen_s(text,32769)<=32768 && detail::valid_utf8(text); }
 }
-namespace outloud::frontend {
-int32_t export_injected(VoiceLibrary library,std::string_view id,std::string_view name,std::string_view hash,
-    const std::filesystem::path& destination,std::string_view identity,outloud_vm_result** output) noexcept {
-    return export_operation([&](auto&) { checked_export(std::move(library),id,name,hash,destination,identity); },output);
+uint32_t __cdecl outloud_vm_capabilities() noexcept { return OUTLOUD_VM_CAP_NATIVE_PROFILE_V1; }
+const outloud_vm_native_profile_v1* __cdecl outloud_vm_result_native_profile(const outloud_vm_result* result,uint64_t row) noexcept {
+    return result && result->is_snapshot && !result->error && row<result->native_profiles.size() &&
+        result->rows[static_cast<std::size_t>(row)].voice.metadata &&
+        result->rows[static_cast<std::size_t>(row)].voice.metadata->import_kind==VoiceImportKind::pocket_native ? &result->native_profiles[static_cast<std::size_t>(row)] : nullptr;
 }
-}
-uint32_t __cdecl outloud_vm_capabilities() noexcept { return OUTLOUD_VM_CAP_OLV_EXPORT_V1; }
-int32_t __cdecl outloud_vm_export_destination(const char* destination,outloud_vm_result** output) noexcept {
+int32_t __cdecl outloud_vm_native_export_destination(const char* destination,outloud_vm_result** output) noexcept {
     if (!bounded(destination)) { if (output) { *output=nullptr; } return OUTLOUD_VM_INVALID_ARGUMENT; }
-    return export_operation([&](auto& result) { result.destination_identity=inspect_olv_export_destination(detail::library_fs::wide(destination)); },output);
+    return export_operation([&](auto& result) { result.destination_identity=inspect_native_export_destination(detail::library_fs::wide(destination)); },output);
 }
-const char* __cdecl outloud_vm_result_destination(const outloud_vm_result* result) noexcept {
-    return result && !result->is_snapshot && !result->error && !result->destination_identity.empty() ? result->destination_identity.c_str() : nullptr;
-}
-int32_t __cdecl outloud_vm_export(const char* id,const char* name,const char* hash,const char* destination,
+int32_t __cdecl outloud_vm_native_export(const char* id,const char* name,const char* hash,const char* destination,
     const char* identity,outloud_vm_result** output) noexcept {
     if (!bounded(id) || !bounded(name) || !bounded(hash) || !bounded(destination) || !bounded(identity)) {
         if (output) { *output=nullptr; } return OUTLOUD_VM_INVALID_ARGUMENT;
     }
-    return export_operation([&](auto&) { checked_export(VoiceLibrary{},id,name,hash,detail::library_fs::wide(destination),identity); },output);
+    return export_operation([&](auto&) {
+        if (!detail::library_fs::id(id) || std::string_view(hash).size()!=64 || std::string_view(hash).find_first_not_of("0123456789abcdef")!=std::string_view::npos ||
+            !*name || (std::string_view(identity)!="absent" && (std::string_view(identity).size()!=64 || std::string_view(identity).find_first_not_of("0123456789abcdef")!=std::string_view::npos))) {
+            throw VoiceLibraryError(VoiceLibraryErrorCode::export_conflict,"Native export requires selected voice and destination snapshots.");
+        }
+        VoiceExportOptions options; options.expected_display_name=name; options.expected_content_sha256=hash;
+        options.expected_destination=identity; options.replace_existing=std::string_view(identity)!="absent";
+        (void)VoiceLibrary().export_native_profile(id,detail::library_fs::wide(destination),options);
+    },output);
+}
+
+const char* __cdecl outloud_vm_result_destination(const outloud_vm_result* result) noexcept {
+    return result && !result->is_snapshot && !result->error && !result->destination_identity.empty() ? result->destination_identity.c_str() : nullptr;
 }

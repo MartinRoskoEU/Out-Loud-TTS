@@ -4,8 +4,11 @@
 #include "error_logger.hpp"
 #include "speech_rate.hpp"
 #include "speech_volume.hpp"
-#include "outloud/orchestration.hpp"
-#include "outloud/pcm16.hpp"
+#include <algorithm>
+#include <array>
+#include <span>
+#include "outloud/rust_runtime_session.hpp"
+#include "outloud/rust_model_selection.hpp"
 #include <atomic>
 #include <condition_variable>
 #include <cstdlib>
@@ -60,25 +63,22 @@ std::wstring token_string(ISpObjectToken* token, const wchar_t* name, bool optio
     try { std::wstring value(raw ? raw : L""); CoTaskMemFree(raw); return value; }
     catch (...) { CoTaskMemFree(raw); throw; }
 }
-std::uint64_t number(std::wstring_view text, std::uint64_t fallback) {
-    if (text.empty()) { return fallback; }
-    std::uint64_t value = 0;
-    for (wchar_t digit : text) {
-        if (digit<L'0' || digit>L'9' || value>(UINT64_MAX-static_cast<unsigned>(digit-L'0'))/10) { throw Failure{E_INVALIDARG}; }
-        value = value*10+static_cast<unsigned>(digit-L'0');
-    }
-    return value;
-}
+
 struct Configuration {
-    std::filesystem::path model, tokenizer, voice;
-    std::uint64_t seed = 73;
-    std::uint32_t tokens = 128;
-    cpu::KernelPath path = cpu::KernelPath::automatic;
+    std::filesystem::path voice;
+    std::filesystem::path runtime, configuration;
+    std::string library_id;
+    bool managed = true;
     bool same_runtime(const Configuration& other) const {
-        return model==other.model && tokenizer==other.tokenizer && voice==other.voice && tokens==other.tokens && path==other.path;
+        if (runtime!=other.runtime || configuration!=other.configuration) { return false; }
+        if (library_id!=other.library_id || managed!=other.managed) { return false; }
+        return voice==other.voice;
     }
 };
 Configuration read_configuration(ISpObjectToken* token) {
+    Configuration c;
+    const auto backend = token_string(token,L"Backend",true);
+    if (backend!=L"Rust") { throw Failure{E_INVALIDARG}; }
     auto root = std::filesystem::path(token_string(token,L"AssetRoot",true));
     if (root.empty()) {
         std::wstring name(32768,L'\0');
@@ -99,32 +99,38 @@ Configuration read_configuration(ISpObjectToken* token) {
         // Absolute managed voices can live anywhere outside the deployment.
         if (native.size()<3 || native[1]!=L':' || native[2]!=L'\\' ||
             native.find(L':',2)!=std::wstring::npos || native.find(L'\0')!=std::wstring::npos) { throw Failure{E_INVALIDARG}; }
-        if (std::wstring_view(key)==L"VoicePath" && _wcsicmp(path.extension().c_str(),L".olv")!=0) { throw Failure{E_INVALIDARG}; }
-        readable_asset(path,std::wstring_view(key)==L"ModelPath" ? "model" : std::wstring_view(key)==L"TokenizerPath" ? "tokenizer" : "voice");
+        const wchar_t* voice_extension = L".safetensors";
+        if (std::wstring_view(key)==L"VoicePath" && _wcsicmp(path.extension().c_str(),voice_extension)!=0) { throw Failure{E_INVALIDARG}; }
+        readable_asset(path,"voice");
         return path;
     };
-    Configuration c;
-    c.model = resolve(L"ModelPath",L"runtime/pocket-english.olp",true);
-    c.tokenizer = resolve(L"TokenizerPath",L"runtime/pocket-english-tokenizer.bin",true);
+
+    // Existing token path mechanism, explicit files only. No model discovery,
+    // default deployment paths, or managed-token/installer schema changes.
+    c.runtime = resolve(L"RustRuntimePath",L"",false);
+    const auto owner=token_string(token,L"OutLoudManagedOwner",true);
+#ifdef OUTLOUD_RUST_SAPI_DEVELOPMENT
+    c.managed=!owner.empty(); // Private test DLL only; never enabled in the shipping DLL.
+#endif
+    if (c.managed) {
+        if (owner!=L"OutLoud.ManagedVoice.1") { throw Failure{E_INVALIDARG}; }
+        c.library_id=utf8(token_string(token,L"LibraryId",false));
+    } else { c.configuration=resolve(L"RustConfigPath",L"",false); }
     c.voice = resolve(L"VoicePath",L"",false);
-    c.seed = number(token_string(token,L"Seed",true),73);
-    const auto count = number(token_string(token,L"MaximumSegmentTokens",true),128);
-    if (!count || count > 4095 || count+FlowLMGenerator::estimate_max_gen_len(static_cast<std::size_t>(count)) > 4096) { throw Failure{E_INVALIDARG}; }
-    c.tokens = static_cast<std::uint32_t>(count);
-    const auto path = token_string(token,L"KernelPath",true);
-    if (path==L"Portable") { c.path = cpu::KernelPath::portable; }
-    else if (path==L"AVX2") { c.path = cpu::KernelPath::avx2_fma; }
-    else if (!path.empty() && path!=L"Auto") { throw Failure{E_INVALIDARG}; }
     return c;
+
 }
+
 struct Resident {
-    PocketModelAsset model;
-    OutLoudVoice voice;
-    Tokenizer tokenizer;
-    UtterancePipeline pipeline; // destroyed first: joins workers before assets/tokenizer
-    explicit Resident(const Configuration& c)
-        : model(load_asset<PocketModelAsset>(c.model,"model")), voice(load_asset<OutLoudVoice>(c.voice,"voice")), tokenizer(load_asset<Tokenizer>(c.tokenizer,"tokenizer")),
-          pipeline(model,voice,tokenizer,c.tokens,FlowLMGenerator::estimate_max_gen_len(c.tokens),c.path) {}
+    // Declaration order matters: Rust is stopped/destroyed before its assets.
+    std::unique_ptr<RustModelSelection> selection;
+    std::unique_ptr<RustRuntimeSession> rust;
+    explicit Resident(const Configuration& c,std::stop_token cancellation = {}) {
+
+        if (c.managed) { selection=RustModelSelection::acquire(c.runtime,c.voice,c.library_id,cancellation); }
+        rust = std::make_unique<RustRuntimeSession>();
+
+    }
 };
 struct RequestControl {
     ISpTTSEngineSite* site;
@@ -199,23 +205,29 @@ struct Delivery {
     std::mutex mutex;
     std::condition_variable changed;
     std::array<std::int16_t,1920> pcm{};
+    std::size_t samples = pcm.size();
     bool ready = false, done = false;
     HRESULT output_error = S_OK, native_error = S_OK;
     std::exception_ptr native_failure;
     SynthesisStatus native_status = SynthesisStatus::completed;
     std::stop_token cancellation;
     explicit Delivery(std::stop_token stop) : cancellation(stop) {}
-    static void frame(void* context, std::uint64_t, std::size_t, std::uint32_t, std::span<const float> input) {
+    template<class Fill> void publish(Fill&& fill) {
+        std::unique_lock lock(mutex);
+        changed.wait(lock,[&] { return !ready || output_error!=S_OK || cancellation.stop_requested(); });
+        if (output_error!=S_OK) { throw Failure{output_error}; }
+        if (cancellation.stop_requested()) { return; }
+        fill();
+        if (cancellation.stop_requested()) { return; }
+        ready = true; changed.notify_one();
+        changed.wait(lock,[&] { return !ready || output_error!=S_OK || cancellation.stop_requested(); });
+        if (output_error!=S_OK) { throw Failure{output_error}; }
+    }
+
+    static void pcm16(void* context, std::span<const std::int16_t> input) {
         auto& d = *static_cast<Delivery*>(context);
-        std::unique_lock lock(d.mutex);
-        d.changed.wait(lock,[&] { return !d.ready || d.output_error!=S_OK || d.cancellation.stop_requested(); });
-        if (d.output_error!=S_OK) { throw Failure{d.output_error}; }
-        if (d.cancellation.stop_requested()) { return; }
-        convert_pcm16(input,d.pcm);
-        if (d.cancellation.stop_requested()) { return; }
-        d.ready = true; d.changed.notify_one();
-        d.changed.wait(lock,[&] { return !d.ready || d.output_error!=S_OK || d.cancellation.stop_requested(); });
-        if (d.output_error!=S_OK) { throw Failure{d.output_error}; }
+        if (input.empty() || input.size()>d.pcm.size()) { throw Failure{E_UNEXPECTED}; }
+        d.publish([&] { std::copy(input.begin(),input.end(),d.pcm.begin()); d.samples = input.size(); });
     }
 };
 HRESULT write_frame(RequestControl& control, std::span<const std::int16_t> pcm) {
@@ -261,26 +273,34 @@ HRESULT stream(std::unique_ptr<Resident>& resident, const Configuration& configu
         SynthesisStatus status = SynthesisStatus::completed;
         try {
             if (!d.cancellation.stop_requested()) {
-                if (!resident) { resident = std::make_unique<Resident>(configuration); }
+                if (configuration.managed) {
+                    try {
+                        if (resident && resident->selection->identity()!=RustModelSelection::selected_identity()) { resident.reset(); }
+                    } catch (...) { resident.reset(); throw; }
+                }
+                if (!resident) {
+                    resident = std::make_unique<Resident>(configuration,d.cancellation);
+                }
                 if (!d.cancellation.stop_requested()) {
-                    resident->pipeline.prepare(text,configuration.seed);
-                    if (!d.cancellation.stop_requested()) {
-#ifdef OUTLOUD_ERROR_LOGGER_TEST
-                        const auto fault=logging::fault();
-                        const GenerationObserver observer=[fault](const GenerationCall&) {
-                            if (fault==logging::Fault::worker_allocation) { throw std::bad_alloc{}; }
-                            throw std::runtime_error("PRIVATE_WORKER_MESSAGE C:\\Users\\private\\secret");
-                        };
-                        const auto probe=fault==logging::Fault::worker_exception || fault==logging::Fault::worker_allocation ? &observer : nullptr;
-                        status = resident->pipeline.run(Delivery::frame,&d,probe,d.cancellation).status;
-#else
-                        status = resident->pipeline.run(Delivery::frame,&d,nullptr,d.cancellation).status;
-#endif
+
+                    auto& runtime = *resident->rust;
+                    if (!runtime.is_ready()) {
+                        runtime.stop(); // Reap exited sessions or retry retained cleanup before restarting.
+                        if (configuration.managed) { runtime.start(resident->selection->options(),d.cancellation); }
+                        else { runtime.start({configuration.runtime,configuration.configuration,configuration.voice},d.cancellation); }
                     }
+                    if (d.cancellation.stop_requested()) { runtime.stop(); status = SynthesisStatus::cancelled; }
+                    else { status = runtime.read_pcm(text,Delivery::pcm16,&d,d.cancellation).status; }
+                    if (status==SynthesisStatus::cancelled) { resident.reset(); }
+
                 }
             }
         }
-        catch (...) { d.native_failure=std::current_exception(); hr = exception_code(false); }
+        catch (const RustSelectionCancelled&) { resident.reset(); status=SynthesisStatus::cancelled; }
+        catch (...) {
+            d.native_failure=std::current_exception(); hr = exception_code(false);
+            resident.reset();
+        }
         std::lock_guard lock(d.mutex); d.native_error = hr; d.native_status = status; d.done = true; d.changed.notify_one();
     });
     try {
@@ -293,7 +313,7 @@ HRESULT stream(std::unique_ptr<Resident>& resident, const Configuration& configu
             if (d.done) { break; }
             if (!d.ready) { continue; }
             lock.unlock();
-            const auto hr = control.aborted ? S_OK : speech_rate.write(d.pcm,control.rate,output);
+            const auto hr = control.aborted ? S_OK : speech_rate.write(std::span<const std::int16_t>(d.pcm).first(d.samples),control.rate,output);
             lock.lock(); d.ready = false;
             if (hr!=S_OK) { d.output_error = hr; }
             d.changed.notify_one();
@@ -447,3 +467,12 @@ BOOL WINAPI DllMain(HINSTANCE module, DWORD reason, LPVOID) {
     if (reason==DLL_PROCESS_ATTACH) { outloud::sapi::attach(module); DisableThreadLibraryCalls(module); }
     return TRUE;
 }
+#ifdef OUTLOUD_RUST_SELECTION_TEST
+namespace outloud::testing { void selection_roots(std::filesystem::path,std::filesystem::path); }
+extern "C" __declspec(dllexport) HRESULT __stdcall OutLoudTestSelectionRoots(const wchar_t* data,const wchar_t* voices) {
+    try {
+        if (!data || !voices) { return E_INVALIDARG; }
+        outloud::testing::selection_roots(std::filesystem::path(data),std::filesystem::path(voices)); return S_OK;
+    } catch (...) { return E_FAIL; }
+}
+#endif

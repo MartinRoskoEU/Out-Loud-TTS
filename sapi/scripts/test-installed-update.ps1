@@ -1,9 +1,8 @@
 #Requires -Version 5.1
 # In-memory metadata and test-owned workspace files only. No production mutation.
 [CmdletBinding()]
-param([switch]$BuildComponents, [string]$BuildRecord)
+param([switch]$DevelopmentBundleOnly, [switch]$InstalledApplicationOnly)
 . (Join-Path $PSScriptRoot 'installed-update-common.ps1')
-if ($BuildComponents -and $BuildRecord) { throw 'Choose a build or reuse its workspace record, not both.' }
 $script:checks = 0
 function Check([bool]$Condition, [string]$Message) {
     if (-not $Condition) { throw "FAIL: $Message" }
@@ -17,129 +16,112 @@ function Reject([scriptblock]$Call, [string]$Expected) {
 $scratch = Join-Path $ProductionRepository ('generated/installed-updates/tests-' + [Guid]::NewGuid().ToString('N'))
 Assert-ProductionPlainPath $scratch
 [void](New-Item -ItemType Directory -Path $scratch)
-$custom = Join-Path $scratch ('Out Loud ' + [char]0x017d + ' hlasy')
-[void](New-Item -ItemType Directory -Path $custom)
-$current = (Get-OutLoudProductMetadata).version
-$record = @{ InstallLocation = $custom + '\'; DisplayName = "Out Loud version $current"; DisplayVersion = $current; Publisher = 'Nendis' }
-Check ((Resolve-OutLoudInstalledRoot $record) -ceq $custom) 'Unicode/space path comes from record, trailing slash normalized'
-Reject { Resolve-OutLoudInstalledRoot $null } 'production installer first'
-$older = $record.Clone(); $older.DisplayVersion = '0.1.0'; $older.DisplayName = 'Out Loud 0.1.0'
-Reject { Resolve-OutLoudInstalledRoot $older } 'identity/version differs'
-Check ((Resolve-OutLoudInstalledRoot $older '0.1.0') -ceq $custom) 'explicit exact forward upgrade accepted'
-foreach ($version in @($current, '0.3.0', '00.1.0', '0.1', '65536.0.0')) {
-    Reject { Resolve-OutLoudInstalledRoot $older $version } 'Explicit upgrade requires'
-}
-Reject { Resolve-OutLoudInstalledRoot $record '0.1.0' } 'identity/version differs'
-Reject { New-OutLoudUpdatePlan $custom Engine @{} '0.1.0' } 'complete package'
-foreach ($field in @('Publisher', 'DisplayVersion', 'DisplayName')) {
-    $bad = $record.Clone(); $bad[$field] = 'other'
-    Reject { Resolve-OutLoudInstalledRoot $bad } 'identity/version differs'
-}
-foreach ($path in @('relative', '\\server\share\OutLoud', 'C:\root:stream', '"C:\OutLoud"', 'C:\missing-outloud-fixture')) {
-    $bad = $record.Clone(); $bad.InstallLocation = $path
-    Reject { Resolve-OutLoudInstalledRoot $bad } 'invalid'
-}
-$ownership = @{ schema = '1'; product = 'OutLoud'; scope = 'LocalMachine'; stores = 'My,Root'; provider = 'Microsoft Software Key Storage Provider'
-    phase = 'verified'; owner_sid = 'S-1-5-32-544'; installation_id = ('a' * 32); key_name = ('OutLoud.Install.' + ('a' * 32))
-    thumbprint = ('b' * 40); certificate_sha256 = ('c' * 64); signed_sha256 = ('d' * 64) }
-$signature = @{ signature = 'valid'; sha256 = $ownership.signed_sha256; thumbprint = $ownership.thumbprint; certificate_sha256 = $ownership.certificate_sha256 }
-$registration = @{ schema = '1'; registration = 'owned_candidate'; hive = 'HKLM'; view = '64'; clsid = Get-OutLoudEngineClsid
-    before_encoding = 'utf16le-typed-tree-v1'; before = 'abcd' }
-$receipt = @{ schema = '1'; phase = 'before_registry_transaction'; hive = 'HKLM'; view = '64'; clsid = Get-OutLoudEngineClsid
-    installation_id = $ownership.installation_id; certificate_sha256 = $ownership.certificate_sha256
-    before_encoding = 'utf16le-typed-tree-v1'; before = '00'; desired = 'abcd' }
-Assert-OutLoudUpdateOwnership $ownership $receipt $signature $registration
-Check $true 'matching exact installation/certificate/engine/COM/receipt identity accepted for observation'
-foreach ($field in @('scope', 'product', 'phase', 'key_name', 'owner_sid', 'installation_id', 'certificate_sha256', 'thumbprint', 'signed_sha256')) {
-    $bad = $ownership.Clone(); $bad[$field] = 'other'
-    Reject { Assert-OutLoudUpdateOwnership $bad $receipt $signature $registration } 'ownership is invalid'
-}
-foreach ($field in @('signature', 'sha256', 'thumbprint', 'certificate_sha256')) {
-    $bad = $signature.Clone(); $bad[$field] = 'other'
-    Reject { Assert-OutLoudUpdateOwnership $ownership $receipt $bad $registration } 'signature/hash'
-}
-foreach ($field in @('registration', 'before', 'clsid', 'hive', 'view')) {
-    $bad = $registration.Clone(); $bad[$field] = 'other'
-    Reject { Assert-OutLoudUpdateOwnership $ownership $receipt $signature $bad } 'receipt differs'
-}
-foreach ($field in @('installation_id', 'certificate_sha256', 'desired', 'phase', 'view')) {
-    $bad = $receipt.Clone(); $bad[$field] = 'other'
-    Reject { Assert-OutLoudUpdateOwnership $ownership $bad $signature $registration } 'receipt differs'
-}
-$ini = Join-Path $scratch 'signing.ini'
-[IO.File]::WriteAllText($ini, "[ownership]`ncertificate_sha256=$($ownership.certificate_sha256)`n", [Text.Encoding]::UTF8)
-Check ((Read-OutLoudUpdateIni $ini).ownership.certificate_sha256 -ceq $ownership.certificate_sha256) 'INI hash field is preserved'
-[IO.File]::WriteAllText($ini, "[ownership]`nproduct=OutLoud`nproduct=other`n", [Text.Encoding]::UTF8)
-Reject { Read-OutLoudUpdateIni $ini } 'Duplicate'
-[IO.File]::WriteAllText($ini, "[ownership]`n[ownership]`n", [Text.Encoding]::UTF8)
-Reject { Read-OutLoudUpdateIni $ini } 'Duplicate'
-[IO.File]::WriteAllText($ini, 'invalid', [Text.Encoding]::UTF8)
-Reject { Read-OutLoudUpdateIni $ini } 'Malformed'
-$all = @(Get-OutLoudUpdateFiles Both)
-foreach ($file in $all) {
-    $path = Resolve-ProductionPath $custom $file.path
-    [void](New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($path)) -Force)
-    [IO.File]::WriteAllText($path, 'fixture', [Text.Encoding]::ASCII)
-}
-$before = @($all | ForEach-Object { Get-ProductionHash (Resolve-ProductionPath $custom $_.path) }) -join '|'
-foreach ($mode in @('Engine', 'VoiceManager', 'Both')) {
-    $plan = New-OutLoudUpdatePlan $custom $mode $ownership
-    $count = @{ Engine = 1; VoiceManager = 6; Both = 7 }[$mode]
-    Check ($plan.files.Count -eq $count) "$mode exact file count"
-    Check ($plan.installation_root -ceq $custom -and $plan.clsid -ceq (Get-OutLoudEngineClsid)) "$mode recorded root/shared identity"
-    Check ($plan.deployment -ceq 'blocked' -and $plan.recovery -ceq 'native_transaction_pending') "$mode cannot report deployment success"
-    Check (@($plan.files | Where-Object { $_.path -match 'runtime/|\.olv$|configuration/|outloud-sapi-voices|OutLoudInstallSigning' }).Count -eq 0) "$mode excludes persistent data, assets and maintenance tools"
-    Check (($plan.files.path -contains 'bin/OutLoudPocketSAPI.dll') -eq ($mode -ne 'VoiceManager')) "$mode engine selection"
-}
-$locked = Resolve-ProductionPath $custom $all[-1].path
-$pin = [IO.File]::Open($locked, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::None)
-try { Reject { New-OutLoudUpdatePlan $custom Both $ownership } 'unavailable/in use' } finally { $pin.Dispose() }
-Check ((New-OutLoudUpdatePlan $custom Both $ownership).files.Count -eq 7) 'failed probe releases all earlier pins'
-Assert-OutLoudDevelopmentPublication
-Check $true 'shared native lifecycle available; status check does not publish'
-Check ((@($all | ForEach-Object { Get-ProductionHash (Resolve-ProductionPath $custom $_.path) }) -join '|') -ceq $before) 'all rejection/planning paths preserve fixture files'
-# A pending journal is rejected before even the native read-only inspectors run.
-[void](New-Item -ItemType Directory -Path (Join-Path $custom 'configuration'))
-[IO.File]::WriteAllText((Join-Path $custom 'configuration/signing.pending.ini'), 'incomplete')
-Reject { Invoke-OutLoudUpdateInspection $custom $scratch } 'recovery required'
-# Real inspector rejects the user-writable fixture; it never creates installed state.
-$helper = Join-Path $ProductionRepository 'build-installer-prerequisites/Release/OutLoudInstallSigning.exe'
-$start = New-Object Diagnostics.ProcessStartInfo
-$start.FileName = $helper
-$start.Arguments = '--installation-inspect "' + $custom + '" "' + (Join-Path $scratch 'unsafe.ini') + '"'
-$start.UseShellExecute = $false; $start.CreateNoWindow = $true; $start.RedirectStandardOutput = $true; $start.RedirectStandardError = $true
-$process = [Diagnostics.Process]::Start($start)
-try {
-    $output = $process.StandardOutput.ReadToEnd(); $errorText = $process.StandardError.ReadToEnd(); $process.WaitForExit()
-    Check ($process.ExitCode -ne 0 -and -not (Test-Path -LiteralPath (Join-Path $scratch 'unsafe.ini'))) 'existing native security check refuses unsafe fixture'
-    [IO.File]::WriteAllText((Join-Path $scratch 'native-refusal.txt'), $output + $errorText)
-} finally { $process.Dispose() }
-Check ((Get-ProductionPolicy).engine_clsid -ceq (Get-OutLoudEngineClsid)) 'production policy retains authoritative identity'
-foreach ($relative in @('sapi/scripts/registry-common.ps1', 'sapi/scripts/deployment-common.ps1')) {
-    $ids = @([regex]::Matches([IO.File]::ReadAllText((Join-Path $ProductionRepository $relative)), '\{[0-9A-Fa-f-]{36}\}'))
-    Check ($ids.Count -gt 0) "portable script identity exists: $relative"
-    foreach ($id in $ids) { Check ($id.Value -ceq (Get-OutLoudEngineClsid)) "portable script identity preserved: $relative" }
-}
-if ($BuildComponents -or $BuildRecord) {
-    $built = if ($BuildComponents) {
-        Build-OutLoudComponents -Components Both -WorkDirectory (Join-Path $ProductionRepository ('generated/installer/builds/' + [Guid]::NewGuid().ToString('N')))
-    } else { Get-Content -LiteralPath $BuildRecord -Raw -Encoding UTF8 | ConvertFrom-Json }
-    foreach ($file in $all) {
-        $base = if ($file.source -eq 'native') { Join-Path $built.native 'Release' } else { $built.publish }
-        $path = Join-Path $base $file.name
-        Check (Test-Path -LiteralPath $path -PathType Leaf) "actual selective build: $($file.name)"
-        if ($file.pe) { [void](Get-ProductionPE $path); Assert-OutLoudBinaryVersion $path (Get-OutLoudProductMetadata) }
+if (-not $InstalledApplicationOnly) { & {
+    # Only this new branch: private files and metadata, no native execution,
+    # certificates, deployment directory, registry access or broad test suite.
+    function Fixture([string]$Root, [hashtable]$Contents) {
+        [void][IO.Directory]::CreateDirectory($Root)
+        $records = foreach ($relative in $Contents.Keys) {
+            $path = Resolve-BundlePath $Root $relative
+            [void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($path))
+            [IO.File]::WriteAllText($path, $Contents[$relative], [Text.Encoding]::UTF8)
+            @{ path = $relative; sha256 = (Get-FileHash -LiteralPath $path).Hash.ToLowerInvariant() }
+        }
+        $manifest = @{ schema = 1; files = @($records) }
+        $manifest | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $Root 'deployment.json') -Encoding UTF8
+        return $manifest
     }
-    $plan = New-OutLoudUpdatePlan $custom Both $ownership
-    Copy-OutLoudUpdateCandidates $plan $scratch $built
-    foreach ($file in $plan.files) {
-        Check ((Get-ProductionHash (Resolve-ProductionPath $plan.candidates $file.path)) -ceq $file.candidate_sha256) "checked candidate copy: $($file.path)"
+    $root = Join-Path $scratch 'existing bundle'
+    $stage = Join-Path $scratch 'signed-stage-fixture'
+    $before = Fixture $root @{ 'bin/engine.dll' = 'old'; 'RNG_NOTICES.md' = 'obsolete owned file'; 'resource.xbf' = 'old resource' }
+    $after = Fixture $stage @{ 'bin/engine.dll' = 'new'; 'resource.xbf' = 'new resource'; 'assets/added.txt' = 'new asset' }
+    $acl = (Get-Acl -LiteralPath (Join-Path $root 'bin/engine.dll')).Sddl
+    $data = Join-Path $scratch 'user-data.txt'; [IO.File]::WriteAllText($data, 'preserved')
+    $held = [IO.File]::Open((Join-Path $root 'resource.xbf'), [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
+    try { Reject { Publish-OutLoudDevelopmentFiles $root $stage $before $after } 'locked or not writable' }
+    finally { $held.Dispose() }
+    Check ([IO.File]::ReadAllText((Join-Path $root 'bin/engine.dll')) -eq 'old') 'locked preflight performs no earlier writes'
+    Check (Test-Path -LiteralPath (Join-Path $root 'RNG_NOTICES.md')) 'locked preflight performs no obsolete deletion'
+    $good = $after.files[0].sha256; $after.files[0].sha256 = '0' * 64
+    Reject { Publish-OutLoudDevelopmentFiles $root $stage $before $after } 'Staged bytes changed'
+    $after.files[0].sha256 = $good
+    Check ([IO.File]::ReadAllText((Join-Path $root 'bin/engine.dll')) -eq 'old') 'changed staged bytes do not alter deployment'
+    $changed = Publish-OutLoudDevelopmentFiles $root $stage $before $after
+    Check ($changed -eq 5) 'replace resources, add asset, retire owned file and publish metadata'
+    Check (-not (Test-Path -LiteralPath (Join-Path $root 'RNG_NOTICES.md'))) 'only obsolete inventory file removed'
+    foreach ($record in $after.files) { Check ((Get-FileHash -LiteralPath (Resolve-BundlePath $root $record.path)).Hash -eq $record.sha256) "published hash: $($record.path)" }
+    Check ((Get-Acl -LiteralPath (Join-Path $root 'bin/engine.dll')).Sddl -ceq $acl) 'existing file ACL and owner preserved'
+    Check ((Get-FileHash -LiteralPath (Join-Path $root 'deployment.json')).Hash -eq (Get-FileHash -LiteralPath (Join-Path $stage 'deployment.json')).Hash) 'manifest matches staged complete bundle'
+    $repeat = Publish-OutLoudDevelopmentFiles $root $stage $after $after
+    Check ($repeat -eq 0) 'verified identical bundle can be deployed repeatedly without rewriting files'
+    $stage2 = Join-Path $scratch 'second-stage'
+    $next = Fixture $stage2 @{ 'bin/engine.dll' = 'next source build'; 'resource.xbf' = 'second resource'; 'assets/added.txt' = 'new asset' }
+    [void](Publish-OutLoudDevelopmentFiles $root $stage2 $after $next)
+    Check ([IO.File]::ReadAllText((Join-Path $root 'bin/engine.dll')) -eq 'next source build') 'subsequent source update uses same directory'
+    Check ([IO.File]::ReadAllText($data) -eq 'preserved') 'application data outside bundle remains untouched'
+    Reject { Resolve-BundlePath $root '../user-data.txt' } 'escapes deployment'
+    $inventoryRoot = Join-Path $scratch 'previous-inventory'
+    [void][IO.Directory]::CreateDirectory($inventoryRoot)
+    $currentInventory = [IO.File]::ReadAllText((Join-Path $ProductionRepository 'sapi/deployment-inventory.json'))
+    [IO.File]::WriteAllText((Join-Path $inventoryRoot 'deployment-inventory.json'), $currentInventory, (New-Object Text.UTF8Encoding($false)))
+    Check ((Read-BundleInventory $inventoryRoot).files.Count -eq 80) 'current fixed inventory accepted'
+    [IO.File]::WriteAllText((Join-Path $inventoryRoot 'deployment-inventory.json'), $currentInventory.Replace('OutLoud.WinUI.exe', 'unverified.exe'), (New-Object Text.UTF8Encoding($false)))
+    Reject { Read-BundleInventory $inventoryRoot -AllowPreviousInventory } 'Unrecognized WinUI'
+    Write-Output "PASS: $script:checks focused development-bundle update checks; private files only."
+    return
+} }
+if (-not $DevelopmentBundleOnly) { & {
+    # Discovery/Plan checks use private receipts and in-memory installer records.
+    # No registry, certificate, native helper, signing or installed files are used.
+    $root = Join-Path $scratch 'installed application'
+    [void][IO.Directory]::CreateDirectory((Join-Path $root 'configuration'))
+    $receipt = Join-Path $root 'configuration/inventory.dat'
+    [IO.File]::WriteAllText($receipt, "OutLoud.Inventory.3`nfixture only", [Text.Encoding]::ASCII)
+    $version = (Get-OutLoudProductMetadata).version
+    $record = @{ InstallLocation=$root; Publisher='Nendis'; DisplayVersion=$version; DisplayName=('Out Loud ' + $version) }
+    $before = Get-FileHash -LiteralPath $receipt
+    function Assert-RegistryAdministrator { throw 'Plan must not request mutation authority.' }
+    Check ((Get-OutLoudInstalledApplication $root $record) -ceq $root) 'current WinUI production receipt selected'
+    $plan = Invoke-OutLoudInstalledApplicationUpdate -Action Plan -DeploymentRoot $root -Record $record
+    Check ($plan -like '*No build or publication*' -and $plan -like '*complete native verification occurs*') 'Plan distinguishes discovery from full preflight'
+    Check ((Get-FileHash -LiteralPath $receipt).Hash -ceq $before.Hash) 'Plan preserves receipt bytes'
+    Reject { Get-OutLoudInstalledApplication $root $null } 'record is required'
+    Reject { Get-OutLoudInstalledApplication (Join-Path $scratch 'different') $record } 'does not match'
+    $record.Publisher='Unknown'
+    Reject { Get-OutLoudInstalledApplication $root $record } 'does not match'
+    $record.Publisher='Nendis';$record.DisplayName='Other application'
+    Reject { Get-OutLoudInstalledApplication $root $record } 'does not match'
+    foreach ($name in @('Out Loud', ('Out Loud version ' + $version))) {
+        $record.DisplayName=$name
+        Check ((Get-OutLoudInstalledApplication $root $record) -ceq $root) 'existing exact Inno display-name form accepted'
     }
-    Check ($plan.preparation -ceq 'built_and_copied_unsigned_not_deployable' -and $plan.deployment -ceq 'blocked') 'preparation retains blocked publication status'
-    Reject { Copy-OutLoudUpdateCandidates $plan $scratch $built } 'already exists'
-    Check ((@($all | ForEach-Object { Get-ProductionHash (Resolve-ProductionPath $custom $_.path) }) -join '|') -ceq $before) 'actual candidate preparation preserves simulated installed files'
-    $built | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $scratch 'build.json') -Encoding UTF8
-}
-[ordered]@{ checks = $script:checks; build_performed = $BuildComponents.IsPresent; live_deployment = $false } |
-    ConvertTo-Json | Set-Content -LiteralPath (Join-Path $scratch 'results.json') -Encoding UTF8
-Write-Output "PASS: $script:checks focused checks. Evidence: $scratch. No live deployment, registration, certificate or voice operation."
+    $record.DisplayVersion='99.0.0';$record.DisplayName='Out Loud'
+    Reject { Get-OutLoudInstalledApplication $root $record } 'same product version'
+    $record.DisplayVersion=$version
+    foreach ($magic in @("OutLoud.Inventory.2`n", 'incomplete')) {
+        [IO.File]::WriteAllText($receipt, $magic, [Text.Encoding]::ASCII)
+        Reject { Get-OutLoudInstalledApplication $root $record } 'current WinUI production inventory'
+    }
+    function Invoke-ReadyFixtureHelper {
+        [IO.File]::WriteAllText($args[-1], "[results]`nschema=1`nmaintenance=ready`n", [Text.Encoding]::ASCII)
+        $global:LASTEXITCODE=0
+    }
+    function Invoke-IncompleteFixtureHelper {
+        [IO.File]::WriteAllText($args[-1], "[results]`nschema=1`nmaintenance=awaiting_host`n", [Text.Encoding]::ASCII)
+        $global:LASTEXITCODE=0
+    }
+    function Invoke-FailedFixtureHelper { $global:LASTEXITCODE=2 }
+    $ready = Join-Path $scratch 'ready.ini'
+    Invoke-OutLoudInstalledMaintenance 'Invoke-ReadyFixtureHelper' '--maintenance-check' $root $scratch $ready 'ready'
+    Check (Test-Path -LiteralPath $ready) 'native success requires the requested completion report'
+    Reject { Invoke-OutLoudInstalledMaintenance 'Invoke-ReadyFixtureHelper' '--maintenance-check' $root $scratch $ready 'ready' } 'already exists'
+    Reject { Invoke-OutLoudInstalledMaintenance 'Invoke-IncompleteFixtureHelper' '--maintain' $root $scratch (Join-Path $scratch 'incomplete.ini') 'committed' } "did not verify 'committed'"
+    Reject { Invoke-OutLoudInstalledMaintenance 'Invoke-FailedFixtureHelper' '--maintain' $root $scratch (Join-Path $scratch 'failed.ini') 'committed' } 'Native maintenance failed'
+    function Invoke-CleanupPendingFixtureHelper {
+        [IO.File]::WriteAllText($args[-1], "[results]`nschema=1`nmaintenance=committed`narchive_cleanup=pending`n", [Text.Encoding]::ASCII)
+        $global:LASTEXITCODE = 0
+    }
+    $warnings=@(Invoke-OutLoudInstalledMaintenance 'Invoke-CleanupPendingFixtureHelper' '--maintain' $root $scratch (Join-Path $scratch 'cleanup-pending.ini') 'committed' 3>&1)
+    Check (($warnings -join ' ') -match 'archive cleanup remains pending') 'verified deployment reports pending cleanup explicitly'
+    Write-Output "PASS: $script:checks focused update checks; private files/in-memory records only."
+} }

@@ -67,7 +67,7 @@ std::pair<std::string,std::string> removal_hashes(const std::filesystem::path& p
     if (names.size()!=files.size()) { fs::fail(Code::removal_pending,"Removal files changed during validation",path); }
     std::pair<std::string,std::string> result;
     for (std::size_t i=0;i<names.size();++i) {
-        auto& value=names[i]==L"voice.olv" ? result.first : result.second;
+        auto& value=names[i]==L"voice.safetensors" ? result.first : result.second;
         value=handle_hash(files[i].value,path/names[i]);
     }
     return result;
@@ -165,13 +165,13 @@ VoiceRemovalResult remove_prepared(Session& session,std::string_view id,const Vo
     if (replacement_pending(session,id)) { fs::fail(Code::replacement_pending,"Recover pending replacement before removal",session.root.path); }
     if (removal_pending(session,id)) { fs::fail(Code::removal_pending,"Recover existing removal before starting another",session.root.path); }
     const auto path=entry_path(session,id); LibraryVoice current;
-    if (options.expected_display_name || options.expected_olv_sha256 || options.expected_health || options.remove_registration) {
+    if (options.expected_display_name || options.expected_content_sha256 || options.expected_health || options.remove_registration) {
         current=inspect(path,std::string(id),session.machine);
-        if (!options.expected_display_name || !options.expected_olv_sha256 || !options.expected_health ||
+        if (!options.expected_display_name || !options.expected_content_sha256 || !options.expected_health ||
             *options.expected_health!=voice_health_name(current.health) ||
-            (!options.expected_olv_sha256->empty() && !hash(*options.expected_olv_sha256)) ||
+            (!options.expected_content_sha256->empty() && !hash(*options.expected_content_sha256)) ||
             *options.expected_display_name!=(current.metadata ? current.metadata->display_name : "") ||
-            *options.expected_olv_sha256!=(current.metadata ? current.metadata->olv_sha256 : "")) {
+            *options.expected_content_sha256!=(current.metadata ? current.metadata->content_sha256() : "")) {
             fs::fail(Code::removal_conflict,"Voice identity/content changed since confirmation. Refresh and confirm again.",path);
         }
     }
@@ -188,7 +188,7 @@ VoiceRemovalResult remove_prepared(Session& session,std::string_view id,const Vo
         } throw;
     }
     const auto hashes=removal_hashes(path,files);
-    if (options.expected_olv_sha256 && current.health==VoiceHealth::valid && hashes.first!=*options.expected_olv_sha256) {
+    if (options.expected_content_sha256 && current.health==VoiceHealth::valid && hashes.first!=*options.expected_content_sha256) {
         fs::fail(Code::removal_conflict,"Voice changed before removal",path);
     }
     const auto identity=directory_identity(entry.value,path);

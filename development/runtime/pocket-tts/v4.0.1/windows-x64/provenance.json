@@ -1,0 +1,75 @@
+﻿{
+    "verified_at_utc":  "2026-10-27T05:29:32.5867694Z",
+    "repository":  "https://github.com/kyutai-labs/pocket-tts",
+    "release_tag":  "v4.0.1",
+    "release_url":  "https://github.com/kyutai-labs/pocket-tts/releases/tag/v4.0.1",
+    "release_api_url":  "https://api.github.com/repos/kyutai-labs/pocket-tts/releases/419577605",
+    "release_commit":  "a922b912dfa366975294afb568d815b305acde5d",
+    "published_at":  "2026-10-21T13:14:05Z",
+    "prerelease":  false,
+    "github_release_immutable":  false,
+    "target":  "x86_64-pc-windows-msvc",
+    "cli_version":  "pocket-tts 3.3.0",
+    "archive":  {
+                    "name":  "pocket-tts-3.3.0-x86_64-pc-windows-msvc.zip",
+                    "asset_id":  662617326,
+                    "url":  "https://github.com/kyutai-labs/pocket-tts/releases/download/v4.0.1/pocket-tts-3.3.0-x86_64-pc-windows-msvc.zip",
+                    "bytes":  7914990,
+                    "sha256":  "98753041f2e65744b989776f87bccb93f1f574a08afe1890c5427ec94cd6309c",
+                    "github_digest":  "sha256:98753041f2e65744b989776f87bccb93f1f574a08afe1890c5427ec94cd6309c",
+                    "official_sha256sums_matched":  true
+                },
+    "checksum_manifest":  {
+                              "url":  "https://github.com/kyutai-labs/pocket-tts/releases/download/v4.0.1/SHA256SUMS",
+                              "sha256":  "bc5b46085cb70aa0d983195964b098068d7d40f02785b8e3ca6aa4e081add1f2",
+                              "github_digest":  "sha256:bc5b46085cb70aa0d983195964b098068d7d40f02785b8e3ca6aa4e081add1f2"
+                          },
+    "executable":  {
+                       "relative_path":  "extracted/pocket-tts-3.3.0-x86_64-pc-windows-msvc/pocket-tts.exe",
+                       "bytes":  22080000,
+                       "sha256":  "813cabfc2f8fc7a4e5310deda6025426b3164610dd9f3c3098a6078e5cc1895a",
+                       "authenticode_status":  "NotSigned",
+                       "machine":  "x64 (0x8664)",
+                       "subsystem":  "Windows CUI",
+                       "cpu_baseline":  "x86-64-v3 (includes AVX2/FMA)"
+                   },
+    "license":  {
+                    "relative_path":  "extracted/pocket-tts-3.3.0-x86_64-pc-windows-msvc/LICENSE",
+                    "sha256":  "36516aefdc84c5d5a1e7485425913a22dbda69eb1930c5e84d6ae4972b5194b9",
+                    "type":  "MIT"
+                },
+    "cli_checks":  [
+                       {
+                           "check":  "version",
+                           "arguments":  "--version",
+                           "exit_code":  0,
+                           "expected_exit_code":  0,
+                           "passed":  true
+                       },
+                       {
+                           "check":  "help",
+                           "arguments":  "--help",
+                           "exit_code":  0,
+                           "expected_exit_code":  0,
+                           "passed":  true
+                       },
+                       {
+                           "check":  "export-voice-help",
+                           "arguments":  "export-voice --help",
+                           "exit_code":  0,
+                           "expected_exit_code":  0,
+                           "passed":  true
+                       },
+                       {
+                           "check":  "export-voice-missing-arguments",
+                           "arguments":  "export-voice",
+                           "exit_code":  2,
+                           "expected_exit_code":  2,
+                           "passed":  true
+                       }
+                   ],
+    "model_or_voice_safetensors_count":  0,
+    "isolated_hf_cache_created":  false,
+    "model_inference_verified":  false,
+    "offline_model_loading_verified":  false
+}

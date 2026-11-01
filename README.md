@@ -1,164 +1,126 @@
 # Out Loud
 
-**Out Loud 0.3.0** updates the official English Pocket TTS weights to
-`english_2026-10`, preserving the 0.2.1 SAPI volume fix. See the
-[release notes](docs/releases/0.3.0.md) for model hashes, compatibility checks
-and voice-quality limitations. The installer is prepared locally for manual
-installation and testing; public publication is pending. Historical installers
-are preserved.
+**Offline neural text-to-speech and voice management for Windows.**
 
-Offline English text-to-speech for the Out Loud World of Warcraft addon, powered
-by Pocket TTS and Windows SAPI5. The included Voice Manager imports, tests,
-exports and removes compatible voices.
+Out Loud 0.4.0 is a Windows desktop application that integrates the official [Kyutai Pocket TTS](https://github.com/kyutai-labs/pocket-tts) Rust runtime with Windows SAPI 5.
 
-## Requirements
+It provides multilingual speech synthesis, native `.safetensors` voice management, and streaming audio playback. Once the required models are installed, speech generation runs entirely offline.
 
-- **Windows 11, native x64**, build 22000 or later. Windows 10, ARM64,
-  32-bit Windows and Windows Server are unsupported.
-- Administrator approval for installation and voice imports/removals.
-- Microsoft Visual C++ v14 Runtime x64 (14.44.35211.0 or newer) and
-  **.NET 10 Desktop Runtime x64**. Setup checks these and offers to download
-  and install missing prerequisites from Microsoft with your consent.
-- Your own compatible Out Loud `.olv` or prepared Pocket TTS 6L `.safetensors` voice.
-  **No voices or recordings are bundled.** Ordinary audio files cannot be imported.
-- The Out Loud addon, installed separately, for World of Warcraft narration.
+## Features
 
-The English model and tokenizer are included. Speech runs locally on the CPU;
-no GPU, Python, cloud service or internet connection is required for synthesis.
-Internet access is needed if setup must download missing Microsoft runtimes.
+### Voice Library
 
-## Install
+- Import, export, and manage native `.safetensors` voice profiles.
+- Register voices with Windows SAPI 5.
+- Inspect voice details and registration status.
+- Make voices available to SAPI-compatible applications.
 
-1. Obtain `OutLoud-Setup-0.3.0.exe` and its checksum from the approved release
-   artifacts. Public downloads use
-   [GitHub Releases](https://github.com/MartinRoskoEU/Out-Loud-TTS/releases);
-   publication of 0.3.0 is pending.
-   Compare its SHA-256 with the release checksum if you want to verify the download:
+### Voice Tester
 
-   ```powershell
-   Get-FileHash .\OutLoud-Setup-0.3.0.exe -Algorithm SHA256
-   ```
+- Test registered voices using custom text.
+- Stream synthesized audio during generation.
+- Control playback using the selected voice and model.
+- Export speech as a WAV file.
 
-2. Close World of Warcraft, Voice Manager and other applications using Out Loud.
-3. Run setup and approve the Windows administrator prompt. Read and accept the
-   licenses and acknowledge the separate Kyutai prohibited-use policy. Approve
-   missing Microsoft prerequisites if needed; if a restart is requested, restart
-   manually and run setup again.
-4. Complete setup, then open **Out Loud** from the Start menu. The default
-   application directory is `C:\Program Files\OutLoud`.
+### Model & Runtime Management
 
-The installer is publisher-unsigned. Setup separately requests consent for an
-installation-specific machine signing certificate used by the SAPI engine.
-That local engine certificate does not publisher-sign the downloaded installer.
+- Discover and download supported Kyutai Pocket TTS models.
+- Install, verify, select, and remove models.
+- Check for model and runtime updates from official Kyutai repositories, and install verified runtime updates.
+- Track model revisions and verify downloaded assets.
+- Maintain persistent local model storage without relying on the Hugging Face cache.
+- Access public model repositories without authentication.
 
-Updates use the existing installation directory and preserve managed voices,
-settings, SAPI registration and installation identity. Setup supports changes to
-the managed file list, including the earlier 23-file development installation
-updating to this 24-file package. It verifies the recorded files before replacing
-or retiring them and retains originals for checked rollback. Unknown or modified
-files are never silently overwritten or deleted.
+## Architecture
 
-## Use
+Out Loud combines a WinUI 3 interface, native C++ components, Windows SAPI 5, and the official Pocket TTS Rust runtime.
 
-1. In Voice Manager, choose **Import Voice**, select a compatible voice file and
-   confirm its name. Import requests administrator approval.
-2. Select the imported voice and open the **Tester** to synthesize speech.
-   **Export WAV** saves synthesized audio; **Export Voice** saves a portable
-   `.olv` backup outside the managed library.
-3. Restart World of Warcraft if it was open during import, then select the
-   imported voice in the Out Loud addon's voice settings.
+Voice profiles are managed independently of model versions. Speech synthesis uses the machine-wide model explicitly selected in Settings, with verified local assets and native `.safetensors` profiles.
 
-Voice Manager supports prepared states for Out Loud's six-layer English Pocket
-TTS model, including older `current_end` states and states without an explicit
-zero-padding tensor. Supported legacy states are normalized once during import
-and stored as `.olv`; the original source file is unchanged. Shape, dtype,
-finite-value, integrity and structural compatibility checks remain strict.
-Voice availability depends on supported structure and integrity, independently of
-the model revision used for preparation. No per-voice model classifications or
-compatibility warnings are shown. Existing OLV v1 fields and payloads are preserved.
-Voices prepared with older weights may sound different or exhibit artifacts with
-the updated model. For best quality, users may need to prepare new profiles using
-the updated weights and their original reference audio. Out Loud does not create
-profiles from recordings or automatically regenerate existing voices.
+| Shared data | Location |
+| --- | --- |
+| Models, runtime updates, inventories and Settings | `%ProgramData%\OutLoud\ApplicationData` |
+| Native voice profiles | `%ProgramData%\OutLoud\VoiceLibrary` |
 
-Kyutai TTS 1.6B / DSM `speaker_wavs` profiles use a different architecture and
-cannot be imported. Recognized DSM profiles show **Incompatible Voice Profile**
-with the detected and supported formats. Other model architectures, raw speaker
-embeddings, recordings and malformed profiles remain unsupported. See
-[voice import compatibility](docs/VOICE_IMPORT.md) for the exact supported schema.
+OutLoud.WinUI requests administrator approval at startup and runs elevated for that session, so model, runtime, Settings, and voice operations do not require additional UAC prompts. The existing voice helper and security checks are retained. External SAPI clients do not require elevation for speech playback.
 
-SAPI speech rates from **-10 to +10** are supported using Sonic's pitch-preserving
-speed adjustment: approximately **0.333x**, **1x**, and **3x** at -10, 0 and +10.
-Rate 0 preserves the original generated PCM and direct streaming path.
-Fragment-specific XML rate adjustments are not supported in this release.
+Audio is generated locally and streamed incrementally through Windows SAPI 5. Model storage, voice registration, and privileged operations use dedicated native components with integrity and access controls.
 
-Managed voices are shared across Windows users and normally stored in
-`C:\ProgramData\OutLoud\VoiceLibrary`. Use Voice Manager to manage them instead
-of editing library files or registry entries. The app prepares no voices from
-raw recordings; use voices you have the rights and consent to use.
+## Project Background
 
-## Uninstall
+Out Loud originated during the development of a World of Warcraft addon requiring custom speech synthesis. It evolved into a standalone Windows application for managing AI voice profiles and locally generated speech.
 
-**Uninstall permanently deletes all managed voices, managed settings and owned
-application data for this installation, including the shared voice library.**
-There is no keep-voices option. Export any voices you want to retain to a location
-outside the managed library before proceeding.
+## Installation and first use
 
-Close Out Loud, World of Warcraft and other SAPI clients. In Windows
-**Settings > Apps > Installed apps**, choose **Out Loud > Uninstall**, approve
-administrator access and confirm the permanent-deletion warning.
+### System requirements
 
-Complete uninstall removes the application/model/tokenizer files, owned SAPI
-voice and engine registrations, shortcuts, installation metadata, owned logs,
-and the installation-specific certificate and private key. Shared Microsoft
-runtimes, unrelated SAPI voices, original import files and backups outside managed
-storage remain.
+- Windows 11 native x64, build 22000 or later.
+- An AVX2/FMA-capable x64 processor.
+- Administrator approval for installation and when starting Out Loud.
+- Internet access to download models and check for updates; installed speech synthesis works offline.
 
-If setup or uninstall reports a lock or recovery problem, follow its message and
-rerun the same setup or uninstaller after resolving it. Do not manually delete
-installation files or protected recovery records. See
-[complete uninstall behavior](installer/inno/UNINSTALL.md) for ownership and
-recovery details.
+The production Windows installer bundles the WinUI application, self-contained .NET and Windows App SDK dependencies, the native SAPI components and official Pocket TTS Rust runtime. The checked Microsoft Visual C++ x64 redistributable is embedded and installed only when required; setup does not download prerequisites. Models and voice profiles are not bundled.
 
-## License
+1. Download `OutLoud-Setup.exe` from [GitHub Releases](https://github.com/MartinRoskoEU/Out-Loud-TTS/releases) and run it.
+2. Open Out Loud and approve its administrator request when Windows prompts.
+3. In **Settings**, install a supported model and explicitly select it.
+4. In **Voice Library**, import a native `.safetensors` voice profile.
+5. Select the voice in **Voice Tester**, or use it from a compatible Windows SAPI application.
 
-Original Out Loud code is licensed under [MIT](LICENSE).
-**Copyright (c) 2026 Nendis.** Third-party components retain their own licenses;
-see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and [licenses/](licenses/).
-
-The bundled Kyutai model and tokenizer use **CC BY 4.0** with their supplied
-attributions. Kyutai's [prohibited-use policy](licenses/Pocket-Prohibited-Use-Policy.txt)
-is presented separately during setup. Sonic is licensed under **Apache 2.0**.
-These licenses do not grant rights to another person's voice or recordings.
+Models, Settings and managed voices are shared across Windows accounts. Upgrades preserve managed data. Confirmed uninstall removes verified Out Loud-owned resources while preserving unknown user files. See [installer documentation](installer/PRODUCTION.md) for signing, updates, cleanup and limitations.
 
 ## Development
 
-See [production build instructions](installer/inno/BUILD.md),
-[versioning](installer/inno/VERSIONING.md),
-[architecture](docs/ARCHITECTURE.md), and the
-[Voice Manager guide](docs/VOICE_MANAGER_GUIDE.md).
-The authoritative product version is [ProductVersion.props](ProductVersion.props).
-The developer-only [model update workflow](docs/MODEL_UPDATES.md) discovers official
-updates, verifies and converts weights, automatically advances the engine version
-when weights change, and validates publication with rollback support. It does not
-update installed applications or publish releases automatically.
+### Requirements
 
-Production packaging uses the existing scripts:
+- Windows 11 x64
+- Visual Studio 2022 C++ Build Tools
+- CMake 3.24 or later
+- .NET 10 SDK (x64)
+- Windows SDK 10.0.26100.0 and the NuGet-restored Windows App SDK dependencies
+- .NET 10 x64 runtime and Windows App Runtime 2.5.1 for default framework-dependent development output
+- Microsoft Visual C++ v14 Runtime (x64)
+- Compatible x64 processor with AVX2/FMA required by the bundled Pocket TTS runtime
+
+The baseline runtime and its upstream license are retained under `development/runtime/pocket-tts/v4.0.1/windows-x64/extracted/`. The project copies and verifies these inputs during build. A build does not download models or install prerequisites. See [WinUI development notes](ui/OutLoud.WinUI/README.md) for runtime provenance and configuration.
+
+### Build
+
+Native components:
 
 ```powershell
-.\installer\inno\build-stage.ps1 -StageDirectory "$PWD\generated\installer\stages\release-0.3.0"
-.\installer\inno\verify-stage.ps1 -StageDirectory "$PWD\generated\installer\stages\release-0.3.0"
-.\installer\inno\build-installer.ps1 -StageDirectory "$PWD\generated\installer\stages\release-0.3.0" -PreserveHistoricalInstallers
+cmake -S . -B build-winui-native -G "Visual Studio 17 2022" -A x64 -DBUILD_TESTING=OFF
+cmake --build build-winui-native --config Release --target OutLoudPocketSAPI OutLoudVoiceManagerNative OutLoudVoiceImportHelper outloud-sapi-voices
 ```
 
-Use a new stage directory for each build. Build tools require CMake 3.24+,
-Visual Studio 2022 C/C++ tools and Windows SDK, .NET 10 SDK, Inno Setup 7.0.2+,
-and the pinned offline model/tokenizer inputs. Packaging builds Release x64,
-validates the explicit payload and copies the verified installer to
-`release/OutLoud-Setup-0.3.0.exe`. The preservation switch leaves older versioned
-installers in place. Packaging does not execute setup or publish to GitHub.
-`release/`, generated artifacts and user voice files remain excluded from Git.
-Successful staging removes verified intermediate build output. Automatic artifact
-cleanup retains the current and previous successful publication pairs, referenced
-stages and publication records; uncertain or incomplete artifacts remain for
-diagnosis. It does not operate on the installed application or voice data.
+WinUI application:
+
+```powershell
+dotnet build ui/OutLoud.WinUI/OutLoud.WinUI.csproj -c Release -p:Platform=x64
+```
+
+Build operations do not install or register Windows SAPI components. See the [deployment documentation](docs/SAPI_ADAPTER.md) for development installation, signing, and registration.
+
+Build the installer only through [installer/PRODUCTION.md](installer/PRODUCTION.md). The existing script writes `release/OutLoud-Setup.exe` and `release/OutLoud-Setup.exe.sha256`; compiling it does not run setup. To apply source changes to an installer-managed development installation, use the documented `update-installed.ps1` workflow for same-version application updates. Release version changes or changes to the Inno wizard/uninstaller require a newly built installer.
+
+Contributor instructions are in [AGENTS.md](AGENTS.md); current build and targeted checks are in [the validation guide](docs/BUILD_AND_VALIDATION.md). Release records describe their published versions and are not current build instructions.
+
+## Documentation
+
+- [Current documentation index](docs/README.md)
+- [Build and Targeted Validation](docs/BUILD_AND_VALIDATION.md)
+- [Models and Runtime Updates](docs/MODEL_UPDATES.md)
+- [Voice Library](docs/VOICE_LIBRARY.md)
+- [Voice Management](docs/VOICE_MANAGER_GUIDE.md)
+- [SAPI Integration](docs/MULTI_VOICE_SAPI.md)
+- [Rust Runtime](docs/RUST_RUNTIME_SESSION.md)
+- [WinUI Development](ui/OutLoud.WinUI/README.md)
+- [Deployment](docs/SAPI_ADAPTER.md)
+- [Production Installer](installer/PRODUCTION.md)
+- [Release History](docs/releases/)
+
+## License
+
+Out Loud is distributed under the repository [LICENSE](LICENSE).
+
+Third-party licenses and attributions are documented in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and `licenses/`.

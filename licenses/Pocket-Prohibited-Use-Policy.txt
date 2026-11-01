@@ -2,8 +2,8 @@ Pocket TTS - Kyutai Prohibited Use Policy
 
 Publisher: Kyutai
 Repository: kyutai/pocket-tts-without-voice-cloning
-Revision: 00eac05ed3d16bdc3f6b5d598874019c34a89214
-Source: https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/raw/00eac05ed3d16bdc3f6b5d598874019c34a89214/README.md
+Revision: a7056f505a4a8ca72d8b5fb1440071d6f1a35739
+Source: https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/raw/a7056f505a4a8ca72d8b5fb1440071d6f1a35739/README.md
 Section: Prohibited use
 Policy text SHA-256 (UTF-8, without a trailing newline): 2af16e4028225963083cddc7d9d964e2cd49545653a6d19ef214703d5343651f
 

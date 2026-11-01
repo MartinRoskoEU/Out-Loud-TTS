@@ -42,11 +42,11 @@ typedef struct outloud_vm_voice_v1 {
     const char* library_detail;
     const char* sapi_status;         // exact native status; NULL if inspect failed
     const char* sapi_detail;
-    const char* compatibility_id;    // NULL when metadata is unavailable
-    const char* import_kind;         // pocket_prepared or olv; NULL without metadata
+    const char* reserved_identity;   // retired slot; always NULL
+    const char* import_kind;         // pocket_native; NULL without metadata
     const outloud_vm_error_v1* sapi_error; // per-row failure, not a fabricated status
     uint32_t metadata_present;
-    uint32_t olv_version;            // meaningful only when metadata_present==1
+    uint32_t reserved_version;       // retired slot; always zero
     uint32_t reserved_metadata;      // retired field; always zero, ABI v1 layout preserved
     uint32_t reserved;
 } outloud_vm_voice_v1;
@@ -57,7 +57,7 @@ typedef struct outloud_vm_snapshot_v1 {
 } outloud_vm_snapshot_v1;
 // Additive read-only metadata extension; ABI v1 records/exports are unchanged.
 typedef struct outloud_vm_content_v1 {
-    const char* olv_sha256;
+    const char* reserved_content; // retired slot; always NULL
     const char* source_sha256;
     const char* source_filename;
     const char* imported_utc;
@@ -75,15 +75,20 @@ OUTLOUD_VM_API const outloud_vm_error_v1* __cdecl outloud_vm_result_error(const 
 OUTLOUD_VM_API const outloud_vm_content_v1* __cdecl outloud_vm_result_content(const outloud_vm_result* result, uint64_t row) OUTLOUD_VM_NOEXCEPT;
 OUTLOUD_VM_API void __cdecl outloud_vm_result_free(outloud_vm_result* result) OUTLOUD_VM_NOEXCEPT;
 // Additive ABI-v1 capability: export only, no installed-library mutation or elevation.
-#define OUTLOUD_VM_CAP_OLV_EXPORT_V1 1u
+#define OUTLOUD_VM_CAP_NATIVE_PROFILE_V1 2u
+typedef struct outloud_vm_native_profile_v1 {
+    const char* path;
+    const char* sha256;
+} outloud_vm_native_profile_v1;
+OUTLOUD_VM_API const outloud_vm_native_profile_v1* __cdecl outloud_vm_result_native_profile(const outloud_vm_result*, uint64_t row) OUTLOUD_VM_NOEXCEPT;
+OUTLOUD_VM_API int32_t __cdecl outloud_vm_native_export_destination(const char* destination, outloud_vm_result** result) OUTLOUD_VM_NOEXCEPT;
+OUTLOUD_VM_API int32_t __cdecl outloud_vm_native_export(const char* library_id, const char* expected_name,
+    const char* expected_hash, const char* destination, const char* expected_destination,
+    outloud_vm_result** result) OUTLOUD_VM_NOEXCEPT;
 OUTLOUD_VM_API uint32_t __cdecl outloud_vm_capabilities(void) OUTLOUD_VM_NOEXCEPT;
 // Inspect a local destination before asking the user to overwrite it. Owned result
 // contains "absent" or a fingerprint; use the same fingerprint in export.
-OUTLOUD_VM_API int32_t __cdecl outloud_vm_export_destination(const char* destination, outloud_vm_result** result) OUTLOUD_VM_NOEXCEPT;
 OUTLOUD_VM_API const char* __cdecl outloud_vm_result_destination(const outloud_vm_result* result) OUTLOUD_VM_NOEXCEPT;
-OUTLOUD_VM_API int32_t __cdecl outloud_vm_export(const char* library_id, const char* expected_name,
-    const char* expected_hash, const char* destination, const char* expected_destination,
-    outloud_vm_result** result) OUTLOUD_VM_NOEXCEPT;
 #ifdef __cplusplus
 }
 #endif

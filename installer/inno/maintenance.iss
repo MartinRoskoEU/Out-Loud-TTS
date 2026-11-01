@@ -6,7 +6,7 @@ var
 
 function RunMaintenanceCommand(Parameters, Expected: String; var ErrorText: String): Boolean;
 var
-  Helper, Report: String;
+  Helper, Report, Reason: String;
   ExitCode: Integer;
 begin
   Result := False;
@@ -19,11 +19,18 @@ begin
     Helper := ExpandConstant('{tmp}\OutLoudInstallSigning.exe');
     RuntimeReportSerial := RuntimeReportSerial + 1;
     Report := ExpandConstant('{tmp}\maintenance-') + IntToStr(RuntimeReportSerial) + '.ini';
+    OutLoudDiagnosticReport := Report;
     if FileExists(Report) then RaiseException('Maintenance report already exists.');
     if not Exec(Helper, Parameters + ' "' + Report + '"', ExpandConstant('{tmp}'),
       SW_HIDE, ewWaitUntilTerminated, ExitCode) or (ExitCode <> 0) then
-      RaiseException('Native maintenance refused or failed: ' + GetIniString('results', 'reason', 'see protected recovery state', Report) +
+    begin
+      Reason := GetIniString('results', 'reason', 'see protected recovery state', Report);
+      Log('Native maintenance stopped: ' + Reason + '. Report: ' + Report);
+      if Reason = 'maintenance_voice_registration_conflict' then
+        RaiseException(VoiceRegistrationPreflightMessage(GetIniString('results', 'voice_registration', '', Report)) + #13#10#13#10 + 'Preserve any remaining protected recovery records. Diagnostic report: ' + Report);
+      RaiseException('Native maintenance refused or failed: ' + Reason +
         '. Preserve any remaining .outloud-bootstrap.dat, .outloud-fresh-cleanup.dat and protected configuration recovery records. Report: ' + Report);
+    end;
     MaintenanceLastState := GetIniString('results', 'maintenance', '', Report);
     if (GetIniString('results', 'schema', '', Report) <> '1') or
       ((Expected <> 'reconciled') and (MaintenanceLastState <> Expected)) or
@@ -46,6 +53,7 @@ begin
   ExtractTemporaryFile(TemporaryName);
   if not RenameFile(ExpandConstant('{tmp}\') + TemporaryName, Destination) then
     RaiseException('Cannot materialize maintenance candidate.');
+  InstallationProgressPage.Animate;
 end;
 
 function PrepareSharedMaintenance(var ErrorText: String): Boolean;
@@ -57,8 +65,8 @@ begin
     ErrorText := 'Administrator privileges are required to prepare installation.';
     Exit;
   end;
-  if not CheckProductConsent or not CheckOutLoudPrerequisites then begin
-    ErrorText := 'Accepted licenses and compatible prerequisites are required.';
+  if not InteractiveSetup or not CheckOutLoudPrerequisites then begin
+    ErrorText := 'Interactive approval and compatible prerequisites are required.';
     Exit;
   end;
   try
@@ -94,7 +102,7 @@ end;
 function CleanupFailedFreshMaintenance(var ErrorText: String): Boolean;
 begin
   Result := True;
-  if not ProductConsentSatisfied or (ExistingInstallationDirectory <> '') or MaintenanceAwaitingHost or MaintenanceCommitted then Exit;
+  if not InteractiveSetup or (ExistingInstallationDirectory <> '') or MaintenanceAwaitingHost or MaintenanceCommitted then Exit;
   if FileExists(WizardDirValue + '\.outloud-fresh-cleanup.dat') or
     (DirExists(WizardDirValue + '\configuration\maintenance') and
       not FileExists(WizardDirValue + '\configuration\signing.ini')) then begin
@@ -128,7 +136,7 @@ procedure StartSharedMaintenance;
 var
   ErrorText: String;
 begin
-  if RuntimeCancelRequested or not CheckProductConsent then Abort;
+  if RuntimeCancelRequested or not InteractiveSetup then Abort;
   WizardForm.CancelButton.Enabled := False;
   MaintenanceHostStarted := True;
   if MaintenanceAwaitingHost then begin
@@ -154,4 +162,10 @@ begin
     RaiseException(ErrorText);
   MaintenanceCommitted := True;
   MaintenanceAwaitingHost := False;
+  if GetIniString('results', 'archive_cleanup', '', OutLoudDiagnosticReport) = 'pending' then begin
+    Log('Installation verified; completed maintenance archive cleanup remains pending.');
+    ShowOutLoudDiagnostic('Out Loud setup',
+      'Out Loud was installed and verified successfully. Temporary maintenance archive cleanup could not finish. ' +
+      'It will be retried during the next maintenance operation. Keep the diagnostic report if this repeats.', OutLoudDiagnosticReport);
+  end;
 end;

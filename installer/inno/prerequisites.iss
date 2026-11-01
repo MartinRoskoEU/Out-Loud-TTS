@@ -63,6 +63,6 @@ begin
   if not Result then
     MsgBox('Out Loud prerequisite check:' + #13#10 +
       'Visual C++ x64: ' + PrerequisiteDescription(Report, 'vc') + #13#10 +
-      '.NET Desktop x64: ' + PrerequisiteDescription(Report, 'dotnet') + #13#10 +
-      'Both prerequisites must be compatible before native publication.', mbError, MB_OK);
+      '.NET 10 / Windows App SDK x64: ' + PrerequisiteDescription(Report, 'dotnet') + #13#10 +
+      'All required components must be compatible before native publication.', mbError, MB_OK);
 end;

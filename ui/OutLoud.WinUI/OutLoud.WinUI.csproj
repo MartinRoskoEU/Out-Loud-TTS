@@ -1,0 +1,43 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="..\..\ProductVersion.props" />
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.22000.0</TargetPlatformMinVersion>
+    <Platforms>x64</Platforms>
+    <PlatformTarget>x64</PlatformTarget>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <UseWinUI>true</UseWinUI>
+    <WinUISDKReferences>false</WinUISDKReferences>
+    <WindowsPackageType>None</WindowsPackageType>
+    <AppxPackage>false</AppxPackage>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\OutLoud.ico</ApplicationIcon>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <NativeBuildDirectory Condition="'$(NativeBuildDirectory)' == ''">$(MSBuildThisFileDirectory)..\..\build-winui-native</NativeBuildDirectory>
+    <PocketTtsRuntimeSourceDir Condition="'$(PocketTtsRuntimeSourceDir)' == ''">$(MSBuildProjectDirectory)\..\..\development\runtime\pocket-tts\v4.0.1\windows-x64\extracted\pocket-tts-3.3.0-x86_64-pc-windows-msvc</PocketTtsRuntimeSourceDir>
+  </PropertyGroup>
+  <ItemGroup Condition="Exists('$(PocketTtsRuntimeSourceDir)\pocket-tts.exe')">
+    <Content Include="$(PocketTtsRuntimeSourceDir)\pocket-tts.exe" Link="runtime\pocket-tts\pocket-tts.exe" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="$(PocketTtsRuntimeSourceDir)\LICENSE" Link="runtime\pocket-tts\LICENSE" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+  <Target Name="ValidatePocketTtsRuntimeSource" BeforeTargets="PrepareForBuild" Condition="Exists('$(PocketTtsRuntimeSourceDir)\pocket-tts.exe')">
+    <GetFileHash Files="$(PocketTtsRuntimeSourceDir)\pocket-tts.exe" Algorithm="SHA256">
+      <Output TaskParameter="Items" ItemName="PocketTtsRuntimeHash" />
+    </GetFileHash>
+    <Error Condition="'%(PocketTtsRuntimeHash.FileHash)' != '813CABFC2F8FC7A4E5310DEDA6025426B3164610DD9F3C3098A6078E5CC1895A'" Text="Pocket TTS runtime source does not match the validated v4.0.1 Windows x64 artifact." />
+  </Target>
+  <ItemGroup>
+    <None Include="$(NativeBuildDirectory)\$(Configuration)\OutLoudVoiceImportHelper.exe" Link="OutLoudVoiceImportHelper.exe" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <None Include="$(NativeBuildDirectory)\$(Configuration)\OutLoudVoiceManagerNative.dll" Link="OutLoudVoiceManagerNative.dll" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <EmbeddedResource Include="RuntimeMetadata\**\*.yaml;RuntimeMetadata\**\*.json" />
+    <Content Include="RuntimeMetadata\v4.0.1\LICENSE" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Update="Assets\OutLoud.ico;Assets\AppTitleIcon.png" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Manifest Include="$(ApplicationManifest)" />
+    <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.28000.2705" />
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.5.1" />
+  </ItemGroup>
+  <Import Project="..\SapiIdentity.targets" />
+  <Target Name="GenerateTesterSapiIdentityForXaml" BeforeTargets="MarkupCompilePass1" DependsOnTargets="GenerateSapiIdentity" />
+</Project>

@@ -57,14 +57,14 @@ std::vector<LibraryVoice> list(Session& session) {
         std::string id;
         try { id=fs::utf8(name); } catch (...) {}
         if (!fs::id(id)) {
-            result.push_back({id,{}, {},VoiceHealth::unsafe_entry,"Unexpected entry name; no path inferred from metadata"});
+            result.push_back({id,{},VoiceHealth::unsafe_entry,"Unexpected entry name; no path inferred from metadata"});
         } else {
             auto voice=inspect(session.voices->path/name,id,session.machine);
             bool replacement=pending.replacement.contains(id), removal=pending.removal.contains(id);
             #ifdef OUTLOUD_REPLACEMENT_AUDIT
             if (legacy) { replacement=replacement_pending(session,id); removal=removal_pending(session,id); }
             #endif
-            if (replacement) { voice.health=VoiceHealth::replacement_pending; voice.detail="Interrupted replacement needs cleanup_pending recovery; close active consumers first."; }
+            if (replacement) { voice.health=VoiceHealth::replacement_pending; voice.detail="Unsupported pending transaction retained for manual review."; }
             if (removal) { voice.health=VoiceHealth::removal_pending; voice.detail="Interrupted removal requires authorized token-aware recovery; data retained."; }
             result.push_back(std::move(voice));
         }

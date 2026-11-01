@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.4.0
+
+- Consolidated current WinUI/Rust documentation, build and deployment instructions;
+  removed obsolete implementation guides and development audits.
+- Updated distribution notices for the current runtime and Microsoft components,
+  included Rust dependency notices and MPL source archives, and removed obsolete
+  standalone notices from the retired implementation.
+- Allowed read-only browsing of maintenance directories without Explorer adding
+  personal write access; administrator/SYSTEM-only modification checks remain.
+- Replaced the legacy C++ inference and OLP/OLV workflows with the official
+  Pocket TTS Rust runtime and the WinUI 3 desktop application.
+- Ported Voice Library and Voice Tester to WinUI, with native `.safetensors`
+  profiles, byte-preserving import/export, voice details and Windows SAPI playback.
+  Voice profiles remain independent of model identifiers and revisions.
+- Added verified model installation, selection, removal and update checks in
+  Settings, plus explicitly confirmed official runtime updates. SAPI uses the
+  selected model and verified active runtime without automatic fallback or a
+  runtime-version allowlist.
+- Moved models, runtime updates, inventories, Settings and voice management to
+  machine-wide storage. The application requests administrator approval once
+  at startup; external Windows SAPI clients remain unelevated.
+- Added the current self-contained WinUI installer with an embedded, verified
+  offline Visual C++ redistributable, installation-owned signing, COM/SAPI
+  registration, data-preserving upgrades and confirmed removal of owned data.
+- Refined Voice Library, Voice Details, Voice Tester and Settings presentation,
+  clarified common readiness errors, and fixed model-download cancellation crashes.
+- Added verified retirement of completed maintenance archives, startup recovery
+  of temporary download/metadata files and recognized orphan staging operations,
+  and removal of inactive downloaded runtimes after verified activation. Pending
+  archive cleanup is reported separately from a successfully committed installation.
+
 ## 0.3.0
 
 - Updated official Kyutai English Pocket TTS weights from `english_2026-09_2`
