@@ -200,6 +200,38 @@ void replace(std::string& value, const std::string& from, const std::string& to)
     std::size_t at = 0;
     while ((at = value.find(from,at)) != value.npos) { value.replace(at,from.size(),to); at += to.size(); }
 }
+Plan updated_plan(Plan trusted,const std::string& alias,const std::string& revision,const Json& receipt) {
+    if (receipt.object.size()!=5 || integer(receipt,"SchemaVersion")!=1 || text(receipt,"RepositoryId")!=repository ||
+        text(receipt,"Alias")!=alias || text(receipt,"Revision")!=revision ||
+        revision.size()!=40 || revision.find_first_not_of("0123456789abcdef")!=revision.npos) {
+        invalid("Invalid protected model update receipt.");
+    }
+    const auto& files=member(receipt,"RequiredFiles");
+    if (files.kind!=Json::Kind::array || files.array.size()!=trusted.assets.size()) { invalid("Incomplete model update receipt."); }
+    for (auto& expected:trusted.assets) {
+        const Json* file=nullptr;
+        for (const auto& item:files.array) {
+            if (text(item,"RepositoryPath")!=expected.path) { continue; }
+            if (file) { invalid("Duplicate model update asset."); } file=&item;
+        }
+        if (!file || file->object.size()!=8) { invalid("Unknown model update asset schema."); }
+        const auto hash=text(*file,"ExpectedHash"),algorithm=text(*file,"HashAlgorithm");
+        const bool sha256=algorithm=="SHA256";
+        const auto& weights=member(*file,"IsWeights");
+        if ((!sha256 && algorithm!="GitBlobSHA1") || (expected.weights && !sha256) ||
+            hash.size()!=(sha256?64:40) || hash.find_first_not_of("0123456789abcdef")!=hash.npos || !integer(*file,"SizeBytes") ||
+            text(*file,"RepositoryId")!=repository || text(*file,"Revision")!=revision ||
+            text(*file,"RelativePath")!=std::string("blobs\\")+(sha256?"sha256\\":"git-blob-sha1\\")+hash ||
+            weights.kind!=Json::Kind::literal || weights.text!=(expected.weights?"true":"false")) {
+            invalid("Invalid protected model update file identity.");
+        }
+        const auto reference="hf://"+std::string(repository)+"/"+expected.path+"@"+revision;
+        replace(trusted.yaml,expected.reference,reference);
+        expected.reference=reference;expected.revision=revision;expected.hash=hash;
+        expected.size=integer(*file,"SizeBytes");expected.sha256=sha256;
+    }
+    return trusted;
+}
 std::string yaml_path(const std::filesystem::path& path) {
     auto value = fs::utf8(path.native()); replace(value,"'","''"); return "'" + value + "'";
 }
@@ -209,6 +241,10 @@ std::string yaml_path(const std::filesystem::path& path) {
 namespace testing {
 std::filesystem::path default_selection_root() { return data_root(); }
 std::filesystem::path default_synthesis_staging() { return synthesis_staging({}); }
+std::string model_update_configuration(std::string alias,std::string receipt) {
+    const auto json=parse(receipt);
+    return updated_plan(plan(alias),alias,text(json,"Revision"),json).yaml;
+}
 }
 #endif
 
@@ -343,12 +379,29 @@ std::unique_ptr<RustModelSelection> RustModelSelection::acquire(const std::files
     const auto selection = selected(); state->identity = selection.identity;
     const auto& entry = selection.model;
     const auto alias = text(entry,"Alias");
-    const auto trusted = plan(alias);
+    auto trusted = plan(alias);
+    const auto update=entry.object.find("UpdateReceiptSha256");
+    if (update!=entry.object.end() && !(update->second.kind==Json::Kind::literal && update->second.text=="null")) {
+        const auto hash=runtime_digest(entry,"UpdateReceiptSha256");
+        const auto path=models/L"blobs/sha256"/fs::wide(hash);
+        state->parents.emplace_back(path.parent_path());
+        auto receipt=fs::file(path,GENERIC_READ|READ_CONTROL);
+        if (machine) { detail::library_security::validate(receipt.value,path,false); }
+        if (fs::size(receipt.value,path)>65536 || digest(receipt.value,path,true,cancellation)!=hash) {
+            invalid("The selected model update receipt failed SHA-256 verification.");
+        }
+        LARGE_INTEGER zero{};
+        if (!SetFilePointerEx(receipt.value,zero,nullptr,FILE_BEGIN)) { invalid("Cannot rewind the model update receipt."); }
+        const auto bytes=fs::read(receipt.value,path,65536);
+        trusted=updated_plan(std::move(trusted),alias,text(entry,"Revision"),
+            parse({reinterpret_cast<const char*>(bytes.data()),bytes.size()}));
+        state->files.push_back(std::move(receipt));
+    }
     if (text(entry,"RepositoryId") != repository || text(entry,"Revision") != trusted.assets[0].revision ||
         normalized(text(entry,"ConfigurationYaml")) != trusted.yaml ||
         !fs::within(fs::local(fs::wide(text(entry,"InstallationDirectory")),VoiceLibraryErrorCode::unsafe_path),models) ||
         _wcsicmp(fs::wide(text(entry,"InstallationDirectory")).c_str(),models.c_str()) != 0) {
-        invalid("The selected model inventory does not match bundled official metadata.");
+        invalid("The selected model inventory does not match its trusted configuration and file manifest.");
     }
     const auto& required = member(entry,"RequiredFiles");
     if (required.kind != Json::Kind::array || required.array.size() != trusted.assets.size()) { invalid("Incomplete selected model manifest."); }

@@ -106,6 +106,22 @@ public sealed class PocketTtsModelInventoryService
         }, cancellationToken).ConfigureAwait(false);
     }
 
+    // Caller holds model-install.lock and the exclusive model operation lease. One atomic commit
+    // switches the model and journals the superseded blobs; the saved alias never changes.
+    internal Task CommitUpdateAsync(PocketTtsModelInventoryEntry replacement, string expectedIdentity, CancellationToken token) =>
+        UpdateAsync(document =>
+        {
+            var previous = document.Models.SingleOrDefault(entry => entry.Alias == replacement.Alias);
+            if (previous is null || GetIdentity(previous) != expectedIdentity)
+                throw new InvalidOperationException("The model changed. Check for updates and confirm again.");
+            if (document.PendingCleanups?.Any(job => job.Alias == replacement.Alias) == true)
+                throw new InvalidOperationException("Previous model cleanup must finish before another update.");
+            foreach (var entry in document.Models) _ = BlobReferences(entry);
+            var cleanup = new PocketTtsModelCleanup(Guid.NewGuid().ToString("N"), previous.Alias, BlobReferences(previous));
+            return document with { Models = document.Models.Where(entry => entry.Alias != replacement.Alias).Append(replacement).ToArray(),
+                PendingCleanups = (document.PendingCleanups ?? []).Append(cleanup).ToArray() };
+        }, token);
+
     internal Task CompleteCleanupAsync(string id, CancellationToken cancellationToken) =>
         UpdateAsync(document => document with { PendingCleanups = (document.PendingCleanups ?? []).Where(job => job.Id != id).ToArray() }, cancellationToken);
 
@@ -125,6 +141,8 @@ public sealed class PocketTtsModelInventoryService
             { throw new InvalidDataException("An inventory asset is not its canonical private blob."); }
             references.Add(Path.GetRelativePath(PocketTtsModelStore.Root, expected));
         }
+        if (entry.UpdateReceiptSha256 is { } receipt)
+            references.Add(Path.GetRelativePath(PocketTtsModelStore.Root, PocketTtsModelStore.BlobPath(true, receipt)));
         return references.ToArray();
     }
 
@@ -182,6 +200,8 @@ public sealed class PocketTtsModelInventoryService
             entry.RequiredFiles is null || entry.RequiredFiles.Count is < 1 or > 256 ||
             string.IsNullOrWhiteSpace(entry.ConfigurationYaml) || entry.ConfigurationYaml.Length > 512 * 1024)
         { throw new InvalidDataException("The stored model installation metadata is incomplete or invalid."); }
+        if (entry.RequiredFiles.Any(file => file is null)) throw new InvalidDataException("Invalid required model file.");
+        PocketTtsModelInstallPlan.ValidateInventory(entry);
 
         string root = Path.GetFullPath(entry.InstallationDirectory);
         if (!string.Equals(root, PocketTtsModelStore.Root, StringComparison.OrdinalIgnoreCase))

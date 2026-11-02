@@ -11,7 +11,8 @@ public enum PocketTtsModelInstallFailure
     InsufficientDiskSpace, Verification, Metadata, Storage, Busy, RuntimeChanged, Registration
 }
 
-public sealed record PocketTtsModelInstallResult(bool Succeeded, PocketTtsModelInstallFailure Failure, string Message);
+public sealed record PocketTtsModelInstallResult(bool Succeeded, PocketTtsModelInstallFailure Failure, string Message)
+{ public bool CleanupPending { get; init; } }
 public sealed record PocketTtsModelInstallProgress(string Message, double? Percent = null, bool CanCancel = true);
 
 /// <summary>Verifies private blobs and downloads missing pinned assets directly into private staging.</summary>
@@ -28,8 +29,21 @@ public sealed class PocketTtsModelInstallService(HttpClient http)
             : ElevatedMachineDataService.RunAsync<PocketTtsModelInstallProgress, PocketTtsModelInstallResult>(
                 new("install-model", alias), progress, cancellationToken);
 
+    public Task<PocketTtsModelInstallResult> UpdateAsync(string alias, string expectedIdentity, string revision,
+        IProgress<PocketTtsModelInstallProgress>? progress = null, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrEmpty(expectedIdentity) || !System.Text.RegularExpressions.Regex.IsMatch(expectedIdentity, @"\A[a-fA-F0-9]{64}\z") ||
+            string.IsNullOrEmpty(revision) || !System.Text.RegularExpressions.Regex.IsMatch(revision, @"\A[a-f0-9]{40}\z"))
+            throw new ArgumentException("A confirmed model identity and immutable update revision are required.");
+        return MachineDataStorage.IsAdministrator
+            ? Task.Run(() => InstallCoreAsync(alias, progress, cancellationToken, expectedIdentity, revision), cancellationToken)
+            : ElevatedMachineDataService.RunAsync<PocketTtsModelInstallProgress, PocketTtsModelInstallResult>(
+                new("update-model", alias, expectedIdentity, ModelRevision: revision), progress, cancellationToken);
+    }
+
     private async Task<PocketTtsModelInstallResult> InstallCoreAsync(string alias,
-        IProgress<PocketTtsModelInstallProgress>? progress, CancellationToken cancellationToken)
+        IProgress<PocketTtsModelInstallProgress>? progress, CancellationToken cancellationToken,
+        string? expectedIdentity = null, string? revision = null)
     {
         if (!await InstallGate.WaitAsync(0, cancellationToken).ConfigureAwait(false))
         { return new(false, PocketTtsModelInstallFailure.Busy, "Another model installation is already running."); }
@@ -38,6 +52,9 @@ public sealed class PocketTtsModelInstallService(HttpClient http)
         FileStream? installLock = null;
         PocketTtsDownloadOperation? download = null;
         bool committed = false;
+        bool updating = expectedIdentity is not null;
+        string? receiptTemporary = null;
+        string? receiptPath = null;
         PocketTtsModelInstallResult result;
         try
         {
@@ -61,10 +78,33 @@ public sealed class PocketTtsModelInstallService(HttpClient http)
                     try { installed = await inventory.ReadAsync(cancellationToken).ConfigureAwait(false); }
                     catch (InvalidDataException)
                     { throw new InstallException(PocketTtsModelInstallFailure.Metadata, "The saved model inventory is incompatible or invalid. Close the app and manually archive the outdated development model-inventory.json before reinstalling. It has not been changed."); }
-                    if (installed.Any(entry => entry.Alias == alias))
-                    { throw new InstallException(PocketTtsModelInstallFailure.Metadata, "This model already has an installation record. Model repair and updates are not implemented."); }
-                    var plan = await PocketTtsModelInstallPlan.LoadAsync(alias, cancellationToken).ConfigureAwait(false)
-                        ?? throw new InstallException(PocketTtsModelInstallFailure.Metadata, "Complete trusted installation metadata is unavailable for this model.");
+                    var previous = installed.SingleOrDefault(entry => entry.Alias == alias);
+                    if (updating && (previous is null || PocketTtsModelInventoryService.GetIdentity(previous) != expectedIdentity))
+                        throw new InstallException(PocketTtsModelInstallFailure.Metadata, "The model changed. Check for updates and confirm again.");
+                    if (!updating && previous is not null)
+                        throw new InstallException(PocketTtsModelInstallFailure.Metadata, "This model is already installed. Use Update when available, or Remove.");
+                    if ((await inventory.ReadPendingAsync(cancellationToken).ConfigureAwait(false)).Any(job => job.Alias == alias))
+                        throw new InstallException(PocketTtsModelInstallFailure.Busy, "Pending cleanup must finish before installing or updating this model. Restart Out Loud to retry cleanup.");
+                    if (previous is not null)
+                    {
+                        var oldModel = PocketTtsModelInventoryService.CreateModel(previous);
+                        privateLeases.AddRange(await oldModel.OpenVerifiedAssetsAsync(cancellationToken).ConfigureAwait(false));
+                        if (previous.UpdateReceiptSha256 is { } oldReceiptHash)
+                        {
+                            string oldReceipt = PocketTtsModelStore.BlobPath(true, oldReceiptHash);
+                            long size = new FileInfo(oldReceipt).Length;
+                            if (size > 65536) throw new InvalidDataException("The previous model update receipt changed.");
+                            privateLeases.AddRange(await VerifyFileAsync(new("receipt", oldReceipt, size, oldReceiptHash, true, false),
+                                cancellationToken).ConfigureAwait(false));
+                        }
+                    }
+                    var plan = updating
+                        ? await new PocketTtsModelUpdateService(http).ResolveUpdateAsync(alias, revision!, cancellationToken).ConfigureAwait(false)
+                        : await PocketTtsModelInstallPlan.LoadAsync(alias, cancellationToken).ConfigureAwait(false)
+                            ?? throw new InstallException(PocketTtsModelInstallFailure.Metadata, "Complete trusted installation metadata is unavailable for this model.");
+                    if (previous is not null && plan.InventoryEntry().RequiredFiles.All(file => previous.RequiredFiles.Any(old =>
+                        old.RepositoryPath == file.RepositoryPath && old.ExpectedHash == file.ExpectedHash && old.SizeBytes == file.SizeBytes)))
+                        throw new InstallException(PocketTtsModelInstallFailure.Metadata, "The confirmed revision has no changed model files. Check for updates again.");
 
                     var resolved = new Dictionary<PocketTtsModelInstallFile, string>();
                     var missing = new List<PocketTtsModelInstallFile>();
@@ -88,14 +128,15 @@ public sealed class PocketTtsModelInstallService(HttpClient http)
                     var groups = missing.GroupBy(file => file.Asset.Path, StringComparer.OrdinalIgnoreCase).ToArray();
                     if (groups.Any(group => group.Any(file => file.Asset.Size != group.First().Asset.Size)))
                     { throw new InvalidDataException("Conflicting content sizes."); }
-                    if (groups.Length > 0)
+                    if (groups.Length > 0 || plan.UpdateReceipt is not null)
                     {
                         PocketTtsModelStore.EnsureDirectory(PocketTtsModelStore.Staging);
-                        long requiredBytes = groups.Sum(group => group.First().Asset.Size);
+                        long requiredBytes = checked(groups.Sum(group => group.First().Asset.Size) + (plan.UpdateReceipt?.Length ?? 0));
                         var drive = new DriveInfo(Path.GetPathRoot(PocketTtsModelStore.Root)!);
                         if (drive.AvailableFreeSpace < checked(requiredBytes + 16 * 1024 * 1024))
                         { throw new InstallException(PocketTtsModelInstallFailure.InsufficientDiskSpace, "There is not enough free disk space in private model storage for this installation."); }
-                        string[] temporaryNames = groups.Select(_ => Guid.NewGuid().ToString("N") + ".partial").ToArray();
+                        string[] temporaryNames = Enumerable.Range(0, groups.Length + (plan.UpdateReceipt is null ? 0 : 1))
+                            .Select(_ => Guid.NewGuid().ToString("N") + ".partial").ToArray();
                         download = await PocketTtsDownloadOperation.BeginAsync("model", temporaryNames, cancellationToken).ConfigureAwait(false);
                         staging = download.DirectoryPath;
                         if (Directory.Exists(staging) || File.Exists(staging)) { throw new IOException("Temporary directory already exists."); }
@@ -110,10 +151,19 @@ public sealed class PocketTtsModelInstallService(HttpClient http)
                             foreach (var reference in group) { resolved.Add(reference, temporary); }
                             completed += file.Asset.Size;
                         }
+                        if (plan.UpdateReceipt is { } receipt)
+                        {
+                            receiptTemporary = Path.Combine(staging, temporaryNames[^1]);
+                            using (var output = PocketTtsModelStore.CreateStagingFile(receiptTemporary))
+                            { await output.WriteAsync(receipt, cancellationToken).ConfigureAwait(false); output.Flush(flushToDisk: true); }
+                            receiptPath = PocketTtsModelStore.BlobPath(true, plan.InventoryEntry().UpdateReceiptSha256!);
+                        }
                     }
 
                     progress?.Report(new("Verifying complete private model and offline public model configuration..."));
                     await VerifyModelAsync(plan, resolved, cancellationToken).ConfigureAwait(false);
+                    if (previous is not null)
+                        await VerifyUpdateShapeAsync(previous, plan, resolved, cancellationToken).ConfigureAwait(false);
                     progress?.Report(new("Waiting for active model operations, then publishing verified files..."));
                     using (FileStream publicationLease = await PocketTtsModelStore.AcquireWriteAsync(cancellationToken).ConfigureAwait(false))
                     {
@@ -137,40 +187,72 @@ public sealed class PocketTtsModelInstallService(HttpClient http)
                             plan.Files.Select(file => file.Asset with { Path = resolved[file] }).ToArray());
                         _ = model.LocalConfiguration();
                         privateLeases.AddRange(await model.OpenVerifiedAssetsAsync(cancellationToken).ConfigureAwait(false));
+                        if (receiptPath is not null)
+                        {
+                            PocketTtsModelStore.EnsureDirectory(Path.GetDirectoryName(receiptPath)!);
+                            try { File.Move(receiptTemporary!, receiptPath); }
+                            catch (IOException) when (File.Exists(receiptPath)) { }
+                            privateLeases.AddRange(await VerifyFileAsync(new("receipt", receiptPath, plan.UpdateReceipt!.Length,
+                                plan.InventoryEntry().UpdateReceiptSha256!, true, false), cancellationToken).ConfigureAwait(false));
+                        }
+                        if (updating)
+                        {
+                            if (runtimePath != PocketTtsRuntimeStore.ResolveActivePath() || identity !=
+                                await PocketTtsModelSetupService.ReadVerifiedRuntimeIdentityAsync(cancellationToken).ConfigureAwait(false))
+                                throw new InstallException(PocketTtsModelInstallFailure.RuntimeChanged, "The runtime changed. No model update was committed.");
+                            PocketTtsModelInstallPlan.ValidateInventory(plan.InventoryEntry());
+                            progress?.Report(new("Activating the verified model update…", 100, CanCancel: false));
+                            await inventory.CommitUpdateAsync(plan.InventoryEntry(), expectedIdentity!, cancellationToken).ConfigureAwait(false);
+                            committed = true;
+                        }
                     }
-                    if (runtimePath != PocketTtsRuntimeStore.ResolveActivePath() ||
-                        identity != await PocketTtsModelSetupService.ReadVerifiedRuntimeIdentityAsync(cancellationToken).ConfigureAwait(false))
-                    { throw new InstallException(PocketTtsModelInstallFailure.RuntimeChanged, "The active runtime changed during installation. No model was registered. Check models and retry."); }
+                    if (updating)
+                    {
+                        foreach (var lease in privateLeases) lease.Dispose();
+                        privateLeases.Clear();
+                        progress?.Report(new("Removing superseded model files…", CanCancel: false));
+                        var cleanup = await new PocketTtsModelRemovalService().CleanupAfterUpdateAsync(CancellationToken.None).ConfigureAwait(false);
+                        result = new(true, PocketTtsModelInstallFailure.None, $"{alias} updated and verified. The saved model selection is unchanged. " + cleanup.Message)
+                            { CleanupPending = cleanup.CleanupPending };
+                    }
+                    else
+                    {
+                        if (runtimePath != PocketTtsRuntimeStore.ResolveActivePath() ||
+                            identity != await PocketTtsModelSetupService.ReadVerifiedRuntimeIdentityAsync(cancellationToken).ConfigureAwait(false))
+                        { throw new InstallException(PocketTtsModelInstallFailure.RuntimeChanged, "The active runtime changed during installation. No model was registered. Check models and retry."); }
 
-                    progress?.Report(new("Registering verified private model...", 100));
-                    var primary = plan.Files.Single(file => file.Asset.Weights);
-                    var record = new PocketTtsModelInventoryEntry(alias, PocketTtsModelInstallPlan.Repository, primary.Revision, PocketTtsModelStore.Root,
-                        plan.Files.Select(file => new PocketTtsModelInventoryFile(
-                            Path.GetRelativePath(PocketTtsModelStore.Root, resolved[file]), file.RepositoryPath, file.Asset.Size, file.Asset.Digest,
-                            file.Asset.Lfs ? "SHA256" : "GitBlobSHA1", file.Asset.Weights,
-                            PocketTtsModelInstallPlan.Repository, file.Revision)).ToArray(), plan.Configuration);
-                    try { await inventory.RegisterAfterInstallationAsync(record, cancellationToken, replaceExisting: false).ConfigureAwait(false); }
-                    catch (IOException exception) when ((exception.HResult & 0xFFFF) is 39 or 112) { throw; }
-                    catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidDataException or InvalidOperationException)
-                    { throw new InstallException(PocketTtsModelInstallFailure.Registration, "Verified private files are present, but the model could not be registered. Check local data permissions and the model inventory, then retry."); }
-                    committed = true;
-                    result = new(true, PocketTtsModelInstallFailure.None, $"{alias} installed and verified. It has not been activated.");
+                        progress?.Report(new("Registering verified private model...", 100));
+                        try { await inventory.RegisterAfterInstallationAsync(plan.InventoryEntry(), cancellationToken, replaceExisting: false).ConfigureAwait(false); }
+                        catch (IOException exception) when ((exception.HResult & 0xFFFF) is 39 or 112) { throw; }
+                        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidDataException or InvalidOperationException)
+                        { throw new InstallException(PocketTtsModelInstallFailure.Registration, "Verified private files are present, but the model could not be registered. Check local data permissions and the model inventory, then retry."); }
+                        committed = true;
+                        result = new(true, PocketTtsModelInstallFailure.None, $"{alias} installed and verified. It has not been activated.");
+                    }
                 }
             }
             catch (InstallException exception) { result = new(false, exception.Failure, exception.Message); }
-            catch (OperationCanceledException) { result = new(false, PocketTtsModelInstallFailure.Cancelled, "Model installation cancelled. No incomplete installation was registered."); }
+            catch (OperationCanceledException) { result = new(false, PocketTtsModelInstallFailure.Cancelled, updating
+                ? "Model update cancelled. The previous model and saved selection are unchanged."
+                : "Model installation cancelled. No incomplete installation was registered."); }
             catch (HttpRequestException) { result = new(false, PocketTtsModelInstallFailure.Network, "The model download failed. Check your connection and retry."); }
             catch (TimeoutException) { result = new(false, PocketTtsModelInstallFailure.Network, "The model download timed out. Check your connection and retry."); }
             catch (IOException exception) when ((exception.HResult & 0xFFFF) is 39 or 112)
             { result = new(false, PocketTtsModelInstallFailure.InsufficientDiskSpace, "The disk is full. Free space on the private model storage drive and retry."); }
             catch (Exception exception) when (exception is InvalidDataException or JsonException)
-            { result = new(false, PocketTtsModelInstallFailure.Verification, "Private model integrity or model format verification failed. No model was registered; existing files were preserved."); }
+            { result = new(false, PocketTtsModelInstallFailure.Verification, updating
+                ? "Model update verification failed. The previous model and saved selection are unchanged."
+                : "Private model integrity or model format verification failed. No model was registered; existing files were preserved."); }
             catch (Exception)
             { result = new(false, PocketTtsModelInstallFailure.Storage, "Model installation could not complete. Check private storage permissions, runtime readiness, and available disk space."); }
             finally
             {
                 foreach (var lease in privateLeases) { lease.Dispose(); }
             }
+            if (committed && !result.Succeeded)
+                result = new(true, PocketTtsModelInstallFailure.None,
+                    $"{alias} was updated and verified, but cleanup could not finish. Restart Out Loud to retry the recorded cleanup; the saved selection is unchanged.")
+                    { CleanupPending = true };
             bool cleanupFailed = false;
             if (download is not null)
             {
@@ -178,7 +260,8 @@ public sealed class PocketTtsModelInstallService(HttpClient http)
                 catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidDataException) { cleanupFailed = true; }
             }
             if (cleanupFailed)
-            { result = result with { Message = result.Message + " Temporary download cleanup remains recorded and will be retried at startup. Unverified files were preserved." }; }
+            { result = result with { CleanupPending = committed || result.CleanupPending,
+                Message = result.Message + " Temporary download cleanup remains recorded and will be retried at startup. Unverified files were preserved." }; }
             return committed ? result with { Succeeded = true, Failure = PocketTtsModelInstallFailure.None } : result;
         }
         finally { installLock?.Dispose(); InstallGate.Release(); }
@@ -186,6 +269,30 @@ public sealed class PocketTtsModelInstallService(HttpClient http)
 
     private static Task<IReadOnlyList<FileStream>> VerifyFileAsync(PocketTtsCachedAsset asset, CancellationToken cancellationToken) =>
         new PocketTtsInstalledModel("verification", "", new[] { asset }).OpenVerifiedAssetsAsync(cancellationToken, requireVoiceCloning: false);
+
+    private static async Task VerifyUpdateShapeAsync(PocketTtsModelInventoryEntry previous, PocketTtsModelInstallPlan plan,
+        IReadOnlyDictionary<PocketTtsModelInstallFile, string> resolved, CancellationToken token)
+    {
+        var oldWeights = previous.RequiredFiles.Single(file => file.IsWeights);
+        var newWeights = plan.Files.Single(file => file.Asset.Weights);
+        async Task<Dictionary<string, string>> Shape(string path)
+        {
+            using var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+            byte[] length = new byte[8]; await file.ReadExactlyAsync(length, token).ConfigureAwait(false);
+            ulong bytes = System.Buffers.Binary.BinaryPrimitives.ReadUInt64LittleEndian(length);
+            if (bytes > 16 * 1024 * 1024 || bytes > (ulong)Math.Max(0, file.Length - 8)) throw new InvalidDataException("Invalid tensor header.");
+            byte[] header = new byte[(int)bytes]; await file.ReadExactlyAsync(header, token).ConfigureAwait(false);
+            using var json = JsonDocument.Parse(header);
+            return json.RootElement.EnumerateObject().Where(tensor => tensor.Name != "__metadata__").ToDictionary(
+                tensor => tensor.Name, tensor => tensor.Value.GetProperty("dtype").GetString() + ":" +
+                    string.Join(',', tensor.Value.GetProperty("shape").EnumerateArray().Select(value => value.GetInt64())), StringComparer.Ordinal);
+        }
+        var before = await Shape(PocketTtsModelInventoryService.ResolveBlobReference(oldWeights.RelativePath)).ConfigureAwait(false);
+        var after = await Shape(resolved[newWeights]).ConfigureAwait(false);
+        if (before.Count != after.Count || before.Any(pair => !after.TryGetValue(pair.Key, out var value) || value != pair.Value))
+            throw new InstallException(PocketTtsModelInstallFailure.Metadata,
+                "The updated weights require a different model configuration. No update was activated; install a compatible Out Loud release instead.");
+    }
 
     private static async Task VerifyModelAsync(PocketTtsModelInstallPlan plan,
         IReadOnlyDictionary<PocketTtsModelInstallFile, string> resolved, CancellationToken cancellationToken)

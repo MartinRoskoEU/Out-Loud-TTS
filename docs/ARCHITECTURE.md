@@ -18,8 +18,11 @@ remove verified managed resources and leave unknown user content in place.
 The existing managed SAPI token contains `Backend=Rust`, the pinned runtime path,
 native profile path and ownership/identity/display fields. It has no model binding.
 `RustModelSelection` reads the machine-wide explicit WinUI Settings selection,
-verifies it against the compiled trusted asset inventory, and retains the existing
-model/profile/runtime leases. Unavailable selection is an error, with no fallback.
+verifies it against the compiled configuration/baseline identities or an independently
+validated protected model-update receipt, and retains the existing model/profile/runtime
+leases. Confirmed model updates preserve the selected alias and retire superseded,
+unreferenced files through durable cleanup; rollback is not exposed. Unavailable
+selection is an error, with no fallback.
 See [production Rust integration](RUST_RUNTIME_SESSION.md#production-integration-independent-native-profiles-and-settings-selection).
 
 ## SAPI and process lifetime

@@ -16,7 +16,7 @@ internal static class ElevatedMachineDataService
     private const int Limit = 1024 * 1024;
     internal sealed record Request(string Operation, string? Alias = null, string? Identity = null,
         PocketTtsRuntimeUpdateResult? Release = null, string? ExpectedSelection = null,
-        bool Automatic = false, IReadOnlyDictionary<string, string>? ModelIdentities = null);
+        bool Automatic = false, IReadOnlyDictionary<string, string>? ModelIdentities = null, string? ModelRevision = null);
     private sealed record Message(string Kind, JsonElement Value);
 
     internal static async Task<TResult> RunAsync<TProgress, TResult>(Request request, IProgress<TProgress>? progress,
@@ -89,7 +89,7 @@ internal static class ElevatedMachineDataService
         Task cancellation = ObserveCancellationAsync();
         try
         {
-            if (request.Operation is not ("install-model" or "remove-model" or "recover-models" or "select-model" or "install-runtime" or "check-model-updates"))
+            if (request.Operation is not ("install-model" or "update-model" or "remove-model" or "recover-models" or "select-model" or "install-runtime" or "check-model-updates"))
                 throw new InvalidDataException("Unsupported shared-data operation.");
             MachineDataStorage.Prepare();
             using var http = NewHttp();
@@ -99,6 +99,10 @@ internal static class ElevatedMachineDataService
             {
                 case "install-model":
                     result = await new PocketTtsModelInstallService(http).InstallAsync(request.Alias!,
+                        Progress<PocketTtsModelInstallProgress>(), operation.Token).ConfigureAwait(false);
+                    break;
+                case "update-model":
+                    result = await new PocketTtsModelInstallService(http).UpdateAsync(request.Alias!, request.Identity!, request.ModelRevision!,
                         Progress<PocketTtsModelInstallProgress>(), operation.Token).ConfigureAwait(false);
                     break;
                 case "remove-model":

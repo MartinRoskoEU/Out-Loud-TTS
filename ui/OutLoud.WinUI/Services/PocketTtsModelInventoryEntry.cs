@@ -7,7 +7,12 @@ public sealed record PocketTtsModelInventoryEntry(
     string Revision,
     string InstallationDirectory,
     IReadOnlyList<PocketTtsModelInventoryFile> RequiredFiles,
-    string ConfigurationYaml);
+    string ConfigurationYaml)
+{
+    // Independent immutable receipt, stored in the same verified content-addressed blob store.
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? UpdateReceiptSha256 { get; init; }
+}
 
 /// <summary>RelativePath is a canonical private blob reference; matching references across records share one file.</summary>
 public sealed record PocketTtsModelInventoryFile(

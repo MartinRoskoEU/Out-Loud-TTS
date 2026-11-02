@@ -1,6 +1,6 @@
 # Out Loud WinUI application
 
-OutLoud.WinUI is the Out Loud 0.4.0 desktop frontend: an unpackaged WinUI 3 /
+OutLoud.WinUI is the Out Loud 0.4.1 desktop frontend: an unpackaged WinUI 3 /
 .NET 10 application with Voice Library, Voice Tester and Settings navigation.
 It uses the application's Mica backdrop, theme resources and native controls.
 The custom XAML title bar is 40 DIP high, displays the application title without
@@ -39,8 +39,14 @@ Settings stores. Native error logs are separately bounded; see
 
 ## Runtime management
 
-Settings exposes **Check for updates**, **Update** when available, and **Cancel**
-during an operation. The application includes its own verified baseline runtime;
+Settings has one **Check for updates** button in its header for both runtime and
+model checks. It forces a fresh runtime check and the existing manual model check,
+which bypasses the model comparison cache. Each check keeps its own status;
+unavailable runtime metadata does not skip model checks. Concurrent checks or
+conflicting operations disable the shared action. **Update** appears in the runtime
+card only when available, with **Cancel** during an operation. Checking never
+installs an update, and runtime/model updates retain separate confirmations.
+The application includes its own verified baseline runtime;
 there is no runtime Install/Remove workflow. Runtime updates share the existing
 operation guards with model installation, verification, removal and selection.
 
@@ -119,8 +125,22 @@ busy assets remain protected, including leases held by synthesis.
 current public repository snapshot. It downloads metadata only. Startup and
 successful model installation queue the same check; successful comparisons are
 cached by installation identity for 24 hours. Manual checks bypass that interval.
-Unavailable metadata does not change the installation or selection. Model update
-installation, automatic repair and automatic replacement are not provided.
+Unavailable metadata does not change the installation or selection. **Update**
+appears before **Remove** when a verified compatible model has an available update.
+It requires confirmation of the pinned official repository snapshot, reuses the
+existing download/verification and operation guards, and checks that tensor names,
+shapes and dtypes still match the installed architecture. Configuration and asset
+paths remain derived from the embedded template, never remote YAML.
+
+An immutable SHA-256-addressed update receipt occupies the existing model blob
+store; schema-2 inventory references it through optional `UpdateReceiptSha256`.
+The native resolver independently validates the receipt, fixed template, inventory
+and all asset bytes. One atomic inventory commit activates the update and records
+the superseded blobs for the existing reference-checked cleanup. Selection stays
+unchanged. Previous files are removed once no installed model references them;
+busy cleanup retries at startup. There is no rollback, automatic replacement or
+automatic repair. Failure/cancellation before activation leaves the previous
+model and selection intact. No voice profile or SAPI token is rewritten.
 
 **Selected model** lists only verified, runtime-compatible installations.
 An explicit choice is verified and atomically persisted. Startup restores only

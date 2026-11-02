@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
@@ -7,11 +8,77 @@ namespace OutLoud.WinUI.Services;
 internal sealed record PocketTtsModelInstallFile(string RepositoryPath, string Revision,
     PocketTtsCachedAsset Asset);
 
-/// <summary>Installation authority comes exclusively from embedded, revision-pinned repository snapshots.</summary>
+/// <summary>Fixed configuration authority; updated file identities come from protected immutable receipts.</summary>
 internal sealed record PocketTtsModelInstallPlan(string Alias, string Configuration,
     IReadOnlyList<PocketTtsModelInstallFile> Files)
 {
     internal const string Repository = "kyutai/pocket-tts-without-voice-cloning";
+    internal byte[]? UpdateReceipt { get; init; }
+    private sealed record Receipt(int SchemaVersion, string RepositoryId, string Alias, string Revision,
+        IReadOnlyList<PocketTtsModelInventoryFile> RequiredFiles);
+
+    internal PocketTtsModelInventoryEntry InventoryEntry() => new(Alias, Repository,
+        Files.Single(file => file.Asset.Weights).Revision, PocketTtsModelStore.Root,
+        Files.Select(file => new PocketTtsModelInventoryFile(Path.GetRelativePath(PocketTtsModelStore.Root, file.Asset.Path),
+            file.RepositoryPath, file.Asset.Size, file.Asset.Digest, file.Asset.Lfs ? "SHA256" : "GitBlobSHA1",
+            file.Asset.Weights, Repository, file.Revision)).ToArray(), Configuration)
+    { UpdateReceiptSha256 = UpdateReceipt is null ? null : Convert.ToHexString(SHA256.HashData(UpdateReceipt)).ToLowerInvariant() };
+
+    // Only replace the two trusted asset references. Never accept a remote or inventory-supplied configuration.
+    internal PocketTtsModelInstallPlan WithUpdatedFiles(string revision, IReadOnlyList<PocketTtsModelInventoryFile> files)
+    {
+        if (!Regex.IsMatch(revision, @"\A[a-f0-9]{40}\z") || files.Count != Files.Count || files.Any(file => file is null))
+            throw new InvalidDataException("Invalid model update revision or file count.");
+        string yaml = Configuration;
+        var assets = new List<PocketTtsModelInstallFile>();
+        foreach (var original in Files)
+        {
+            var file = files.Single(item => item.RepositoryPath == original.RepositoryPath);
+            bool sha = file.HashAlgorithm == "SHA256";
+            if (file.RepositoryId != Repository || file.Revision != revision || file.IsWeights != original.Asset.Weights ||
+                file.SizeBytes <= 0 || (!sha && file.HashAlgorithm != "GitBlobSHA1") || (file.IsWeights && !sha) ||
+                !Regex.IsMatch(file.ExpectedHash, sha ? @"\A[a-f0-9]{64}\z" : @"\A[a-f0-9]{40}\z"))
+                throw new InvalidDataException("The model update has unsupported file identities.");
+            string path = PocketTtsModelStore.BlobPath(sha, file.ExpectedHash);
+            if (file.RelativePath != Path.GetRelativePath(PocketTtsModelStore.Root, path))
+                throw new InvalidDataException("The model update has a noncanonical blob path.");
+            string reference = $"hf://{Repository}/{original.RepositoryPath}@{revision}";
+            yaml = yaml.Replace(original.Asset.Reference, reference, StringComparison.Ordinal);
+            assets.Add(new(original.RepositoryPath, revision, new(reference, path, file.SizeBytes, file.ExpectedHash, sha, file.IsWeights)));
+        }
+        var updated = new PocketTtsModelInstallPlan(Alias, yaml, assets);
+        var record = updated.InventoryEntry();
+        return updated with { UpdateReceipt = JsonSerializer.SerializeToUtf8Bytes(new Receipt(1, Repository, Alias, revision, record.RequiredFiles)) };
+    }
+
+    internal static void ValidateInventory(PocketTtsModelInventoryEntry entry)
+    {
+        var expected = LoadAsync(entry.Alias, CancellationToken.None).GetAwaiter().GetResult()
+            ?? throw new InvalidDataException("The model has no trusted configuration.");
+        if (entry.UpdateReceiptSha256 is { } hash)
+        {
+            if (!Regex.IsMatch(hash, @"\A[a-f0-9]{64}\z")) throw new InvalidDataException("Invalid model update receipt identity.");
+            string path = PocketTtsModelStore.BlobPath(true, hash);
+            using var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+            PocketTtsModelStore.ValidateFile(path, file.SafeFileHandle);
+            if (file.Length > 65536 || Convert.ToHexString(SHA256.HashData(file)).ToLowerInvariant() != hash)
+                throw new InvalidDataException("The model update receipt failed verification.");
+            file.Position = 0;
+            var receipt = JsonSerializer.Deserialize<Receipt>(file, new JsonSerializerOptions
+            { UnmappedMemberHandling = System.Text.Json.Serialization.JsonUnmappedMemberHandling.Disallow });
+            if (receipt is null || receipt.SchemaVersion != 1 || receipt.RepositoryId != Repository || receipt.Alias != entry.Alias ||
+                receipt.Revision != entry.Revision || receipt.RequiredFiles is null)
+                throw new InvalidDataException("The model update differs from its receipt.");
+            expected = expected.WithUpdatedFiles(receipt.Revision, receipt.RequiredFiles);
+        }
+        var trusted = expected.InventoryEntry();
+        if (entry.RepositoryId != trusted.RepositoryId || entry.Revision != trusted.Revision ||
+            entry.ConfigurationYaml.Replace("\r", "") != trusted.ConfigurationYaml.Replace("\r", "") ||
+            entry.RequiredFiles.Count != trusted.RequiredFiles.Count || trusted.RequiredFiles.Any(file =>
+                !entry.RequiredFiles.Any(actual => actual with
+                { RepositoryId = actual.RepositoryId ?? entry.RepositoryId, Revision = actual.Revision ?? entry.Revision } == file)))
+            throw new InvalidDataException("The model inventory differs from its trusted configuration and file manifest.");
+    }
 
     internal static async Task<PocketTtsModelInstallPlan?> LoadAsync(string alias, CancellationToken cancellationToken)
     {

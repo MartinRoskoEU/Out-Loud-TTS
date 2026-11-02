@@ -37,7 +37,6 @@ public sealed partial class SettingsView
         if (_closing || RuntimeUpdateBusy || _checkingRuntimeUpdates) { return; }
         if (_runtimeUpdateResult is { Status: PocketTtsRuntimeUpdateStatus.UpdateAvailable, Asset: not null } update)
         { await ConfirmRuntimeUpdateAsync(update); }
-        else { await CheckRuntimeUpdatesAsync(forceRefresh: true); }
     }
 
     private async Task ConfirmRuntimeUpdateAsync(PocketTtsRuntimeUpdateResult update)
@@ -60,7 +59,7 @@ public sealed partial class SettingsView
             {
                 XamlRoot = XamlRoot,
                 Title = "Update Pocket TTS Runtime?",
-                Content = $"Installed release: {installed.ReleaseVersion}\nAvailable release: {update.LatestReleaseTag}\n\nDownload and verify the Windows x64 runtime? The previous runtime will be kept.",
+                Content = $"Installed release: {installed.ReleaseVersion}\nAvailable release: {update.LatestReleaseTag}\n\nDownload and verify the Windows x64 runtime? After successful activation, verified inactive downloaded runtime versions will be removed. Versions still in use will be kept until cleanup can be retried at startup.",
                 PrimaryButtonText = "Update", CloseButtonText = "Cancel", DefaultButton = ContentDialogButton.Close,
             };
             if (await dialog.ShowAsync() != ContentDialogResult.Primary || _closing) { return; }
@@ -220,13 +219,12 @@ public sealed partial class SettingsView
         RuntimeUpdateIcon.Glyph = glyph;
         RuntimeUpdateIcon.Visibility = _checkingRuntimeUpdates || _runtimeInstalling ? Visibility.Collapsed : Visibility.Visible;
         bool installableUpdate = _runtimeUpdateResult is { Status: PocketTtsRuntimeUpdateStatus.UpdateAvailable, Asset: not null };
-        RuntimeUpdateButton.Content = _runtimeInstalling ? "Updating…" : installableUpdate ? "Update" : "Check for updates";
-        RuntimeUpdateButton.IsEnabled = !_checkingRuntimeUpdates && !RuntimeUpdateBusy && !_closing &&
-            (RuntimeUpdateCheck is not null || _runtimeUpdateResult is not null || _runtimeInstallMessage is not null) &&
-            (!installableUpdate || (!ModelBusy && !ModelUpdateBlocksChanges));
-        ToolTipService.SetToolTip(RuntimeUpdateButton, installableUpdate
-            ? "Confirm, download, and verify this runtime update."
-            : "Check for a newer Pocket TTS Runtime release.");
+        RuntimeUpdateButton.Content = _runtimeInstalling ? "Updating…" : "Update";
+        RuntimeUpdateButton.Visibility = installableUpdate || _runtimeInstalling ? Visibility.Visible : Visibility.Collapsed;
+        RuntimeUpdateButton.IsEnabled = installableUpdate && !_checkingRuntimeUpdates && !RuntimeUpdateBusy && !_closing &&
+            !ModelBusy && !ModelUpdateBlocksChanges;
+        ToolTipService.SetToolTip(RuntimeUpdateButton, "Confirm, download, and verify this runtime update.");
+        RenderUpdateCheckState();
     }
 
     private void RenderRuntimeReadiness(bool? ready)

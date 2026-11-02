@@ -14,6 +14,8 @@ public sealed record PocketTtsModelSetupEntry(string Name, PocketTtsModelInstall
     public bool CanInstall { get; init; }
     public bool CanRemove => InventoryIdentity is not null;
     public bool CanManage => CanInstall || CanRemove;
+    public string? UpdateCommit { get; init; }
+    public bool CanUpdate => CanActivate && InventoryIdentity is not null && UpdateCommit is not null;
     public string UpdateStatusText { get; init; } = "";
     public string UpdateStatusDetail { get; init; } = "";
     internal string? InventoryIdentity { get; init; }

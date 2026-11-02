@@ -414,7 +414,8 @@ int wmain(int argc,wchar_t** argv){
             refuses([&]{static_cast<void>(f.load());},"maintenance_journal_invalid");
             check(!fs::exists(f.files.root/L"configuration/maintenance.pending"),"corrupt bootstrap creates no pending authority");}
         {const auto payload=std::vector<std::wstring>{std::begin(registration_payload_paths),std::end(registration_payload_paths)};
-            maintenance_path_budget(fs::path(L"C:/")/std::wstring(110,L'x'),payload);check(true,"root beyond former 100-character cap fits actual vault");
+            // Current self-contained license paths need more archive headroom than the old payload.
+            maintenance_path_budget(fs::path(L"C:/")/std::wstring(101,L'x'),payload);check(true,"root beyond former 100-character cap fits actual vault");
             refuses([&]{maintenance_path_budget(fs::path(L"C:/")/std::wstring(100,L'x')/std::wstring(100,L'y'),payload);},"maintenance_path_budget_exceeded");}
         {Fixture f(child(L"corrupt"));f.files.begin(f.state);const auto frame=f.files.vault/L"state-0.dat";write_new(f.files.vault/L"unrelated-evidence.txt",L"retain");
             Handle h;h.value=CreateFileW(frame.c_str(),GENERIC_WRITE,0,nullptr,OPEN_EXISTING,0,nullptr);check(h.value!=INVALID_HANDLE_VALUE,"test owns journal");

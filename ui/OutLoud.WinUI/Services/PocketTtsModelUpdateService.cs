@@ -31,6 +31,36 @@ public sealed class PocketTtsModelUpdateService(HttpClient http)
     private const int MaximumMetadataBytes = 16 * 1024 * 1024;
     private sealed record RemoteFile(long Size, string? GitOid, string? PayloadSha256, bool LargeFile);
 
+    internal async Task<PocketTtsModelInstallPlan> ResolveUpdateAsync(string alias, string revision, CancellationToken token)
+    {
+        if (!IsHash(revision, 40)) throw new InvalidDataException("A pinned model update revision is required.");
+        var template = await PocketTtsModelInstallPlan.LoadAsync(alias, token).ConfigureAwait(false)
+            ?? throw new InvalidDataException("No trusted configuration exists for this model.");
+        using var metadata = await GetMetadataAsync(Api + "/revision/" + revision + "?blobs=true", token).ConfigureAwait(false);
+        var root = metadata.RootElement;
+        if (root.GetProperty("id").GetString() != Repository || root.GetProperty("sha").GetString() != revision)
+            throw new InvalidDataException("The official model update snapshot changed.");
+        var listing = ParseFiles(root.GetProperty("siblings"), tree: false);
+        var files = new List<PocketTtsModelInventoryFile>();
+        foreach (var original in template.Files)
+        {
+            listing.TryGetValue(original.RepositoryPath, out var remote);
+            bool sha = original.Asset.Lfs;
+            if (!CanCompare(remote, sha))
+            {
+                int slash = original.RepositoryPath.LastIndexOf('/');
+                string suffix = slash < 0 ? "" : "/" + string.Join('/', original.RepositoryPath[..slash].Split('/').Select(Uri.EscapeDataString));
+                using var tree = await GetMetadataAsync(Api + "/tree/" + revision + suffix + "?recursive=false&expand=false", token).ConfigureAwait(false);
+                ParseFiles(tree.RootElement, tree: true).TryGetValue(original.RepositoryPath, out remote);
+            }
+            if (!CanCompare(remote, sha)) throw new InvalidDataException("Complete official hashes and sizes are unavailable for this model update.");
+            string hash = (sha ? remote!.PayloadSha256 : remote!.GitOid)!.ToLowerInvariant();
+            files.Add(new(Path.GetRelativePath(PocketTtsModelStore.Root, PocketTtsModelStore.BlobPath(sha, hash)),
+                original.RepositoryPath, remote.Size, hash, sha ? "SHA256" : "GitBlobSHA1", original.Asset.Weights, Repository, revision));
+        }
+        return template.WithUpdatedFiles(revision, files);
+    }
+
     public Task<PocketTtsModelUpdateCheckResult> CheckAsync(IProgress<PocketTtsModelUpdateResult>? progress = null,
         CancellationToken cancellationToken = default, IReadOnlyDictionary<string, string>? requestedIdentities = null) =>
         Task.Run(() => CheckCoreAsync(progress, cancellationToken, requestedIdentities), cancellationToken);

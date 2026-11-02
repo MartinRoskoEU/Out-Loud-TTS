@@ -79,13 +79,24 @@ inventory identity are checked between utterances; changes stop the previous
 resident before resolving a new one. A selection change does not interrupt an
 already running utterance.
 
-The native trust authority is generated at CMake configuration from WinUI's
-existing pinned official runtime YAML and public repository snapshots. It is
-compiled into the native binary, independently of editable user inventory. The
-selected alias, public repository, immutable revisions, exact configuration,
-canonical private blob locations, sizes, SHA-256/Git-blob SHA-1 hashes and complete
-asset bytes must match that authority. Runtime YAML is generated from the trusted
-template, references only verified local assets, and cannot contain unresolved
+The native configuration authority and baseline asset identities are generated at
+CMake configuration from WinUI's pinned official runtime YAML and public repository
+snapshots. They are compiled into the native binary, independently of editable
+inventory. A confirmed model update can replace only the fixed template's weight
+and tokenizer references with identities from the pinned official public snapshot.
+Its separate immutable receipt is stored as a SHA-256-addressed model blob and
+referenced by optional `UpdateReceiptSha256` in schema-2 inventory. The resolver
+pins the receipt, validates its protected owner/ACL and complete SHA-256, and checks
+its exact schema, alias, repository, revision, trusted asset paths and canonical
+blob identities. Inventory fields must match this receipt and the fixed template;
+editable inventory YAML or hashes alone never authorize updated assets. Baseline
+installations without a receipt still require the compiled exact identities.
+Update installation checks that tensor names, shapes and dtypes match the previous
+model, commits the new inventory with durable superseded-blob cleanup, and preserves
+the selected alias. Old unreferenced weights/receipts are removed, with busy cleanup
+retried at startup; no rollback is exposed. The resolver does not download metadata
+or perform cleanup. Runtime YAML is generated from the trusted template, references
+only verified local assets, and cannot contain unresolved
 active remote references or caller-injected configuration. It lives in an owned
 caller-private temporary operation directory under
 `%LOCALAPPDATA%/Temp/OutLoud-Synthesis` and is removed

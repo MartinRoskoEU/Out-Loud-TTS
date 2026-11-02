@@ -73,10 +73,24 @@
         </Grid.Resources>
         <ScrollViewer Padding="28" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto" HorizontalContentAlignment="Stretch">
             <StackPanel Spacing="20">
-                <StackPanel Spacing="8">
-                    <TextBlock Text="Settings" FontSize="28" FontWeight="SemiBold" />
-                    <TextBlock Text="Manage the Pocket TTS runtime and voice models." FontSize="13" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
-                </StackPanel>
+                <Grid x:Name="SettingsHeader" ColumnSpacing="16" SizeChanged="SettingsHeader_SizeChanged">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <StackPanel x:Name="SettingsHeaderText" Spacing="8">
+                        <TextBlock Text="Settings" FontSize="28" FontWeight="SemiBold" />
+                        <TextBlock Text="Manage the Pocket TTS runtime and voice models." FontSize="13" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
+                    </StackPanel>
+                    <StackPanel x:Name="UpdateCheckActions" Grid.Column="1" Orientation="Horizontal" Spacing="12" HorizontalAlignment="Right" VerticalAlignment="Center">
+                        <ProgressRing x:Name="UpdateChecksProgress" Width="16" Height="16" IsActive="False" Visibility="Collapsed" IsTabStop="False" AutomationProperties.Name="Checking for updates" />
+                        <Button x:Name="CheckUpdatesButton" Content="Check for updates" IsEnabled="False" Click="CheckUpdates_Click" Height="36" Padding="16,0" FontSize="14" ToolTipService.ToolTip="Check the Pocket TTS runtime and installed models for updates. Updates require separate confirmation." />
+                    </StackPanel>
+                </Grid>
                 <Border Padding="20" CornerRadius="8" HorizontalAlignment="Stretch" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
                     <Grid>
                         <Grid.RowDefinitions>
@@ -119,7 +133,7 @@
                                 <TextBlock x:Name="RuntimeUpdateStatusText" Grid.Column="1" Text="Checking for updates..." FontSize="16" FontWeight="SemiBold" Style="{StaticResource RuntimeNeutralTextStyle}" TextWrapping="Wrap" VerticalAlignment="Center" AutomationProperties.Name="Runtime update status" AutomationProperties.LiveSetting="Polite" />
                             </Grid>
                             <StackPanel x:Name="RuntimeUpdateActions" Grid.Column="1" Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right" VerticalAlignment="Center">
-                                <Button IsEnabled="False" x:Name="RuntimeUpdateButton" Content="Check for updates" Height="36" Padding="16,0" FontSize="14" Click="RuntimeUpdateButton_Click" />
+                                <Button IsEnabled="False" x:Name="RuntimeUpdateButton" Content="Update" Visibility="Collapsed" Height="36" Padding="16,0" FontSize="14" Click="RuntimeUpdateButton_Click" />
                                 <Button x:Name="RuntimeCancelUpdateButton" Content="Cancel" Visibility="Collapsed" Height="36" Padding="16,0" FontSize="14" Click="RuntimeCancelUpdateButton_Click" />
                             </StackPanel>
                         </Grid>
@@ -204,26 +218,15 @@
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
-                        <Grid x:Name="AvailableModelsHeader" ColumnSpacing="16" SizeChanged="AvailableModelsPanel_SizeChanged">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
+                        <Grid x:Name="ModelsHeaderText" RowSpacing="4">
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
                             </Grid.RowDefinitions>
-                            <Grid x:Name="ModelsHeaderText" RowSpacing="4">
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                </Grid.RowDefinitions>
-                                <TextBlock Text="Models" FontSize="17" FontWeight="SemiBold" TextWrapping="Wrap" />
-                                <TextBlock Grid.Row="1" Text="Manage installed and supported voice models." FontSize="13" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                                <TextBlock x:Name="ModelUpdatesStatusText" Grid.Row="2" FontSize="12" TextWrapping="Wrap" Visibility="Collapsed" Foreground="{ThemeResource TextFillColorSecondaryBrush}" AutomationProperties.LiveSetting="Polite" />
-                            </Grid>
-                            <Button x:Name="CheckModelsButton" Grid.Column="1" Content="Check for updates" Click="CheckModels_Click" Height="36" Padding="16,0" FontSize="14" ToolTipService.ToolTip="Verify installed models and compare their required file hashes and sizes with current public repository metadata." HorizontalAlignment="Right" VerticalAlignment="Center" />
+                            <TextBlock Text="Models" FontSize="17" FontWeight="SemiBold" TextWrapping="Wrap" />
+                            <TextBlock Grid.Row="1" Text="Manage installed and supported voice models." FontSize="13" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                            <TextBlock x:Name="ModelUpdatesStatusText" Grid.Row="2" FontSize="12" TextWrapping="Wrap" Visibility="Collapsed" Foreground="{ThemeResource TextFillColorSecondaryBrush}" AutomationProperties.LiveSetting="Polite" />
                         </Grid>
                         <ComboBox x:Name="SelectedModelComboBox" Grid.Row="1" Margin="0,16,0,0" Header="Selected model"
                                   PlaceholderText="Select an installed model" DisplayMemberPath="Name" HorizontalAlignment="Stretch"
@@ -260,7 +263,10 @@
                                                     <TextBlock Text="{Binding State, Converter={StaticResource ModelInstallationStatus}}" Style="{Binding State, Converter={StaticResource ModelStatusStyle}}" x:Name="ModelRowStatusText" Grid.Column="1" FontSize="13" VerticalAlignment="Center" />
                                                     <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Margin="0,4,0,0" FontSize="12" MaxWidth="180" Text="{Binding UpdateStatusText}" TextWrapping="Wrap" HorizontalAlignment="Left" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Visibility="{Binding UpdateStatusText, Converter={StaticResource ModelUpdateVisibility}}" AutomationProperties.LiveSetting="Polite" />
                                                 </Grid>
-                                                <Button IsEnabled="{Binding CanManage}" Content="{Binding Converter={StaticResource ModelManagementAction}}" Visibility="{Binding Converter={StaticResource ModelManagementAction}, ConverterParameter=Visibility}" Click="ManageModel_Click" x:Name="ModelRowAction" Grid.Column="2" MinWidth="88" Height="32" Padding="12,0" FontSize="13" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                                                <StackPanel x:Name="ModelRowAction" Grid.Column="2" Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                                    <Button IsEnabled="{Binding CanUpdate}" Content="Update" Visibility="{Binding UpdateCommit, Converter={StaticResource ModelUpdateVisibility}}" Click="UpdateModel_Click" MinWidth="88" Height="32" Padding="12,0" FontSize="13" />
+                                                    <Button IsEnabled="{Binding CanManage}" Content="{Binding Converter={StaticResource ModelManagementAction}}" Visibility="{Binding Converter={StaticResource ModelManagementAction}, ConverterParameter=Visibility}" Click="ManageModel_Click" MinWidth="88" Height="32" Padding="12,0" FontSize="13" />
+                                                </StackPanel>
                                             </Grid>
                                         </Border>
                                     </DataTemplate>

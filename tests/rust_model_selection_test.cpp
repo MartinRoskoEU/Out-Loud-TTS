@@ -13,6 +13,7 @@ namespace outloud::testing {
 void selection_roots(std::filesystem::path,std::filesystem::path);
 std::filesystem::path default_selection_root();
 std::filesystem::path default_synthesis_staging();
+std::string model_update_configuration(std::string,std::string);
 }
 namespace {
 namespace fs=outloud::detail::library_fs;
@@ -84,6 +85,40 @@ void sink(void* context,std::span<const std::int16_t> samples) { *static_cast<st
 }
 int wmain(int argc,wchar_t** argv) {
     try {
+        if(argc==5 && std::wstring_view(argv[1])==L"--model-update-manifest"){
+            auto actual=outloud::testing::model_update_configuration(fs::utf8(argv[2]),read(argv[3]));
+            auto expected=read(argv[4]);std::erase(actual,'\r');std::erase(expected,'\r');
+            check(actual==expected,"Managed and native updated configurations differ");
+            std::cout<<"Managed/native model update configuration agrees\n";return 0;
+        }
+        if(argc==2 && std::wstring_view(argv[1])==L"--model-update-contract"){
+            const std::string revision(40,'c'),weights(64,'a'),tokenizer(40,'b');
+            const auto file=[&](const std::string& path,const std::string& hash,bool primary){
+                return "{\"RelativePath\":"+quote(std::string("blobs\\")+(primary?"sha256\\":"git-blob-sha1\\")+hash)+
+                    ",\"RepositoryPath\":"+quote(path)+",\"SizeBytes\":32,\"ExpectedHash\":"+quote(hash)+
+                    ",\"HashAlgorithm\":"+quote(primary?"SHA256":"GitBlobSHA1")+",\"IsWeights\":"+(primary?"true":"false")+
+                    ",\"RepositoryId\":\"kyutai/pocket-tts-without-voice-cloning\",\"Revision\":"+quote(revision)+"}";
+            };
+            const auto manifest="{\"SchemaVersion\":1,\"RepositoryId\":\"kyutai/pocket-tts-without-voice-cloning\",\"Alias\":\"english\",\"Revision\":"+
+                quote(revision)+",\"RequiredFiles\":["+file("languages/english/model.safetensors",weights,true)+","+
+                file("languages/english/tokenizer.json",tokenizer,false)+"]}";
+            const auto yaml=outloud::testing::model_update_configuration("english",manifest);
+            check(yaml.find("model.safetensors@"+revision)!=yaml.npos,"Updated weights retain the trusted repository path");
+            check(yaml.find("tokenizer.json@"+revision)!=yaml.npos,"Updated tokenizer is pinned to the confirmed snapshot");
+            check(yaml.find("num_layers: 6")!=yaml.npos,"Update preserves the embedded model architecture");
+            auto parsed=outloud::detail::voice_json::Parser(manifest,1048576,8192,16384).parse();
+            const auto reject=[&](Json altered,const char* why){rejected([&]{(void)outloud::testing::model_update_configuration("english",json(altered));},why);};
+            auto bad=parsed;bad.object.at("Alias").text="french";reject(bad,"Receipt cannot substitute another alias");
+            bad=parsed;bad.object.at("RepositoryId").text="attacker/model";reject(bad,"Receipt cannot substitute another repository");
+            bad=parsed;bad.object.at("Revision").text="main";reject(bad,"Receipt must pin an immutable revision");
+            bad=parsed;bad.object.at("RequiredFiles").array.pop_back();reject(bad,"Incomplete receipt rejected");
+            bad=parsed;bad.object.at("RequiredFiles").array[0].object.at("RepositoryPath").text="../model.safetensors";reject(bad,"Receipt cannot change trusted paths");
+            bad=parsed;bad.object.at("RequiredFiles").array[0].object.at("ExpectedHash").text="unknown";reject(bad,"Invalid model hash rejected");
+            bad=parsed;bad.object.at("RequiredFiles").array[0].object.at("RelativePath").text="outside";reject(bad,"Noncanonical private blob rejected");
+            bad=parsed;bad.object.at("RequiredFiles").array[0].object.at("Revision").text=std::string(40,'d');reject(bad,"Mixed update revisions rejected");
+            bad=parsed;bad.object.emplace("ConfigurationYaml",bad.object.at("Alias"));reject(bad,"Receipt cannot supply runtime configuration");
+            std::cout<<checks<<" model update contract checks passed\n";return 0;
+        }
         if(argc==2 && std::wstring_view(argv[1])==L"--storage-contract"){
             PWSTR raw=nullptr;
             check(SUCCEEDED(SHGetKnownFolderPath(FOLDERID_ProgramData,KF_FLAG_DONT_VERIFY,nullptr,&raw)),"machine known folder resolves");

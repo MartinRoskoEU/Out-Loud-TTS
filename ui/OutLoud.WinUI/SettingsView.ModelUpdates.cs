@@ -1,4 +1,5 @@
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
 using OutLoud.WinUI.Services;
 using System.Net.Http;
 
@@ -15,8 +16,67 @@ public sealed partial class SettingsView
     private bool _automaticModelUpdateCheckPending;
     private int _automaticModelUpdateSchedule;
     private int _modelUpdateCheckGeneration;
-    private bool ModelUpdateBlocksChanges => _checkingModelUpdates && _modelUpdateCheckIsManual;
+    private bool ModelUpdateBlocksChanges => _checkingUpdates || (_checkingModelUpdates && _modelUpdateCheckIsManual);
     private readonly Dictionary<string, PocketTtsModelUpdateResult> _modelUpdateResults = new(StringComparer.Ordinal);
+
+    private async void UpdateModel_Click(object sender, RoutedEventArgs args)
+    {
+        if (sender is not Button { DataContext: PocketTtsModelSetupEntry { CanUpdate: true } entry } ||
+            ModelBusy || _checkingUpdates || _checkingModelUpdates || RuntimeUpdateBusy || _closing) return;
+        _modelInstalling = true;
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(_setupCancellation.Token);
+        _modelCancellation = cancellation;
+        RenderModelInstallationConflicts();
+        _modelTask = UpdateModelAsync(entry, cancellation.Token);
+        try { await _modelTask; }
+        finally
+        {
+            _modelTask = null;
+            _modelCancellation = null;
+            _modelInstalling = false;
+            if (!_closing && !_closingAfterModels) await CheckModelsAsync();
+            if (!_closing) RenderModelInstallationConflicts();
+        }
+    }
+
+    private async Task UpdateModelAsync(PocketTtsModelSetupEntry entry, CancellationToken token)
+    {
+        var dialog = new ContentDialog
+        {
+            XamlRoot = XamlRoot, Title = "Update model?",
+            Content = $"Update {entry.Name}?\n\nInstalled revision: {entry.Revision}\nAvailable revision: {entry.UpdateCommit}\n\nDownload and verify the official model files? Your selected model will stay selected. After successful activation, previous files no longer used by installed models will be removed. Rollback is not available.",
+            PrimaryButtonText = "Update", CloseButtonText = "Cancel", DefaultButton = ContentDialogButton.Close,
+        };
+        try
+        {
+            bool visible = true;
+            ContentDialogResult confirmation;
+            try
+            {
+                using var hide = token.Register(() => DispatcherQueue.TryEnqueue(() => { if (visible) dialog.Hide(); }));
+                confirmation = await dialog.ShowAsync();
+            }
+            finally { visible = false; }
+            if (confirmation != ContentDialogResult.Primary || token.IsCancellationRequested) return;
+            ShowModelInstallationCard(entry.Name);
+            ModelInstallationTitleText.Text = "Updating model";
+            CancelModelInstallationButton.Content = "Cancel update";
+            var progress = new Progress<PocketTtsModelInstallProgress>(value =>
+            { if (!_closing && !_modelInstallationResultShown) RenderModelInstallationProgress(value); });
+            var result = await new PocketTtsModelInstallService(_modelHttp).UpdateAsync(
+                entry.Name, entry.InventoryIdentity!, entry.UpdateCommit!, progress, token);
+            if (result.Succeeded) _automaticModelUpdateCheckPending = true;
+            if (!_closing) RenderModelInstallationResult(entry.Name, result, updating: true);
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception)
+        {
+            if (_closing) return;
+            ShowModelInstallationCard(entry.Name);
+            RenderModelInstallationResult(entry.Name, new(false, PocketTtsModelInstallFailure.Storage,
+                "The model update could not complete. Refresh Models to verify its state. Recorded cleanup will be retried at startup."), updating: true);
+        }
+    }
 
     private Task CheckInstalledModelUpdatesAsync() => RunModelUpdateCheckAsync(automatic: false);
 
@@ -28,13 +88,13 @@ public sealed partial class SettingsView
 
     private void TryStartPendingAutomaticModelUpdateCheck()
     {
-        if (!_automaticModelUpdateCheckPending || _closing || _checkingModelUpdates || ModelBusy || RuntimeUpdateBusy) { return; }
+        if (!_automaticModelUpdateCheckPending || _closing || _checkingUpdates || _checkingModelUpdates || ModelBusy || RuntimeUpdateBusy) { return; }
         _automaticModelUpdateCheckPending = false;
         int schedule = ++_automaticModelUpdateSchedule;
         DispatcherQueue.TryEnqueue(() =>
         {
             if (_closing || schedule != _automaticModelUpdateSchedule) { return; }
-            if (_checkingModelUpdates || ModelBusy || RuntimeUpdateBusy)
+            if (_checkingUpdates || _checkingModelUpdates || ModelBusy || RuntimeUpdateBusy)
             { _automaticModelUpdateCheckPending = true; return; }
             _ = RunModelUpdateCheckAsync(automatic: true);
         });
@@ -138,6 +198,7 @@ public sealed partial class SettingsView
     private void RenderModelUpdateRows() => ModelList.ItemsSource = _modelRows.Select(entry =>
         _modelUpdateResults.TryGetValue(entry.Name, out var update) && CanDisplayModelUpdate(entry, update)
             ? entry with { UpdateStatusText = update.StatusText, UpdateStatusDetail = update.ComparedCommit is null
-                ? update.Message : update.Message + " Main commit: " + update.ComparedCommit }
+                ? update.Message : update.Message + " Main commit: " + update.ComparedCommit,
+                UpdateCommit = entry.CanActivate && update.Status == PocketTtsModelUpdateStatus.UpdateAvailable ? update.ComparedCommit : null }
             : entry with { UpdateStatusText = "", UpdateStatusDetail = "" }).ToArray();
 }

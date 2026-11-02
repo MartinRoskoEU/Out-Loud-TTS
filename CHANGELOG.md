@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.1
+
+- Combined runtime and model update checks into one Settings action while keeping
+  per-item Update buttons and separate confirmations.
+- Added confirmed model updates in Settings, with Update before Remove, preserved
+  selection, verified official snapshots, native SAPI receipt validation and
+  reference-checked cleanup of superseded files without rollback.
+- Corrected the runtime update dialog to describe cleanup of inactive versions.
+
 ## 0.4.0
 
 - Consolidated current WinUI/Rust documentation, build and deployment instructions;

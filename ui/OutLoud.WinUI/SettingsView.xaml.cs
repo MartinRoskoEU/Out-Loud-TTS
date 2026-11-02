@@ -11,15 +11,15 @@ public sealed partial class SettingsView : UserControl
     }
 
     // These handlers only reproduce Studio Lite's responsive presentation.
-    private void AvailableModelsPanel_SizeChanged(object sender, SizeChangedEventArgs args)
+    private void SettingsHeader_SizeChanged(object sender, SizeChangedEventArgs args)
     {
-        bool narrow = args.NewSize.Width < 480;
-        Grid.SetColumnSpan(ModelsHeaderText, narrow ? 2 : 1);
-        Grid.SetRow(CheckModelsButton, narrow ? 1 : 0);
-        Grid.SetColumn(CheckModelsButton, narrow ? 0 : 1);
-        Grid.SetColumnSpan(CheckModelsButton, narrow ? 2 : 1);
-        CheckModelsButton.HorizontalAlignment = narrow ? HorizontalAlignment.Left : HorizontalAlignment.Right;
-        AvailableModelsHeader.RowSpacing = narrow ? 12 : 0;
+        bool narrow = args.NewSize.Width < 560;
+        Grid.SetColumnSpan(SettingsHeaderText, narrow ? 2 : 1);
+        Grid.SetRow(UpdateCheckActions, narrow ? 1 : 0);
+        Grid.SetColumn(UpdateCheckActions, narrow ? 0 : 1);
+        Grid.SetColumnSpan(UpdateCheckActions, narrow ? 2 : 1);
+        UpdateCheckActions.HorizontalAlignment = narrow ? HorizontalAlignment.Left : HorizontalAlignment.Right;
+        SettingsHeader.RowSpacing = narrow ? 12 : 0;
     }
 
     private void RuntimeRow_SizeChanged(object sender, SizeChangedEventArgs args)
@@ -38,7 +38,7 @@ public sealed partial class SettingsView : UserControl
         if (sender is not Grid row) { return; }
         var identifier = row.Children.OfType<TextBlock>().FirstOrDefault();
         var status = row.Children.OfType<Grid>().FirstOrDefault();
-        var action = row.Children.OfType<Button>().FirstOrDefault();
+        var action = row.Children.OfType<StackPanel>().FirstOrDefault();
         if (identifier is null || status is null || action is null) { return; }
         bool stacked = args.NewSize.Width < 560;
         row.RowSpacing = stacked ? 8 : 0;

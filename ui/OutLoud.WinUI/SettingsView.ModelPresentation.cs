@@ -32,11 +32,12 @@ public sealed partial class SettingsView
         RevealModelInstallationCard();
     }
 
-    private void RenderModelInstallationResult(string alias, PocketTtsModelInstallResult result)
+    private void RenderModelInstallationResult(string alias, PocketTtsModelInstallResult result, bool updating = false)
     {
         _modelInstallationResultShown = true;
         bool cancelled = !result.Succeeded && result.Failure == PocketTtsModelInstallFailure.Cancelled;
         ModelInstallationTitleText.Text = result.Succeeded ? "Installation completed" : cancelled ? "Installation cancelled" : "Installation failed";
+        if (updating) ModelInstallationTitleText.Text = result.Succeeded ? "Update completed" : cancelled ? "Update cancelled" : "Update failed";
         string titleStyle = result.Succeeded ? "InstallationSuccessTitleStyle" : cancelled ? "InstallationNeutralTitleStyle" : "InstallationErrorTitleStyle";
         ModelInstallationTitleText.Style = (Style)ModelInstallationPanel.Resources[titleStyle];
         ModelInstallationResultIcon.Glyph = result.Succeeded ? "\uE73E" : cancelled ? "\uE711" : "\uEA39";
@@ -44,7 +45,13 @@ public sealed partial class SettingsView
         ModelInstallationHeading.ColumnSpacing = 10;
         ModelInstallationHeading.MinHeight = 32;
         ModelInstallationModelText.Visibility = result.Succeeded ? Visibility.Collapsed : Visibility.Visible;
-        ModelInstallationStatusText.Text = result.Succeeded ? $"{alias} was installed and verified." : result.Message;
+        ModelInstallationStatusText.Text = updating || !result.Succeeded ? result.Message : $"{alias} was installed and verified.";
+        if (result.CleanupPending)
+        {
+            ModelInstallationTitleText.Text = updating ? "Update completed; cleanup pending" : "Installation completed; cleanup pending";
+            ModelInstallationTitleText.Style = (Style)ModelInstallationPanel.Resources["InstallationNeutralTitleStyle"];
+            ModelInstallationResultIcon.Glyph = "\uE7BA";
+        }
         ModelInstallationProgress.Visibility = Visibility.Collapsed;
         CancelModelInstallationButton.Visibility = Visibility.Collapsed;
         DismissModelInstallationButton.Visibility = Visibility.Visible;

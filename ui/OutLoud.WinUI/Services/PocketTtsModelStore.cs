@@ -1,5 +1,6 @@
 using Microsoft.Win32.SafeHandles;
 using System.ComponentModel;
+using System.Security.Cryptography;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -130,7 +131,8 @@ internal static class PocketTtsModelStore
 
     // Delete the validated file through its exclusive handle, with all parent directories pinned
     // against rename/replacement. A pathname check followed by File.Delete would leave a race.
-    internal static long DeleteRegularFile(string path, bool nativeOperation = false, bool sharedData = false)
+    internal static long DeleteRegularFile(string path, bool nativeOperation = false, bool sharedData = false,
+        bool verifyModelBlob = false, CancellationToken cancellationToken = default)
     {
         if (sharedData) MachineDataStorage.ValidatePath(path);
         else if (nativeOperation) PocketTtsNativeOperation.ValidatePath(path); else ValidatePath(path);
@@ -156,6 +158,29 @@ internal static class PocketTtsModelStore
             { throw new IOException("The private file is busy or inaccessible.", new Win32Exception(Marshal.GetLastWin32Error())); }
             ValidateFile(path, handle, nativeOperation, sharedData);
             if (!GetFileInformationByHandle(handle, out var information)) { throw new IOException("Cannot inspect private file size."); }
+            if (verifyModelBlob)
+            {
+                // Keep the exclusive handle through hashing and deletion. A changed planned blob
+                // must remain protected even after its previous inventory record was replaced.
+                bool sha256 = Path.GetFileName(Path.GetDirectoryName(path)) == "sha256";
+                string expected = Path.GetFileName(path);
+                if (!string.Equals(path, BlobPath(sha256, expected), StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidDataException("Cleanup requires a canonical model blob.");
+                using var hash = IncrementalHash.CreateHash(sha256 ? HashAlgorithmName.SHA256 : HashAlgorithmName.SHA1);
+                long size = ((long)information.FileSizeHigh << 32) | information.FileSizeLow;
+                if (!sha256) hash.AppendData(Encoding.ASCII.GetBytes($"blob {size}\0"));
+                byte[] buffer = new byte[131072];
+                long offset = 0;
+                for (;;)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    int count = RandomAccess.Read(handle, buffer, offset);
+                    if (count == 0) break;
+                    hash.AppendData(buffer.AsSpan(0, count)); offset += count;
+                }
+                if (offset != size || !Convert.ToHexString(hash.GetHashAndReset()).Equals(expected, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidDataException("A planned model blob changed. It was preserved; cleanup remains pending.");
+            }
             var disposition = new FileDisposition { DeleteFile = 1 };
             if (!SetFileInformationByHandle(handle, 4, ref disposition, 1))
             { throw new IOException("Private file deletion failed.", new Win32Exception(Marshal.GetLastWin32Error())); }

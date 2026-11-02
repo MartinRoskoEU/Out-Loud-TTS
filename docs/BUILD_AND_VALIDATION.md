@@ -48,6 +48,13 @@ Real-runtime checks require explicitly supplied verified assets; inspect the
 checker's usage before running them. Private overrides do not exist in shipping
 COM exports. Do not treat a build as a live playback or UI test.
 
+The existing `outloud-rust-selection-tests --model-update-contract` mode checks
+updated-manifest schema, pinned revisions, trusted paths and fixed configuration
+without models, runtime execution or registration. Its private
+`--model-update-manifest <alias> <receipt-json> <expected-yaml>` mode compares an
+updated configuration against the managed install plan. These are checker-only
+interfaces, not production model-import or configuration overrides.
+
 ## Packaging and deployment
 
 Use the [production installer workflow](../installer/PRODUCTION.md) to build

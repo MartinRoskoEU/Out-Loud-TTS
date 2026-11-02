@@ -1,4 +1,4 @@
-# Out Loud 0.4.0 installer
+# Out Loud 0.4.1 installer
 
 The current installer packages OutLoud.WinUI, its self-contained application
 dependencies, the native COM/SAPI adapter and helpers, and the official Pocket

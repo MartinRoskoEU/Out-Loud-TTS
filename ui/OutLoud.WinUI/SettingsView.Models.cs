@@ -38,8 +38,6 @@ public sealed partial class SettingsView
         window.Closed += (_, _) => { _modelCancellation?.Cancel(); _modelHttp.Dispose(); _modelUpdateHttp.Dispose(); };
     }
 
-    private async void CheckModels_Click(object sender, RoutedEventArgs args) => await CheckInstalledModelUpdatesAsync();
-
     private async Task CheckModelsAsync(bool isStartup = false)
     {
         if (ModelBusy || _closing || RuntimeUpdateBusy) { return; }
@@ -284,7 +282,6 @@ public sealed partial class SettingsView
     private void RenderModelInstallationConflicts()
     {
         ModelListHost.IsEnabled = !ModelBusy && !ModelUpdateBlocksChanges && !RuntimeUpdateBusy && !_closing;
-        CheckModelsButton.IsEnabled = !ModelBusy && !_checkingModelUpdates && !RuntimeUpdateBusy && !_closing;
         SelectedModelComboBox.IsEnabled = ModelListHost.IsEnabled && _modelSetup.GetSelectableModels(_modelRows).Count > 0;
         RenderRuntimeUpdateStatus();
         TryStartPendingAutomaticModelUpdateCheck();
