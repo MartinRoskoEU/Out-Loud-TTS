@@ -66,3 +66,21 @@ The user performs Windows Sandbox installer acceptance testing.
 Documentation-only changes need content/link checks and `git diff --check`,
 not application tests. Build the installer when distribution notices or its
 payload change, and only when requested.
+
+## Recorded validation: 0.4.2
+
+- 24 isolated UI regression checks passed using the updated production method
+  bodies. They exercised three minimize/restore cycles, maximize/restore, actual
+  negative WinUI insets, synchronous and asynchronous workflow errors,
+  duplicate-operation blocking, and a failed pending task during window closing.
+- The isolated harness used a temporary WinUI window and simulated workflow
+  failures. It did not initialize the installed application, models or SAPI.
+- Release x64 native components and self-contained WinUI installer packaging
+  completed. All 592 packaged file hashes and the versions of eight project
+  components were verified; the installer checksum matches its SHA-256 file.
+- Live installation, upgrade, playback and Windows Sandbox acceptance testing
+  were not performed.
+
+On 2026-11-04, the user confirmed that minimizing the application no longer
+causes a crash. This confirmation covers minimization; it does not establish
+other live acceptance-test results.
