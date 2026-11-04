@@ -1,6 +1,6 @@
 # Out Loud WinUI application
 
-OutLoud.WinUI is the Out Loud 0.4.1 desktop frontend: an unpackaged WinUI 3 /
+OutLoud.WinUI is the Out Loud 0.4.2 desktop frontend: an unpackaged WinUI 3 /
 .NET 10 application with Voice Library, Voice Tester and Settings navigation.
 It uses the application's Mica backdrop, theme resources and native controls.
 The custom XAML title bar is 40 DIP high, displays the application title without

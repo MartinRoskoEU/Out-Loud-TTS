@@ -1,6 +1,6 @@
 # Models and runtime updates
 
-Out Loud 0.4.1 manages models and runtime updates in **Settings**. The official
+Out Loud 0.4.2 manages models and runtime updates in **Settings**. The official
 Pocket TTS Rust executable is the only synthesis backend. Models are native
 synthesis-only assets from the public
 `kyutai/pocket-tts-without-voice-cloning` repository; no conversion or cloning

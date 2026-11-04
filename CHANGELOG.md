@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.2
+
+- Fixed a crash when minimizing or restoring the application by ignoring invalid
+  title-bar geometry and retaining the last valid caption-button inset.
+- Report unexpected Voice Library workflow and detail-dialog failures in the UI
+  instead of allowing them to escape through button handlers.
+- Keep the window open and report an error if a pending Voice Library operation
+  fails while closing.
+
 ## 0.4.1
 
 - Combined runtime and model update checks into one Settings action while keeping

@@ -39,8 +39,18 @@ public sealed partial class VoiceLibraryView : UserControl
         args.Cancel = true;
         if (_waitingToClose) return;
         _waitingToClose = _closing = true;
-        _dialog?.Hide();
-        await task;
+        try
+        {
+            _dialog?.Hide();
+            await task;
+        }
+        catch (Exception failure)
+        {
+            _waitingToClose = _closing = false;
+            ShowFailure("closing_failure", "The voice workflow could not finish. Review the error before closing again.", failure, workflow: true);
+            RenderState();
+            return;
+        }
         _window!.Close();
     }
 
@@ -55,6 +65,10 @@ public sealed partial class VoiceLibraryView : UserControl
         async Task CompleteAsync()
         {
             try { await action(); }
+            catch (Exception failure)
+            {
+                ShowFailure("workflow_failure", "Unable to complete the voice workflow.", failure, workflow: true);
+            }
             finally { _busy = false; _busyText = ""; RenderState(); BusyChanged?.Invoke(false); }
         }
     }
@@ -404,10 +418,11 @@ public sealed partial class VoiceLibraryView : UserControl
         }
     }
 
-    private void ShowFailure(string code, string message, Exception failure, VoiceOperation operation = VoiceOperation.ImportNative, bool export = false)
+    private void ShowFailure(string code, string message, Exception failure, VoiceOperation operation = VoiceOperation.ImportNative, bool export = false, bool workflow = false)
     {
         BackendError error = failure is BackendException backend ? backend.Error : new("frontend", code, message, LibraryCode: failure.GetType().Name);
-        if (!export) ShowResult(new(ImportPhase.Failed, Error: error, Operation: operation));
+        if (workflow) ShowNotification("Error", message, error.Diagnostic, "SystemFillColorCriticalBrush");
+        else if (!export) ShowResult(new(ImportPhase.Failed, Error: error, Operation: operation));
         else
         {
             bool conflict = error.Code is "export_conflict" or "voice_not_found";
