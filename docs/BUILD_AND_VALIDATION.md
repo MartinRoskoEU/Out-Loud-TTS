@@ -67,6 +67,15 @@ Documentation-only changes need content/link checks and `git diff --check`,
 not application tests. Build the installer when distribution notices or its
 payload change, and only when requested.
 
+## Recorded validation: 0.4.3
+
+- 148 isolated native checks passed, covering content/name collisions, confirmed
+  replacement, retained library/SAPI identity, active-file protection, stale
+  confirmations, interrupted recovery, unknown/changed files and staging-handle
+  security access. No installed voice files or registrations were changed by these checks.
+- Release x64 native components and self-contained WinUI installer packaging
+  completed. The versioned installer still requires Windows Sandbox acceptance testing.
+
 ## Recorded validation: 0.4.2
 
 - 24 isolated UI regression checks passed using the updated production method

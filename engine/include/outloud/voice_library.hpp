@@ -13,7 +13,7 @@ enum class VoiceLibraryErrorCode {
     invalid_display_name, duplicate_content, import_failed, incompatible_voice,
     corrupt_voice, replace_required, source_io, destination_io, remove_failed,
     internal_failure, library_access_denied, library_security_invalid,
-    voice_in_use, replacement_conflict, replacement_pending, removal_conflict, removal_partial, removal_pending, export_conflict
+    voice_in_use, replacement_conflict, replacement_pending, removal_conflict, removal_partial, removal_pending, export_conflict, duplicate_name
 };
 [[nodiscard]] std::string_view voice_library_error_name(VoiceLibraryErrorCode code) noexcept;
 class VoiceLibraryError : public std::runtime_error {
@@ -59,6 +59,9 @@ enum class DuplicateContentPolicy { reject, allow_separate_entry };
 struct LibraryImportResult {
     LibraryVoice voice;
     std::vector<std::string> duplicate_ids;
+};
+struct VoiceReplaceOptions {
+    std::string target_id, expected_display_name, expected_content_sha256, expected_source_sha256;
 };
 
 
@@ -112,6 +115,7 @@ public:
     [[nodiscard]] LibraryVoice inspect_voice(std::string_view id, std::stop_token cancellation = {}) const;
     [[nodiscard]] LibraryImportResult import_native_profile(const std::filesystem::path& source,
         std::string_view display_name, DuplicateContentPolicy duplicates = DuplicateContentPolicy::reject);
+    [[nodiscard]] LibraryVoice replace_native_profile(const std::filesystem::path& source, const VoiceReplaceOptions&);
     [[nodiscard]] std::string export_native_profile(std::string_view id, const std::filesystem::path& destination,
         const VoiceExportOptions& options = {}) const;
     [[nodiscard]] LibraryVoice rename_voice(std::string_view id, std::string_view display_name);

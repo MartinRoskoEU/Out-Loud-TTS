@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Security.Cryptography;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -323,17 +324,46 @@ public sealed partial class VoiceLibraryView : UserControl
             content.Children.Add(Text("Native Pocket voice (.safetensors)"));
             content.Children.Add(name);
             content.Children.Add(Text("The file will be validated and installed in the managed Voice Library."));
-            content.Children.Add(Text("Out Loud needs Administrator permission to add this voice to the machine voice library and Windows speech system. Windows will ask after you click Import."));
+            content.Children.Add(Text("Out Loud uses administrator permission to manage this voice in the library and Windows speech system for all users."));
             var dialog = new ContentDialog { Title = "Import a voice", Content = content, PrimaryButtonText = "Import", CloseButtonText = "Cancel", DefaultButton = ContentDialogButton.Close };
             void ValidateName() => dialog.IsPrimaryButtonEnabled = !string.IsNullOrWhiteSpace(name.Text) && !name.Text.Any(char.IsControl);
             name.TextChanged += (_, _) => ValidateName();
             dialog.Opened += (_, _) => { name.Focus(FocusState.Programmatic); name.SelectAll(); };
             ValidateName();
-            if (await ShowDialogAsync(dialog) != ContentDialogResult.Primary || _closing) { ShowResult(new(ImportPhase.Cancelled)); return; }
-            VoiceImportResult result = await _importer.ImportAsync(new(file.Path, name.Text.Trim()), new ImportProgress(this, false));
-            ShowResult(result);
-            if (result.Phase is ImportPhase.Succeeded or ImportPhase.Partial || result.Error?.Code == "outcome_unknown")
+            VoiceImportResult result;
+            while (true)
+            {
+                if (await ShowDialogAsync(dialog) != ContentDialogResult.Primary || _closing) { ShowResult(new(ImportPhase.Cancelled)); return; }
+                result = await _importer.ImportAsync(new(file.Path, name.Text.Trim()), new ImportProgress(this, false));
+                if (result.Error?.Code != "duplicate_name" || _closing) break;
+                await ReadSnapshotAsync();
+                VoiceRecord? target = _refreshError == null && result.DuplicateIds is { Length: 1 } ids
+                    ? _snapshot.Voices.FirstOrDefault(voice => voice.LibraryId == ids[0] && voice.CanExport) : null;
+                string? sourceHash = null;
+                if (target != null)
+                {
+                    using var source = File.OpenRead(file.Path);
+                    sourceHash = Convert.ToHexString(await SHA256.HashDataAsync(source)).ToLowerInvariant();
+                }
+                var collision = new ContentDialog {
+                    Title = "Voice name already exists",
+                    Content = Text(target != null
+                        ? $"A voice named \"{target.DisplayName}\" already exists, but this is a different voice profile. Replace its profile? Its name and Windows speech identity will be kept."
+                        : "This name is already used. The existing voice could not be uniquely verified for replacement. Choose another name or cancel."),
+                    PrimaryButtonText = "Replace voice", IsPrimaryButtonEnabled = target != null,
+                    SecondaryButtonText = "Change name", CloseButtonText = "Cancel", DefaultButton = ContentDialogButton.Close,
+                };
+                var choice = await ShowDialogAsync(collision);
+                if (choice == ContentDialogResult.Secondary && !_closing) continue;
+                if (choice != ContentDialogResult.Primary || _closing || target == null) { ShowResult(new(ImportPhase.Cancelled)); return; }
+                result = await _importer.ImportAsync(new(file.Path, target.DisplayName!, target.LibraryId, target.ContentSha256,
+                    VoiceOperation.ReplaceNative, ExpectedSourceHash: sourceHash), new ImportProgress(this, false));
+                break;
+            }
+            if (result.Phase is ImportPhase.Succeeded or ImportPhase.Partial || result.Operation == VoiceOperation.ReplaceNative ||
+                result.Error?.Code is "duplicate_content" or "replacement_conflict" or "replacement_pending" or "outcome_unknown")
                 await ReadSnapshotAsync(result.LibraryId);
+            ShowResult(result);
         }
         catch (Exception failure) { ShowFailure("import_failure", "Unable to complete the import workflow.", failure); }
     }
@@ -434,28 +464,45 @@ public sealed partial class VoiceLibraryView : UserControl
     private void ShowResult(VoiceImportResult result)
     {
         bool remove = result.Operation == VoiceOperation.Remove;
+        bool replace = result.Operation == VoiceOperation.ReplaceNative;
         bool warning = result.Phase == ImportPhase.Partial || result.Error?.Code is "voice_in_use" or "removal_conflict" or "removal_partial" or
-            "removal_pending" or "replacement_pending" or "voice_not_found" or "reconciliation_required" or "outcome_unknown";
+            "removal_pending" or "replacement_pending" or "replacement_conflict" or "duplicate_content" or "duplicate_name" or "voice_not_found" or "reconciliation_required" or "outcome_unknown";
         string title = result.Phase == ImportPhase.Cancelled ? "Information" : result.Phase == ImportPhase.Succeeded ? "Success" : warning ? "Warning" : "Error";
         string message = result.Phase switch
         {
             ImportPhase.Succeeded when remove => "Voice removed from Out Loud and Windows speech.",
+            ImportPhase.Succeeded when replace => "Voice profile replaced. Its name and Windows speech identity were kept.",
             ImportPhase.Succeeded => "Voice imported and added to Windows speech.",
             ImportPhase.Partial when remove && result.Error?.Code is "removal_partial" or "removal_pending" => "Removal is incomplete. The library entry is detached, but its Windows speech registration still needs review. See the diagnostic details.",
             ImportPhase.Partial when remove => "Voice removed from Out Loud and Windows speech, but file cleanup is pending. See the diagnostic details.",
+            ImportPhase.Partial when replace => "Voice profile replaced, but Windows speech registration needs review. The new profile has been kept.",
             ImportPhase.Partial => "Voice imported but SAPI registration failed. The imported voice has been kept.",
             ImportPhase.Cancelled when remove => "Removal cancelled. No voice was removed.",
+            ImportPhase.Cancelled when replace => "Replacement cancelled. No voice profile was replaced.",
             ImportPhase.Cancelled => "Import cancelled. No voice was added.",
             _ when result.Error?.Code == "voice_in_use" && remove => "Voice could not be removed because it is in use. Close WoW and other active speech consumers, then retry.",
+            _ when result.Error?.Code == "voice_in_use" && replace => "Voice could not be replaced because it is in use. Close WoW and other active speech consumers, then retry.",
+            _ when result.Error?.Code == "replacement_conflict" => "The voice or source profile changed since confirmation. Refresh and confirm the replacement again.",
+            _ when result.Error?.Code == "replacement_pending" => "Replacement recovery or backup cleanup is pending. Import again to retry recovery safely. See the diagnostic details.",
             _ when remove && result.Error?.Code is "removal_conflict" or "voice_not_found" => "The removal target changed or disappeared. Check the refreshed list before confirming again.",
             _ when result.Error?.Code == "outcome_unknown" => "Operation outcome could not be confirmed. Check the refreshed list before retrying.",
-            _ when result.Error?.Code == "duplicate_content" => "This voice is already in the library. No duplicate was added.",
-            _ => (remove ? "Removal failed: " : "Import failed: ") + (result.Error?.Message ?? "See the diagnostic details.")
+            _ when result.Error?.Code == "duplicate_content" => "This exact voice profile is already in the library" + ExistingVoiceNames(result) + ". No duplicate was added and no voice was replaced.",
+            _ when result.Error?.Code == "duplicate_name" => "A different voice profile already uses this name. Choose another name or confirm replacement.",
+            _ => (remove ? "Removal failed: " : replace ? "Replacement failed: " : "Import failed: ") + (result.Error?.Message ?? "See the diagnostic details.")
         };
         string diagnostic = (result.Error?.Diagnostic ?? "") + (result.DuplicateIds is { Length: > 0 } ids ? "\nExisting library IDs: " + string.Join(", ", ids) : "");
         if (diagnostic.Length > 0 && result.LibraryId != null) diagnostic += "\nLibrary ID: " + result.LibraryId;
         ShowNotification(title, message, diagnostic, title switch { "Success" => "SystemFillColorSuccessBrush", "Warning" => "SystemFillColorCautionBrush",
             "Error" => "SystemFillColorCriticalBrush", _ => "TextFillColorSecondaryBrush" });
+    }
+
+    private string ExistingVoiceNames(VoiceImportResult result)
+    {
+        if (_refreshError != null || result.DuplicateIds is not { Length: > 0 } ids) return "";
+        var names = _snapshot.Voices.Where(voice => ids.Contains(voice.LibraryId) && voice.DisplayName != null)
+            .Select(voice => "\"" + voice.DisplayName + "\"");
+        string text = string.Join(", ", names);
+        return text.Length == 0 ? "" : " as " + text;
     }
 
     private void ShowNotification(string title, string message, string diagnostic, string brush)

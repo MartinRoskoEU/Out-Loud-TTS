@@ -16,12 +16,28 @@ library ID, display name, profile/source SHA-256, imported UTC, source filename,
 and `import_kind=pocket_native`. Profiles have no model identity, revision or
 provenance assertion. Names do not select paths; IDs remain random 128-bit
 identities. Duplicate native content is determined by the complete file SHA-256.
+Production import rejects identical content regardless of its name. Display names
+are unique within the library after trimming surrounding Unicode whitespace and
+using Windows ordinal case-insensitive comparison. Rename enforces the same rule.
 
 Import validates source and staged bytes/metadata before atomic publication.
 Export copies the original bytes and preserves the existing selected-name/hash
 assertions, destination fingerprint, pinned file identity and atomic overwrite
-checks. Rename retains profile identity. The native backend has no replacement
-or conversion operation.
+checks. Rename retains profile identity. A different profile with an existing name
+requires explicit replacement confirmation, or the user can change the name or
+cancel. Replacement asserts the selected ID/name/old hash and confirmed source
+hash, rechecks content and name collisions under the exclusive library lock, and
+keeps the original library ID, name, directory and SAPI token paths. Active mapped
+profiles cannot be replaced. There is no conversion operation.
+
+Native replacement stages and validates the new bytes and metadata, writes a
+protected `replace-native.json` journal bound to the live directory identity and
+old/new hashes, then exchanges the two files. Recovery restores an uncommitted
+exchange or verifies a committed exchange before deleting verified backups.
+Completed backups are retired automatically; interrupted or changed data stays
+protected. The next native import, retrying replacement for that ID, or explicit `recover-removals`
+maintenance runs recovery under the library lock. Refresh only reports pending
+state. Older unsupported replacement journals remain protected and are not adopted.
 
 The existing file mapping, protected owner/ACL checks, ancestor/file pins,
 reparse/hard-link rejection and shared/exclusive library locks remain. Refresh

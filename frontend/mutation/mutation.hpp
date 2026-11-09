@@ -4,10 +4,10 @@
 #include <span>
 
 namespace outloud::frontend::mutation {
-inline constexpr std::uint32_t magic = 0x314d4c4f, version = 3, limit = 65536;
-enum class Operation : std::uint32_t { remove = 3, import_native = 7 };
+inline constexpr std::uint32_t magic = 0x314d4c4f, version = 4, limit = 65536;
+enum class Operation : std::uint32_t { remove = 3, import_native = 7, replace_native = 10 };
 enum class Outcome : std::uint32_t { success = 1, failed = 2, partial = 3, started = 4, removed = 8, removal_warning = 9 };
-struct Request { std::filesystem::path source; std::string display_name; Operation kind=Operation::import_native; std::string target_id, expected_hash, expected_health; };
+struct Request { std::filesystem::path source; std::string display_name; Operation kind=Operation::import_native; std::string target_id, expected_hash, expected_health, expected_source_hash; };
 struct Error {
     std::string domain, code, message, path, library_code, import_code, tensor;
     std::uint32_t system_error = 0;

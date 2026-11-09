@@ -1,6 +1,6 @@
 # Out Loud WinUI application
 
-OutLoud.WinUI is the Out Loud 0.4.2 desktop frontend: an unpackaged WinUI 3 /
+OutLoud.WinUI is the Out Loud 0.4.3 desktop frontend: an unpackaged WinUI 3 /
 .NET 10 application with Voice Library, Voice Tester and Settings navigation.
 It uses the application's Mica backdrop, theme resources and native controls.
 The custom XAML title bar is 40 DIP high, displays the application title without
@@ -179,7 +179,11 @@ failure. Import selects the resulting entry. Removal refreshes and can select
 the first remaining row if the target disappeared. Export retains selection and
 snapshot. Import/export support only `.safetensors`, preserving original bytes.
 Export retains destination inspection, identity checks and overwrite confirmation.
-Duplicate content is rejected; there is no profile replacement workflow.
+Identical profile content is rejected regardless of its name, with a separate
+message from name collisions. Names are unique without regard to case or surrounding
+whitespace. Importing a different profile with an existing name offers Replace
+voice, Change name or Cancel. Confirmed replacement preserves the existing name,
+library ID and Windows speech identity; active voices must be released first.
 Closing waits for an active helper/export operation and reconciliation.
 
 ## Voice Tester

@@ -10,7 +10,7 @@ namespace OutLoud.WinUI.Voices;
 
 public static class ImportProtocol
 {
-    public const uint Magic = 0x314d4c4f, Version = 3;
+    public const uint Magic = 0x314d4c4f, Version = 4;
     public const int Limit = 65536;
     private static readonly UTF8Encoding Utf8 = new(false, true);
     public static byte[] EncodeRequest(VoiceImportRequest request)
@@ -21,10 +21,15 @@ public static class ImportProtocol
             if (request.TargetId == null || request.ExpectedHash == null || string.IsNullOrEmpty(request.ExpectedHealth) || request.SourcePath.Length != 0) throw new InvalidDataException("Removal identity is missing or a source path was supplied.");
             WriteText(writer, request.TargetId); WriteText(writer, request.DisplayName); WriteText(writer, request.ExpectedHash); WriteText(writer, request.ExpectedHealth);
         } else {
-            if (request.Operation != VoiceOperation.ImportNative ||
+            if (request.Operation is not (VoiceOperation.ImportNative or VoiceOperation.ReplaceNative) ||
                 !string.Equals(Path.GetExtension(request.SourcePath), ".safetensors", StringComparison.OrdinalIgnoreCase))
                 throw new InvalidDataException("Native voice import requires a .safetensors file.");
             WriteText(writer, request.SourcePath); WriteText(writer, request.DisplayName);
+            if (request.Operation == VoiceOperation.ReplaceNative) {
+                if (request.TargetId == null || request.ExpectedHash == null || request.ExpectedSourceHash == null)
+                    throw new InvalidDataException("Replacement identities are missing.");
+                WriteText(writer, request.TargetId); WriteText(writer, request.ExpectedHash); WriteText(writer, request.ExpectedSourceHash);
+            }
         }
         if (stream.Length > Limit) throw new InvalidDataException("Import request exceeds the protocol limit.");
         stream.Position = 12; writer.Write((uint)stream.Length - 16); return stream.ToArray();
@@ -62,8 +67,8 @@ public static class ImportProtocol
         var ids = new string[count]; for (int i = 0; i < ids.Length; ++i) ids[i] = ReadText(reader);
         static bool ValidId(string value) => value.Length == 32 && value.All(c => c is >= '0' and <= '9' or >= 'a' and <= 'f');
         if (reader.BaseStream.Position != bytes.Length || ids.Any(value => !ValidId(value)) ||
-            (operation is not (3 or 7)) || (kind is 1 or 3 && operation != 7) || (kind is 8 or 9 && operation != 3) ||
-            (kind != 2 || operation != 7 ? !ValidId(id) : id.Length != 0) ||
+            (operation is not (3 or 7 or 10)) || (kind is 1 or 3 && operation is not (7 or 10)) || (kind is 8 or 9 && operation != 3) ||
+            (kind != 2 || operation == 3 ? !ValidId(id) : id.Length != 0) ||
             (kind is 1 or 8 ? domain.Length != 0 || code.Length != 0 : domain.Length == 0 || code.Length == 0))
             throw new InvalidDataException("Inconsistent helper outcome.");
         return new(kind is 1 or 8 ? ImportPhase.Succeeded : kind is 3 or 9 ? ImportPhase.Partial : ImportPhase.Failed,

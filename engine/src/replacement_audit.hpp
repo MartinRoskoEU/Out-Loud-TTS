@@ -10,4 +10,9 @@ namespace outloud::detail::export_audit {
 inline void (*probe)(unsigned, void*) = nullptr;
 inline void point(unsigned step,void* handle) { if (probe) { probe(step,handle); } }
 }
+namespace outloud::detail::native_replace_audit {
+inline bool leave_pending = false;
+inline void (*probe)(unsigned, void*) = nullptr;
+inline void point(unsigned step,void* handle) { if (probe) { probe(step,handle); } }
+}
 #endif

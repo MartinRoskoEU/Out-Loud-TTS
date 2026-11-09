@@ -33,7 +33,7 @@ std::string_view voice_library_error_name(VoiceLibraryErrorCode code) noexcept {
     OUTLOUD_LIBRARY_CODE(library_access_denied); OUTLOUD_LIBRARY_CODE(library_security_invalid);
     OUTLOUD_LIBRARY_CODE(voice_in_use); OUTLOUD_LIBRARY_CODE(replacement_conflict); OUTLOUD_LIBRARY_CODE(replacement_pending);
     OUTLOUD_LIBRARY_CODE(removal_conflict); OUTLOUD_LIBRARY_CODE(removal_partial); OUTLOUD_LIBRARY_CODE(removal_pending);
-    OUTLOUD_LIBRARY_CODE(export_conflict);
+    OUTLOUD_LIBRARY_CODE(export_conflict); OUTLOUD_LIBRARY_CODE(duplicate_name);
 #undef OUTLOUD_LIBRARY_CODE
     }
     return "internal_failure";
@@ -197,6 +197,7 @@ struct Session {
 };
 bool replacement_pending(Session&, std::string_view);
 bool removal_pending(Session&, std::string_view);
+bool native_replacement_pending(Session&, std::string_view);
 LibraryVoice inspect(const std::filesystem::path& entry,const std::string& id,bool machine,std::stop_token cancellation = {}) {
     LibraryVoice result; result.library_id=id;
     try {
@@ -286,9 +287,9 @@ struct Stage {
             if (session.machine) {
                 if (fs::exists(path)) { continue; }
                 if (!detail::library_security::create_directory(path)) { continue; }
-                directory=fs::directory(path,DELETE); return;
+                directory=fs::directory(path,DELETE|READ_CONTROL); return;
             }
-            if (CreateDirectoryW(path.c_str(),nullptr)) { directory=fs::directory(path,DELETE); return; }
+            if (CreateDirectoryW(path.c_str(),nullptr)) { directory=fs::directory(path,DELETE|READ_CONTROL); return; }
             if (GetLastError()!=ERROR_ALREADY_EXISTS) { fs::fail_access(Code::destination_io,"Cannot create unique staging directory",path,GetLastError()); }
         }
         fs::fail(Code::destination_io,"Random staging/identity collision",path);
@@ -303,17 +304,32 @@ struct Stage {
     }
 };
 
-LibraryImportResult publish_native(Session& session,Stage& stage,const VoiceMetadata& record,DuplicateContentPolicy policy) {
-    std::vector<std::string> matches;
+bool same_name(std::string_view left,std::string_view right) {
+    const auto a=fs::wide(left), b=fs::wide(right);
+    const auto result=CompareStringOrdinal(a.data(),static_cast<int>(a.size()),b.data(),static_cast<int>(b.size()),TRUE);
+    if (!result) { fs::fail(Code::invalid_display_name,"Cannot compare voice names",{}); }
+    return result==CSTR_EQUAL;
+}
+std::vector<std::string> check_import(Session& session,const VoiceMetadata& record,DuplicateContentPolicy policy,std::string_view replacing={}) {
+    if (native_replacement_pending(session,{})) { fs::fail(Code::replacement_pending,"Resolve pending native replacements before importing or renaming voices",session.root.path); }
+    std::vector<std::string> matches, names;
     for (const auto& name:fs::children(session.voices->path)) {
         const auto id=fs::utf8(name); if (!fs::id(id)) { continue; }
         const auto voice=inspect(session.voices->path/name,id,session.machine);
         if (voice.health==VoiceHealth::valid && voice.metadata->import_kind==VoiceImportKind::pocket_native &&
             voice.metadata->profile_sha256==record.profile_sha256) { matches.push_back(id); }
+        if (voice.metadata && same_name(voice.metadata->display_name,record.display_name) && id!=replacing) { names.push_back(id); }
     }
     if (!matches.empty() && policy==DuplicateContentPolicy::reject) {
         throw VoiceLibraryError(Code::duplicate_content,"Duplicate native profile content exists",session.root.path,0,{},std::move(matches));
     }
+    if (!names.empty()) {
+        throw VoiceLibraryError(Code::duplicate_name,"A voice with this name already exists. Choose another name or confirm replacement.",session.root.path,0,{},std::move(names));
+    }
+    return matches;
+}
+LibraryImportResult publish_native(Session& session,Stage& stage,const VoiceMetadata& record,DuplicateContentPolicy policy) {
+    auto matches=check_import(session,record,policy);
     save_metadata(stage.path/L"metadata.json",record,session.machine);
     const auto checked=inspect(stage.path,record.library_id,session.machine);
     if (checked.health!=VoiceHealth::valid) { fs::fail(Code::corrupt_voice,"Native profile staging verification failed",stage.path); }
@@ -369,6 +385,7 @@ void save_control(const std::filesystem::path& path,std::string_view text,bool m
 }
 #include "voice_library_pending.inc"
 #include "voice_library_remove.inc"
+#include "voice_library_replace.inc"
 #include "voice_library_snapshot.inc"
 } // namespace
 
@@ -432,12 +449,91 @@ LibraryImportResult VoiceLibrary::import_native_profile(const std::filesystem::p
         if (_wcsicmp(source.extension().c_str(),L".safetensors")!=0) { fs::fail(Code::source_io,"Native profiles must be .safetensors files",source); }
         const fs::Pins parents(source.parent_path()); const auto snapshot=fs::file(source);
         const auto digest=validate_native_profile(source);
-        Session session(root_,true,machine_storage_); Stage stage(session);
+        Session session(root_,true,machine_storage_); recover_native_replacements(session,{}); Stage stage(session);
         copy_voice(source,stage.path/L"voice.safetensors",machine_storage_);
         VoiceMetadata record; record.schema_version=2; record.import_kind=VoiceImportKind::pocket_native;
         record.library_id=stage.id; record.display_name=normalized; record.profile_sha256=digest; record.source_sha256=digest;
         record.imported_utc=utc(); record.source_filename=fs::utf8(source.filename().native());
         return publish_native(session,stage,record,policy);
+    });
+}
+LibraryVoice VoiceLibrary::replace_native_profile(const std::filesystem::path& input,const VoiceReplaceOptions& options) {
+    return guarded(input,[&] {
+        const auto name=display_name(options.expected_display_name,root_);
+        if (!fs::id(options.target_id) || !hash(options.expected_content_sha256) || !hash(options.expected_source_sha256)) {
+            fs::fail(Code::replacement_conflict,"Replacement requires the confirmed target and source identities",root_);
+        }
+        const auto source=fs::local(input,Code::source_io);
+        if (_wcsicmp(source.extension().c_str(),L".safetensors")!=0) { fs::fail(Code::source_io,"Native profiles must be .safetensors files",source); }
+        const fs::Pins parents(source.parent_path()); const auto snapshot=fs::file(source);
+        const auto digest=validate_native_profile(source);
+        if (digest!=options.expected_source_sha256) { fs::fail(Code::replacement_conflict,"Source profile changed since confirmation",source); }
+        Session session(root_,true,machine_storage_);
+        recover_native_replacements(session,options.target_id);
+        auto voice=healthy(session,options.target_id);
+        if (voice.metadata->display_name!=name || voice.metadata->profile_sha256!=options.expected_content_sha256) {
+            fs::fail(Code::replacement_conflict,"Voice changed since confirmation. Refresh and confirm again.",root_);
+        }
+        auto record=*voice.metadata; record.profile_sha256=digest; record.source_sha256=digest;
+        record.imported_utc=utc(); record.source_filename=fs::utf8(source.filename().native());
+        (void)check_import(session,record,DuplicateContentPolicy::reject,options.target_id);
+        const auto live=voice.managed_native_path.parent_path(); auto directory=fs::directory(live,READ_CONTROL);
+        if (session.machine) { detail::library_security::validate(directory.value,live,true); }
+        std::vector<fs::Handle> old_files;
+        try { native_replace_files(live,old_files,session.machine); }
+        catch (const VoiceLibraryError& error) {
+            if (error.system_error()==ERROR_SHARING_VIOLATION || error.system_error()==ERROR_LOCK_VIOLATION) {
+                throw VoiceLibraryError(Code::voice_in_use,"Voice is in use. Close active speech consumers, then retry.",live,error.system_error());
+            } throw;
+        }
+        const auto old_hashes=removal_hashes(live,old_files);
+        if (old_hashes.first!=options.expected_content_sha256) { fs::fail(Code::replacement_conflict,"Voice content changed",live); }
+        Stage stage(session); copy_voice(source,stage.path/L"voice.safetensors",session.machine);
+        save_metadata(stage.path/L"metadata.json",record,session.machine);
+        if (inspect(stage.path,record.library_id,session.machine).health!=VoiceHealth::valid) { fs::fail(Code::corrupt_voice,"Invalid staged replacement",stage.path); }
+        const auto identity=directory_identity(directory.value,live);
+        auto meta=fs::file(stage.path/L"metadata.json"); const auto metadata_hash=handle_hash(meta.value,stage.path/L"metadata.json"); meta.close();
+        NativeReplaceJournal journal{record.library_id,detail::hex({identity.FileId.Identifier,16}),old_hashes.first,old_hashes.second,digest,metadata_hash,"prepared",identity.VolumeSerialNumber};
+        // Once journal publication is attempted, Stage must never delete evidence.
+        stage.published=true;
+        try {
+            publish_native_replace(stage.path,journal,session.machine); native_replace_point(0,stage.directory.value);
+            const std::array<std::wstring_view,2> names{L"metadata.json",L"voice.safetensors"};
+            for (std::size_t i=0;i<names.size();++i) {
+                fs::rename(old_files[i].value,stage.path/(names[i]==L"voice.safetensors" ? L"old.safetensors" : L"old.json"),false,Code::replacement_pending);
+                native_replace_point(1);
+            }
+            old_files.clear();
+            for (const auto* file : {L"voice.safetensors",L"metadata.json"}) {
+                auto fresh=fs::file(stage.path/file,DELETE,0,OPEN_EXISTING,Code::replacement_pending);
+                fs::rename(fresh.value,live/file,false,Code::replacement_pending); fresh.close(); native_replace_point(2);
+            }
+            const auto verified=inspect(live,record.library_id,session.machine);
+            if (verified.health!=VoiceHealth::valid || verified.metadata->profile_sha256!=digest) { fs::fail(Code::replacement_pending,"Replacement verification failed",live); }
+            native_replace_point(3); journal.phase="committed"; publish_native_replace(stage.path,journal,session.machine); native_replace_point(4);
+            recover_native_replace(session,stage.path,stage.directory);
+            return verified;
+        } catch (...) {
+            const auto cause=std::current_exception(); old_files.clear(); directory.close();
+            #ifdef OUTLOUD_REPLACEMENT_AUDIT
+            if (detail::native_replace_audit::leave_pending) { fs::fail(Code::replacement_pending,"Simulated interruption; replacement evidence retained",stage.path); }
+            #endif
+            try {
+                recover_native_replace(session,stage.path,stage.directory);
+                if (journal.phase=="committed") {
+                    const auto current=healthy(session,record.library_id);
+                    if (current.metadata->profile_sha256==digest) { return current; }
+                }
+            } catch (const VoiceLibraryError& recovery) {
+                std::string initial="Unknown replacement failure";
+                try { std::rethrow_exception(cause); } catch (const std::exception& error) { initial=error.what(); } catch (...) {}
+                throw VoiceLibraryError(Code::replacement_pending,"Replacement recovery is pending; data retained. Initial failure: "+initial+
+                    ". Recovery failure: "+recovery.what(),recovery.path(),recovery.system_error());
+            } catch (const std::exception& recovery) {
+                throw VoiceLibraryError(Code::replacement_pending,std::string("Replacement recovery is pending; data retained: ")+recovery.what(),stage.path);
+            }
+            throw ValidationFailure{cause};
+        }
     });
 }
 
@@ -540,6 +636,8 @@ std::string VoiceLibrary::export_asset(std::string_view id,const std::filesystem
 LibraryVoice VoiceLibrary::rename_voice(std::string_view id,std::string_view name) {
     return guarded(root_,[&] {
         const auto normalized=display_name(name,root_); Session session(root_,true,machine_storage_); auto voice=healthy(session,id);
+        auto renamed=*voice.metadata; renamed.display_name=normalized;
+        (void)check_import(session,renamed,DuplicateContentPolicy::allow_separate_entry,id);
         const auto& path=voice.managed_native_path;
         const auto entry=fs::directory(path.parent_path()); const auto source=fs::file(path);
         if (validate_native_profile(path)!=voice.metadata->content_sha256()) {
@@ -592,6 +690,7 @@ LibraryCleanupResult VoiceLibrary::cleanup_pending(const RemovalRegistrationIden
                         else { fs::fail(Code::removal_pending,"Unjournaled trash outcome is unknown; files retained",path); }
                         ++result.cleaned; continue;
                     }
+                    if (fs::exists(path/L"replace-native.json")) { recover_native_replace(session,path,directory); ++result.cleaned; continue; }
                     if (fs::exists(path/L"replace.json")) { fs::fail(Code::replacement_pending,"Unsupported pending transaction retained for manual review",path); }
                     if (fs::exists(path/L"commit")) { fs::fail(Code::replacement_pending,"Unsupported pending transaction retained for manual review",path); }
                     std::vector<fs::Handle> files; removal_files(path,files,machine_storage_);

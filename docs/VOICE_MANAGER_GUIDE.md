@@ -9,8 +9,11 @@ list; export preserves the current snapshot and selection.
 Import Voice and Export Voice accept only native `.safetensors` files. They copy
 the original bytes, without conversion or model association. Export keeps the
 existing destination inspection and overwrite confirmation. Import/removal use
-the existing administrative helper after confirmation. Duplicate native content
-is rejected; there is no profile replacement/conversion workflow.
+the existing administrative helper after confirmation. Identical native content
+is rejected regardless of its name. A different profile with an existing name
+offers Replace voice, Change name or Cancel. Names are unique after trimming
+surrounding whitespace and comparing without regard to case. Confirmed replacement
+keeps the original name, library ID and Windows speech identity. There is no conversion.
 
 OutLoud.WinUI requests administrator approval when it starts, then uses that
 authority throughout the session without another UAC prompt for each operation.
@@ -25,7 +28,8 @@ explicitly in Settings before playback; the existing Rust adapter uses that
 selection and reports unavailable/invalid models through existing errors. There
 is no model selector or model binding on a voice profile.
 
-Refresh and import do not migrate or clean up installed models, Settings,
+Refresh never performs recovery. Native import can recover its protected native
+replacement transactions; it does not migrate installed models, Settings, legacy
 profiles or Windows registrations. Startup can recover inactive staging work
 through the existing [verified cleanup mechanism](../ui/OutLoud.WinUI/README.md#operation-cleanup).
 Unsupported files/metadata are reported as unsupported. Confirmed complete uninstall follows the

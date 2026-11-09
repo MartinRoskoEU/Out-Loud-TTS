@@ -30,6 +30,7 @@ bool committed(const std::filesystem::path& path,const ReplaceJournal& journal,b
 }
 bool replacement_pending(Session& session,std::string_view id) {
     if (!session.root.exists || !session.staging->exists) { return false; }
+    if (native_replacement_pending(session,id)) { return true; }
     detail::refresh_audit::event(detail::refresh_audit::Event::replacement_scan);
     for (const auto& name : fs::children(session.staging->path)) {
         if (!fs::id(fs::utf8(name))) { continue; }

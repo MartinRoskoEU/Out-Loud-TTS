@@ -150,11 +150,11 @@ int WINAPI wWinMain(HINSTANCE,HINSTANCE,PWSTR,int) {
         mutation::Result result;
         try {
             const auto request = mutation::decode_request(bytes);
-            // The authenticated WinUI caller uses only native import/removal.
-            require(request.kind==mutation::Operation::import_native || request.kind==mutation::Operation::remove);
+            // The authenticated WinUI caller uses native import, replacement and removal.
+            require(request.kind==mutation::Operation::import_native || request.kind==mutation::Operation::replace_native || request.kind==mutation::Operation::remove);
             auto started = mutation::encode_result({mutation::Outcome::started,{},{}}); transfer(pipe.value,parent.value,started,true);
             // Parent must still be alive at dispatch. Once dispatched, finish the
-            // two native operations rather than forcibly kill during mutation.
+            // native operations rather than forcibly kill during mutation.
             require(WaitForSingleObject(parent.value,0)==WAIT_TIMEOUT);
             const auto resolve=[&] {
                 auto runtime=mutation::resolve_machine_runtime();

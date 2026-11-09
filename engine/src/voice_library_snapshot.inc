@@ -17,6 +17,10 @@ PendingIndex pending_index(Session& session,const std::vector<std::wstring>& nam
             const auto path=session.staging->path/name;
             const auto pin=fs::directory(path,session.machine ? READ_CONTROL : 0);
             if (session.machine) { detail::library_security::validate(pin.value,path,true); }
+            if (fs::exists(path/L"replace-native.json")) {
+                const auto journal=load_native_replace(path/L"replace-native.json",session.machine);
+                if (active.contains(journal.id)) { result.replacement.insert(journal.id); }
+            }
             if (fs::exists(path/L"replace.json")) {
                 const auto journal=load_journal(path/L"replace.json",session.machine);
                 if (active.contains(journal.id) && !result.replacement.contains(journal.id) && !committed(path,journal,session.machine)) {

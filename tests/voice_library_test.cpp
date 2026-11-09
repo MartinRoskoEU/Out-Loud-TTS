@@ -1,7 +1,9 @@
 #include "outloud/voice_library.hpp"
 #include "asset_io.hpp"
 #include "voice_library_fs.hpp"
+#include "replacement_audit.hpp"
 #include "../frontend/mutation/mutation.hpp"
+#include <aclapi.h>
 #include <cstring>
 #include <fstream>
 #include <iostream>
@@ -10,7 +12,23 @@ namespace {
 using namespace outloud;
 namespace fs=detail::library_fs;
 unsigned checks=0;
+#ifdef OUTLOUD_REPLACEMENT_AUDIT
+unsigned fault_step=0, fault_hit=0;
+void replacement_fault(unsigned step,void*) {
+    if (step==fault_step && fault_hit--==0) { throw std::runtime_error("isolated native replacement interruption"); }
+}
+#endif
 void require(bool value,const char* message) { ++checks; if (!value) { throw std::runtime_error(message); } }
+#ifdef OUTLOUD_REPLACEMENT_AUDIT
+void replacement_security(unsigned step,void* handle) {
+    if (step!=0) return;
+    PSECURITY_DESCRIPTOR descriptor=nullptr;
+    const auto status=GetSecurityInfo(static_cast<HANDLE>(handle),SE_FILE_OBJECT,OWNER_SECURITY_INFORMATION|DACL_SECURITY_INFORMATION,
+        nullptr,nullptr,nullptr,nullptr,&descriptor);
+    if (descriptor) LocalFree(descriptor);
+    require(status==ERROR_SUCCESS,"Replacement staging handle cannot read security during production cleanup");
+}
+#endif
 template<class F> void rejected(F action,const char* message) {
     bool failed=false; try { action(); } catch (const std::exception&) { failed=true; } require(failed,message);
 }
@@ -41,6 +59,14 @@ int main() {
     try {
         scratch=std::filesystem::temp_directory_path()/(L"outloud-native-library-"+fs::wide(fs::random_id()));
         require(std::filesystem::create_directory(scratch),"Cannot create isolated test directory");
+        {
+            auto limited=fs::directory(scratch,DELETE);
+            PSECURITY_DESCRIPTOR descriptor=nullptr;
+            const auto status=GetSecurityInfo(limited.value,SE_FILE_OBJECT,OWNER_SECURITY_INFORMATION|DACL_SECURITY_INFORMATION,
+                nullptr,nullptr,nullptr,nullptr,&descriptor);
+            if (descriptor) LocalFree(descriptor);
+            require(status==ERROR_ACCESS_DENIED,"Could not reproduce missing READ_CONTROL on the former staging handle");
+        }
         const auto input=scratch/L"native.safetensors"; const auto original=profile(); write(input,original);
         namespace wire=outloud::frontend::mutation;
         const std::vector<std::string> fields={fs::utf8(input.native()),"Native fixture"};
@@ -52,6 +78,10 @@ int main() {
         rejected([&] { (void)wire::decode_request(request(7,{fs::utf8((scratch/L"unsupported.olv").native()),"Legacy"})); },"Native helper accepted a legacy file");
         const auto remove=wire::decode_request(request(3,{std::string(32,'a'),"Native fixture",std::string(64,'a'),"valid"}));
         require(remove.kind==wire::Operation::remove && remove.expected_hash==std::string(64,'a'),"Removal snapshot framing changed");
+        const auto replacement=wire::decode_request(request(10,{fs::utf8(input.native()),"Native fixture",std::string(32,'a'),std::string(64,'a'),std::string(64,'b')}));
+        require(replacement.kind==wire::Operation::replace_native && replacement.expected_source_hash==std::string(64,'b'),"Replacement framing lost confirmation identities");
+        rejected([&] { (void)wire::decode_request(request(10,fields)); },"Replacement accepted missing identities");
+        rejected([&] { (void)wire::decode_request(request(10,{fields[0],fields[1],std::string(32,'a'),std::string(64,'a'),"bad"})); },"Replacement accepted malformed source hash");
         const auto digest=validate_native_profile(input);
         require(digest==detail::hex(detail::sha256({reinterpret_cast<const unsigned char*>(original.data()),original.size()})),"Native digest changed");
         std::stop_source stop; stop.request_stop();
@@ -117,9 +147,98 @@ int main() {
         require(library.inspect_voice(std::string(32,'a')).health==VoiceHealth::unsupported_metadata_version,"Unsupported metadata was interpreted");
         rejected([&] { (void)library.remove_voice(std::string(32,'a')); },"Legacy storage was deleted");
         require(bytes(legacy/L"voice.olv")=="untouched legacy data","Legacy data changed");
+        // A separate isolated library exercises actual native exchanges and recovery.
+        const auto changed=scratch/L"changed.safetensors", third=scratch/L"third.safetensors";
+        auto changed_bytes=original; changed_bytes.back()='4'; write(changed,changed_bytes);
+        auto third_bytes=original; third_bytes.back()='5'; write(third,third_bytes);
+        const auto changed_hash=validate_native_profile(changed), third_hash=validate_native_profile(third);
+        VoiceLibrary replacements(scratch/L"replacements");
+        const auto old=replacements.import_native_profile(input,"Undead - Male").voice;
+        bool name_error=false;
+        try { (void)replacements.import_native_profile(changed,"  UNDEAD - male  "); }
+        catch (const VoiceLibraryError& error) { name_error=error.code()==VoiceLibraryErrorCode::duplicate_name && error.duplicate_ids()==std::vector<std::string>{old.library_id}; }
+        require(name_error,"Case/trim-equivalent duplicate name did not identify its target");
+        bool content_error=false;
+        try { (void)replacements.import_native_profile(input,"Undead - Male"); }
+        catch (const VoiceLibraryError& error) { content_error=error.code()==VoiceLibraryErrorCode::duplicate_content; }
+        require(content_error,"Content duplicate did not take precedence over name collision");
+        VoiceReplaceOptions replace{old.library_id,"Undead - Male",digest,changed_hash};
+        {
+            detail::MappedFile mapping(old.managed_native_path,1024*1024);
+            rejected([&] { (void)replacements.replace_native_profile(changed,replace); },"Replacement changed an active mapped voice");
+        }
+        auto stale=replace; stale.expected_content_sha256=third_hash;
+        rejected([&] { (void)replacements.replace_native_profile(changed,stale); },"Replacement accepted a stale target");
+        stale=replace; stale.expected_source_sha256=third_hash;
+        rejected([&] { (void)replacements.replace_native_profile(changed,stale); },"Replacement accepted a changed source");
+        const auto another=replacements.import_native_profile(third,"Another").voice;
+        rejected([&] { (void)replacements.rename_voice(another.library_id,"undead - male"); },"Rename created a duplicate name");
+        stale=replace; stale.expected_source_sha256=third_hash;
+        rejected([&] { (void)replacements.replace_native_profile(third,stale); },"Replacement duplicated another profile's content");
+        const auto before_token=managed_sapi_token_id(old.library_id);
+        #ifdef OUTLOUD_REPLACEMENT_AUDIT
+        detail::native_replace_audit::probe=replacement_security;
+        #endif
+        const auto exchanged=replacements.replace_native_profile(changed,replace);
+        #ifdef OUTLOUD_REPLACEMENT_AUDIT
+        detail::native_replace_audit::probe=nullptr;
+        #endif
+        require(exchanged.library_id==old.library_id && exchanged.managed_native_path==old.managed_native_path &&
+            exchanged.metadata->display_name=="Undead - Male" && managed_sapi_token_id(exchanged.library_id)==before_token,"Replacement changed the name, path or SAPI identity");
+        require(bytes(exchanged.managed_native_path)==changed_bytes && replacements.list_voices().size()==2,"Replacement lost bytes or created an extra entry");
+        require(fs::children(replacements.root()/L".staging").empty(),"Completed replacement retained backups");
+        replace.expected_content_sha256=changed_hash;
+        rejected([&] { (void)replacements.replace_native_profile(changed,replace); },"Same profile replaced itself");
+        #ifdef OUTLOUD_REPLACEMENT_AUDIT
+        unsigned scenario=0;
+        for (const bool interrupted : {false,true}) {
+            for (const auto [step,hit] : {std::pair{0u,0u},{1u,0u},{1u,1u},{2u,0u},{2u,1u},{3u,0u},{4u,0u},{6u,0u},{6u,1u}}) {
+                VoiceLibrary isolated(scratch/(L"exchange-fault-"+std::to_wstring(scenario++)));
+                const auto initial=isolated.import_native_profile(input,"Fixture").voice;
+                VoiceReplaceOptions confirmed{initial.library_id,"Fixture",digest,changed_hash};
+                fault_step=step; fault_hit=hit;
+                detail::native_replace_audit::leave_pending=interrupted;
+                detail::native_replace_audit::probe=replacement_fault;
+                try { (void)isolated.replace_native_profile(changed,confirmed); } catch (const std::exception&) {}
+                detail::native_replace_audit::probe=nullptr; detail::native_replace_audit::leave_pending=false;
+                if (interrupted) {
+                    require(isolated.inspect_voice(initial.library_id).health==VoiceHealth::replacement_pending,"Interrupted exchange was not marked pending");
+                    bool collision_after_recovery=false;
+                    try { (void)isolated.import_native_profile(third,"Fixture"); }
+                    catch (const VoiceLibraryError& error) { collision_after_recovery=error.code()==VoiceLibraryErrorCode::duplicate_name; }
+                    require(collision_after_recovery,"Import did not recover the exchange before enforcing name uniqueness");
+                }
+                const auto cleanup=isolated.cleanup_pending();
+                require(cleanup.problems.empty(),"Recovery could not resolve an isolated exchange");
+                const auto final=isolated.inspect_voice(initial.library_id);
+                require(final.health==VoiceHealth::valid && final.metadata->profile_sha256==(step>=4 ? changed_hash : digest),"Recovery chose an incorrect profile or lost the voice");
+                require(fs::children(isolated.root()/L".staging").empty(),"Recovery retained completed exchange backups");
+            }
+        }
+        // Tampered recovery content must be retained without touching the live entry.
+        VoiceLibrary tampered(scratch/L"tampered-exchange");
+        const auto protected_voice=tampered.import_native_profile(input,"Protected").voice;
+        fault_step=2; fault_hit=0; detail::native_replace_audit::leave_pending=true;
+        detail::native_replace_audit::probe=replacement_fault;
+        rejected([&] { (void)tampered.replace_native_profile(changed,{protected_voice.library_id,"Protected",digest,changed_hash}); },"Interruption did not retain recovery data");
+        detail::native_replace_audit::probe=nullptr; detail::native_replace_audit::leave_pending=false;
+        const auto operations=fs::children(tampered.root()/L".staging");
+        require(operations.size()==1,"Interrupted exchange lost its operation folder");
+        const auto operation=tampered.root()/L".staging"/operations[0];
+        write(operation/L"old.safetensors",third_bytes);
+        const auto live_before=bytes(protected_voice.managed_native_path);
+        const auto refused=tampered.cleanup_pending();
+        require(!refused.problems.empty() && fs::exists(operation/L"replace-native.json") &&
+            bytes(operation/L"old.safetensors")==third_bytes && bytes(protected_voice.managed_native_path)==live_before,"Recovery deleted or changed tampered evidence/live data");
+        write(operation/L"old.safetensors",original);
+        write(operation/L"unknown.bin","retained");
+        require(!tampered.cleanup_pending().problems.empty() && bytes(operation/L"unknown.bin")=="retained","Recovery deleted unknown files");
+        std::filesystem::remove(operation/L"unknown.bin"); // only this isolated fixture
+        require(tampered.cleanup_pending().problems.empty() && tampered.inspect_voice(protected_voice.library_id).health==VoiceHealth::valid,"Valid recovery did not restore the protected voice");
+        #endif
         require(std::filesystem::equivalent(scratch.parent_path(),std::filesystem::temp_directory_path()) && scratch.filename().native().starts_with(L"outloud-native-library-"),"Scratch cleanup escaped its isolated root");
         std::filesystem::remove_all(scratch); scratch.clear();
-        std::cout << "PASS: " << checks << " native profile, byte identity, validation, export, locking and removal checks; isolated temporary storage only.\n";
+        std::cout << "PASS: " << checks << " native profile, name/content uniqueness, replacement/recovery, export, locking and removal checks; isolated temporary storage only.\n";
         return 0;
     } catch (const std::exception& error) { std::cerr << error.what() << "\nRetained isolated fixture: " << scratch << '\n'; return 1; }
 }

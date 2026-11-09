@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.4.3
+
+- Distinguish identical voice profiles from name collisions during import;
+  identical profiles are rejected regardless of the chosen name.
+- Prevent duplicate voice names, ignoring case and surrounding whitespace.
+  Importing a different profile with an existing name offers replacement,
+  a name change or cancellation. Replacement preserves the voice's name and
+  Windows speech identity.
+- Add protected recovery for interrupted profile replacement and fix backup
+  cleanup permissions. Report recovery errors without misleading refresh advice.
+
 ## 0.4.2
 
 - Fixed a crash when minimizing or restoring the application by ignoring invalid

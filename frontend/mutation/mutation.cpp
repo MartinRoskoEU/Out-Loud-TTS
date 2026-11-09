@@ -32,7 +32,7 @@ Request decode_request(std::span<const std::uint8_t> bytes) {
     if (bytes.size()>limit || bytes.size()<16) { malformed(); }
     Reader reader{bytes};
     if (reader.number()!=magic || reader.number()!=version) { malformed(); }
-    const auto kind=reader.number(); if ((kind!=3 && kind!=7) || reader.number()!=bytes.size()-16) { malformed(); }
+    const auto kind=reader.number(); if ((kind!=3 && kind!=7 && kind!=10) || reader.number()!=bytes.size()-16) { malformed(); }
     if (kind==3) {
         auto id=reader.string(), name=reader.string(), expected_hash=reader.string(), health=reader.string();
         if (!fs::id(id) || !reader.remaining.empty() || health.empty() || health.size()>32 ||
@@ -40,7 +40,12 @@ Request decode_request(std::span<const std::uint8_t> bytes) {
         return {{},std::move(name),Operation::remove,std::move(id),std::move(expected_hash),std::move(health)};
     }
     const auto source = reader.string(), name = reader.string();
-    std::string id, expected_hash;
+    std::string id, expected_hash, source_hash;
+    if (kind==10) {
+        id=reader.string(); expected_hash=reader.string(); source_hash=reader.string();
+        const auto valid_hash=[](const std::string& value) { return value.size()==64 && value.find_first_not_of("0123456789abcdef")==value.npos; };
+        if (!fs::id(id) || !valid_hash(expected_hash) || !valid_hash(source_hash)) { malformed(); }
+    }
 
     if (!reader.remaining.empty() || source.empty() || name.empty()) { malformed(); }
     // Transport constraints only. Native VoiceLibrary/importer own all file/name validation.
@@ -48,7 +53,7 @@ Request decode_request(std::span<const std::uint8_t> bytes) {
     if (!supplied.is_absolute()) { malformed(); }
     auto path = fs::local(supplied,VoiceLibraryErrorCode::source_io);
     if (_wcsicmp(path.extension().c_str(),L".safetensors")!=0) { malformed(); }
-    return {std::move(path),name,static_cast<Operation>(kind),id,expected_hash};
+    return {std::move(path),name,static_cast<Operation>(kind),id,expected_hash,{},source_hash};
 }
 std::vector<std::uint8_t> encode_result(const Result& result) {
     std::vector<std::uint8_t> bytes; number(bytes,magic); number(bytes,version); number(bytes,static_cast<std::uint32_t>(result.outcome)); number(bytes,0);
@@ -131,11 +136,17 @@ Result import_and_install(const Request& request,VoiceLibrary library,std::share
             if (removed.cleanup_pending) { result.error.domain="library"; result.error.code="cleanup_pending"; result.error.message="Voice and token removed; trash cleanup pending: "+removed.detail; }
             return result;
         }
-        if (request.kind!=Operation::import_native) { malformed(); }
+        if (request.kind!=Operation::import_native && request.kind!=Operation::replace_native) { malformed(); }
         // Native profile import is model-independent. The active Settings model
         // and official runtime's structural checks are applied at synthesis.
-        const auto imported = library.import_native_profile(request.source,request.display_name);
-        result.library_id = imported.voice.library_id;
+        if (request.kind==Operation::replace_native) {
+            SapiVoiceManager existing(library,{},registry,policy);
+            (void)existing.removal_registration_identity(request.target_id); // validate ownership; never remove the token
+            const auto replaced=library.replace_native_profile(request.source,{request.target_id,request.display_name,request.expected_hash,request.expected_source_hash});
+            result.library_id=replaced.library_id;
+        } else {
+            result.library_id=library.import_native_profile(request.source,request.display_name).voice.library_id;
+        }
         result.outcome = Outcome::partial;
         SapiVoiceManager manager(std::move(library),resolve(),std::move(registry),policy);
         (void)manager.install(result.library_id);

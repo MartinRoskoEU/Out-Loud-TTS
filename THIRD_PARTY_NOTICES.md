@@ -1,6 +1,6 @@
 # Out Loud third-party notices
 
-Out Loud 0.4.2 original code is licensed under the [MIT license](LICENSE).
+Out Loud 0.4.3 original code is licensed under the [MIT license](LICENSE).
 Copyright (c) 2026 Nendis. Third-party software and model assets retain their own
 licenses; Out Loud's MIT license does not replace those terms.
 

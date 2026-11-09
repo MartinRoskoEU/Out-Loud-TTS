@@ -15,6 +15,8 @@ retain typed snapshots, strict token schemas, ownership/CLSID checks,
 transactional compare/exchange and rollback. Foreign, malformed or unsupported
 legacy token shapes are refused rather than adopted or automatically removed.
 Removal retains the token fingerprint and coordinated library recovery behavior.
+Confirmed native profile replacement keeps the existing library ID, profile path
+and token key/name; it does not remove and recreate the voice registration.
 No source build changes Windows registrations or installed profiles.
 
 The existing `outloud-sapi-voices` commands remain `list`, `inspect`, `reconcile`,
