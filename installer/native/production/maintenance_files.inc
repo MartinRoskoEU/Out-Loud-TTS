@@ -1,10 +1,13 @@
 // Included in the existing installer helper, reusing pins, hashes and ACL checks.
 #include "maintenance_codec.hpp"
-MaintenanceStamp maintenance_file_stamp(HANDLE file){
+MaintenanceStamp maintenance_file_identity(HANDLE file){
     FILE_ID_INFO id{};LARGE_INTEGER size{};BY_HANDLE_FILE_INFORMATION info{};
     signing_require(GetFileInformationByHandleEx(file,FileIdInfo,&id,sizeof(id)) && GetFileSizeEx(file,&size) && size.QuadPart>=0 &&
         GetFileInformationByHandle(file,&info) && info.nNumberOfLinks==1 && !(info.dwFileAttributes&(FILE_ATTRIBUTE_REPARSE_POINT|FILE_ATTRIBUTE_DIRECTORY)),"maintenance_file_identity_invalid");
-    return {file_hash(file),hex(reinterpret_cast<const BYTE*>(&id.VolumeSerialNumber),8)+hex(id.FileId.Identifier,16),static_cast<uint64_t>(size.QuadPart)};
+    return {L"",hex(reinterpret_cast<const BYTE*>(&id.VolumeSerialNumber),8)+hex(id.FileId.Identifier,16),static_cast<uint64_t>(size.QuadPart)};
+}
+MaintenanceStamp maintenance_file_stamp(HANDLE file){
+    auto stamp=maintenance_file_identity(file);stamp.hash=file_hash(file);return stamp;
 }
 inline constexpr auto maintenance_directory_acl=L"O:BAG:BAD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;GRGX;;;BU)";
 void maintenance_readable_acl(PACL current,Local& updated){
@@ -45,6 +48,7 @@ struct MaintenanceFiles {
     std::function<void(const fs::path&,bool)> directory;
     struct Pinned {std::unique_ptr<Handle> handle;MaintenanceStamp stamp;};
     std::vector<Pinned> pins;Handle epoch;unsigned sequence{};bool protected_state=true;
+    std::map<fs::path,Pinned> baseline_pins;
     explicit MaintenanceFiles(const fs::path& r):root(installation_path(r)),security([](const fs::path& p){require_admin_protected(p);}),directory(maintenance_directory){}
     fs::path path(const std::wstring& relative)const{
         signing_require(!relative.empty() && relative.find_first_of(L"\\:\r\n\"")==std::wstring::npos && relative.front()!=L'/' &&
@@ -67,7 +71,19 @@ struct MaintenanceFiles {
         BY_HANDLE_FILE_INFORMATION attributes_info{};signing_require(GetFileInformationByHandle(attributes.value,&attributes_info) && attributes_info.nNumberOfLinks==1 &&
             !(attributes_info.dwFileAttributes&(FILE_ATTRIBUTE_REPARSE_POINT|FILE_ATTRIBUTE_DIRECTORY)),"maintenance_namespace_identity_failed");
         for(const auto& h:pins)if(h.stamp.identity==identity)return h.stamp;
+        if(const auto original=baseline_pins.find(p);original!=baseline_pins.end()){
+            signing_require(original->second.stamp.identity==identity,"maintenance_baseline_identity_raced");
+            return original->second.stamp;
+        }
         Handle file;pin(p,file);return maintenance_file_stamp(file.value);
+    }
+    MaintenanceFile bind_current(const std::wstring& relative){
+        const auto p=path(relative);
+        if(baseline_pins.contains(p))return stamp(p);
+        if(!fs::exists(p))return {};
+        security(p);auto h=std::make_unique<Handle>();pin(p,*h);
+        const auto verified=maintenance_file_stamp(h->value);
+        baseline_pins.emplace(p,Pinned{std::move(h),verified});return verified;
     }
     void acquire(const fs::path& p){
         if(!fs::exists(p))return;safe(p);security(p);
@@ -78,7 +94,7 @@ struct MaintenanceFiles {
     }
     HANDLE held(const MaintenanceStamp& expected){for(const auto& h:pins)if(h.stamp==expected)return h.handle->value;
         throw SigningError("maintenance_pin_identity_changed");}
-    void copy(const fs::path& source,const fs::path& target,const std::wstring& expected){
+    MaintenanceStamp copy(const fs::path& source,const fs::path& target,const std::wstring& expected){
         safe(source);safe(target);Handle input;pin(source,input);const auto before=maintenance_file_stamp(input.value);
         signing_require(before.hash==expected,"maintenance_candidate_hash_changed");parents(target,true);
         Handle output;output.value=CreateFileW(target.c_str(),GENERIC_WRITE,0,nullptr,CREATE_NEW,FILE_ATTRIBUTE_NORMAL,nullptr);
@@ -88,9 +104,15 @@ struct MaintenanceFiles {
         for(;;){signing_require(ReadFile(input.value,bytes.data(),static_cast<DWORD>(bytes.size()),&count,nullptr),"maintenance_copy_read_failed");if(!count)break;
             signing_require(WriteFile(output.value,bytes.data(),count,&written,nullptr) && written==count,"maintenance_copy_write_failed");}
         signing_require(count==0 && FlushFileBuffers(output.value),"maintenance_copy_flush_failed");
-        signing_require(maintenance_file_stamp(input.value)==before,"maintenance_candidate_identity_changed");
+        // pin() retains FILE_SHARE_READ only: no writer or replacement can
+        // coexist. Check the same handle's identity/size without rereading its
+        // bytes; independently hash the flushed destination below.
+        const auto after=maintenance_file_identity(input.value);
+        signing_require(after.identity==before.identity && after.size==before.size,"maintenance_candidate_identity_changed");
         CloseHandle(output.value);output.value=INVALID_HANDLE_VALUE;
-        signing_require(stamp(target)->hash==expected,"maintenance_copy_hash_invalid");
+        const auto copied=stamp(target);
+        signing_require(copied && copied->hash==expected && copied->size==before.size,"maintenance_copy_hash_invalid");
+        return *copied;
     }
     void rename(HANDLE h,const fs::path& target){
         safe(target);parents(target,target.native().find(vault.native())==0);
@@ -233,8 +255,12 @@ struct MaintenanceFiles {
     MaintenanceFile backup(const std::wstring& p){return stamp(vault/L"backup"/p);}
     MaintenanceFile original(const std::wstring& p){return stamp(vault/L"original"/p);}
     void backup_all(MaintenanceJournal& j){for(auto& c:j.changes){if(c.after)destination_security(c);
-        if(c.before){copy(path(c.path),vault/L"backup"/c.path,c.before->hash);c.backup=backup(c.path);}}}
+        if(c.before)c.backup=copy(path(c.path),vault/L"backup"/c.path,c.before->hash);}}
     void lock_files(const MaintenanceJournal& j){
+        // Upgrade the read-only snapshot to publication handles. The caller
+        // checks all exact before IDs again before any publication; a change
+        // during this transition is refused, including identical replacements.
+        baseline_pins.clear();
         for(const auto& c:j.changes){acquire(path(c.path));if(c.after)acquire(vault/L"new"/c.path);
             acquire(vault/L"original"/c.path);acquire(vault/L"backup"/c.path);}
     }
@@ -250,7 +276,7 @@ struct MaintenanceFiles {
         if(c.before){signing_require(original(c.path)==c.before,"maintenance_original_identity_changed");acquire(vault/L"original"/c.path);rename(held(*c.before),path(c.path));}
         signing_require(current(c.path)==c.before,"maintenance_restore_verification_failed");
     }
-    void release(){pins.clear();}
+    void release(){pins.clear();baseline_pins.clear();}
     void retire(const MaintenanceJournal& j){
         signing_require(j.phase==MaintenancePhase::committed || j.phase==MaintenancePhase::rolled_back,"maintenance_not_terminal");
         release();const auto pointer=root/L"configuration/maintenance.pending";

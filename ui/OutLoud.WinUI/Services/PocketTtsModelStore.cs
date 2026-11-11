@@ -64,6 +64,11 @@ internal static class PocketTtsModelStore
     {
         if (sharedData) MachineDataStorage.ValidatePath(path);
         else if (nativeOperation) PocketTtsNativeOperation.ValidatePath(path); else ValidatePath(path);
+        ValidateRegularFile(path, handle);
+    }
+
+    internal static void ValidateRegularFile(string path, SafeFileHandle handle)
+    {
         if (!GetFileInformationByHandle(handle, out var information))
         { throw new IOException("Private model file identity could not be inspected.", new Win32Exception(Marshal.GetLastWin32Error())); }
         if (information.NumberOfLinks != 1 || (information.Attributes & (uint)(FileAttributes.ReparsePoint | FileAttributes.Directory)) != 0)
@@ -75,6 +80,36 @@ internal static class PocketTtsModelStore
         if (actual.StartsWith(@"\\?\", StringComparison.Ordinal)) { actual = actual[4..]; }
         if (!string.Equals(actual, Path.GetFullPath(path), StringComparison.OrdinalIgnoreCase))
         { throw new InvalidDataException("A private model path resolves to a different location."); }
+    }
+
+    // Hold every ancestor against replacement while publishing a missing runtime.
+    internal static IDisposable LockParentDirectories(string path)
+    {
+        var guard = new ParentDirectoryGuard();
+        try
+        {
+            var directories = new Stack<string>();
+            for (string? current = Path.GetDirectoryName(Path.GetFullPath(path)); current is not null; current = Path.GetDirectoryName(current))
+                directories.Push(current);
+            foreach (string directory in directories)
+            {
+                // FILE_LIST_DIRECTORY is required for Windows to enforce delete-sharing;
+                // attribute-only handles do not prevent directory rename.
+                var handle = CreateFile(directory, 0x20081, 3, IntPtr.Zero, 3, 0x02200000, IntPtr.Zero);
+                guard.Handles.Add(handle);
+                if (handle.IsInvalid || !GetFileInformationByHandle(handle, out var info) ||
+                    (info.Attributes & (uint)FileAttributes.ReparsePoint) != 0 || (info.Attributes & (uint)FileAttributes.Directory) == 0)
+                    throw new IOException("Runtime parent directories could not be safely locked. Links are not supported.");
+            }
+            return guard;
+        }
+        catch { guard.Dispose(); throw; }
+    }
+
+    private sealed class ParentDirectoryGuard : IDisposable
+    {
+        internal List<SafeFileHandle> Handles { get; } = [];
+        public void Dispose() { foreach (var handle in Handles) handle.Dispose(); }
     }
 
     // Readers may coexist. Publication/registration writers wait asynchronously for readers, including exports.

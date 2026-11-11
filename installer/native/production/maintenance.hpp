@@ -7,9 +7,17 @@
 #include <string_view>
 #include <exception>
 #include <array>
+#include <functional>
 namespace outloud::installer {
 // A03.12 shared lifecycle. Standalone signing/registration paths remain disabled.
 inline constexpr bool maintenance_lifecycle_ready=true;
+inline std::function<void(const char*,uint64_t)> maintenance_timing_sink;
+struct MaintenanceTimer {
+    const char* phase;ULONGLONG started=GetTickCount64();
+    explicit MaintenanceTimer(const char* name):phase(name){}
+    ~MaintenanceTimer(){if(maintenance_timing_sink)try{maintenance_timing_sink(phase,GetTickCount64()-started);}catch(...){} }
+};
+template<class F> decltype(auto) maintenance_measure(const char* phase,F&& action){MaintenanceTimer timer(phase);return action();}
 enum class MaintenanceOperation { fresh,release,repair,development };
 enum class MaintenanceComponents { engine,voice_manager,both,package };
 enum class MaintenanceHost { inno,developer };
@@ -166,11 +174,11 @@ struct MaintenanceInterrupted {};
 enum class MaintenanceOutcome { committed,awaiting_host,rolled_back };
 // Recovery reads actual identities, never trusts a phase counter as proof of work.
 template<class Operations> MaintenanceOutcome recover_maintenance(Operations& op,MaintenanceJournal& j,bool confirm_host=false){
-    op.authenticate_recovery(j);validate_maintenance(j,op.package());
+    maintenance_measure("authenticate_recovery",[&]{op.authenticate_recovery(j);});validate_maintenance(j,op.package());
     if(j.phase==MaintenancePhase::committed){op.verify_host(j);op.verify_committed(j);return MaintenanceOutcome::committed;}
     if(j.phase==MaintenancePhase::rolled_back){op.verify_original(j);return MaintenanceOutcome::rolled_back;}
     if(confirm_host && j.phase==MaintenancePhase::awaiting_host){
-        op.verify_host(j);op.verify_committed(j);j.phase=MaintenancePhase::committed;op.save(j);return MaintenanceOutcome::committed;
+        op.verify_host(j);maintenance_measure("final_verify",[&]{op.verify_committed(j);});j.phase=MaintenancePhase::committed;op.save(j);return MaintenanceOutcome::committed;
     }
     // Check EVERY file, metadata and registry before the first restore. A foreign
     // edit even in the last row must not trigger an earlier partial rollback.
@@ -202,21 +210,26 @@ template<class Operations> void check_development_maintenance(Operations& op){
 }
 template<class Operations> MaintenanceOutcome maintain_installation(Operations& op){
     // No public mutation before all current ownership/files/candidates are verified.
-    auto j=op.preflight();validate_maintenance(j,op.package());
+    auto j=maintenance_measure("preflight",[&]{return op.preflight();});validate_maintenance(j,op.package());
     std::vector<std::wstring> incoming;for(const auto& c:j.changes)if(!c.input_hash.empty())incoming.push_back(c.path);
     std::sort(incoming.begin(),incoming.end());
     signing_require(incoming==maintenance_selection(j.components,op.package()),"maintenance_incoming_package_invalid");
+    op.check_cancel(false);
     try{
-        op.begin(j);
-        op.stage(j);j.phase=MaintenancePhase::signing;op.save(j);op.sign_staged(j);
-        op.prepare_metadata(j);op.backup_all(j);op.lock_resources(j);op.revalidate(j);
+        maintenance_measure("begin",[&]{op.begin(j);});
+        maintenance_measure("stage",[&]{op.stage(j);});op.check_cancel(true);j.phase=MaintenancePhase::signing;op.save(j);
+        maintenance_measure("sign",[&]{op.sign_staged(j);});
+        maintenance_measure("prepare_metadata",[&]{op.prepare_metadata(j);});
+        maintenance_measure("backup",[&]{op.backup_all(j);});
+        maintenance_measure("lock_resources",[&]{op.lock_resources(j);});
+        maintenance_measure("revalidate",[&]{op.revalidate(j);});
         j.phase=MaintenancePhase::ready;validate_maintenance(j,op.package());op.save(j);
         j.phase=MaintenancePhase::publishing;op.save(j);
-        for(const auto& c:j.changes)if(std::find(std::begin(maintenance_metadata),std::end(maintenance_metadata),c.path)==std::end(maintenance_metadata))op.publish(c);
+        maintenance_measure("publish",[&]{for(const auto& c:j.changes)if(std::find(std::begin(maintenance_metadata),std::end(maintenance_metadata),c.path)==std::end(maintenance_metadata))op.publish(c);});
         j.phase=MaintenancePhase::registration;op.save(j);op.publish_registration(j);
         j.phase=MaintenancePhase::metadata;op.save(j);
         for(const auto& c:j.changes)if(std::find(std::begin(maintenance_metadata),std::end(maintenance_metadata),c.path)!=std::end(maintenance_metadata))op.publish(c);
-        j.phase=MaintenancePhase::verifying;op.save(j);op.verify_committed(j);
+        j.phase=MaintenancePhase::verifying;op.save(j);maintenance_measure("verify_committed",[&]{op.verify_committed(j);});
         if(j.host==MaintenanceHost::inno || maintenance_development_upgrade(j)){
             j.phase=MaintenancePhase::awaiting_host;op.save(j);return MaintenanceOutcome::awaiting_host;}
         op.verify_host(j);j.phase=MaintenancePhase::committed;op.save(j);return MaintenanceOutcome::committed;

@@ -4,6 +4,8 @@ var
   UninstallReportSerial: Integer;
   UninstallNativeComplete: Boolean;
 
+#include "responsive-uninstall.iss"
+
 { Inno handles post-uninstall exceptions and can otherwise show success/exit 0.
   Exit only this uninstaller after reporting a finalization failure. Protected
   recovery data and its private helper copy remain; no client is terminated. }
@@ -105,7 +107,7 @@ var
   PreviousStyle: TNewProgressBarStyle;
   PreviousPosition: Longint;
   ShowProgress, Launched: Boolean;
-  Output: TExecOutput;
+  Output: TArrayOfString;
 begin
   Result := False;
   UninstallReportSerial := UninstallReportSerial + 1;
@@ -132,15 +134,16 @@ begin
     if Command = '--uninstall' then Parameters := Parameters + ' --confirmed-complete';
     Log('Out Loud native uninstall: command=' + Command + '; helper=' + UninstallHelper + '; report=' + UninstallReport);
     ExitCode := -1;
-    Launched := ExecAndCaptureOutput(UninstallHelper, Parameters + ' "' + UninstallReport + '"',
-      ExpandConstant('{tmp}'), SW_HIDE, ewWaitUntilTerminated, ExitCode, Output);
+    if FileExists(UninstallReport + '.output.log') then RaiseException('Uninstall output record already exists.');
+    Launched := ExecUninstallResponsive(UninstallHelper, Parameters + ' "' + UninstallReport + '"',
+      ExpandConstant('{tmp}'), ExitCode);
     Log('Out Loud native uninstall: launched=' + IntToStr(Ord(Launched)) + '; exit_code=' + IntToStr(ExitCode));
-    LogInspectionOutput('uninstall stdout', Output.StdOut);
-    LogInspectionOutput('uninstall stderr', Output.StdErr);
+    if LoadStringsFromFile(UninstallReport + '.output.log', Output) then
+      LogInspectionOutput('uninstall output', Output)
+    else if Launched and (ExitCode = 0) then
+      RaiseException('The cleanup helper output could not be read. Keep the report for checked recovery.');
     if not Launched then
       RaiseException('The Out Loud cleanup helper could not start. Windows error ' + IntToStr(ExitCode) + ': ' + SysErrorMessage(ExitCode));
-    if Output.Error then
-      RaiseException('The Out Loud cleanup helper output could not be completely captured.');
     if ExitCode <> 0 then
       RaiseException('Out Loud removal stopped: ' + GetIniString('results', 'reason', 'native cleanup refused or failed', UninstallReport));
     if (GetIniString('results', 'schema', '', UninstallReport) <> '1') or
@@ -282,8 +285,13 @@ begin
       ShowOutLoudDiagnostic('Out Loud uninstall', ErrorText, OutLoudDiagnosticReport); Abort;
     end;
     UninstallNativeComplete := True;
+    UninstallCompletionForm.Position := poDesigned;
+    UninstallCompletionForm.Left := UninstallProgressForm.Left;
+    UninstallCompletionForm.Top := UninstallProgressForm.Top;
   end;
   if (CurUninstallStep = usPostUninstall) and UninstallNativeComplete then begin
+    UninstallProgressAvailable := False;
+    UninstallCompletionForm.Show;
     try
       if not RunOutLoudUninstall('--uninstall-finalize', 'complete', ErrorText) then begin
         { Inno has already processed its host. Preserve recovery state and a durable report. }
@@ -295,10 +303,12 @@ begin
         RaiseException('Native components were removed, but the installation directory remains: ' + UninstallRoot + #13#10 +
           'It may contain a remaining Inno host file or unrelated content. It was preserved; inspect it before deletion.');
       end;
+      UninstallCompletionForm.Hide;
     except
       { Inno catches post-uninstall script exceptions and can still show success.
         Include unexpected script failures in the existing nonzero-exit path. }
       ErrorText := GetExceptionMessage;
+      UninstallCompletionForm.Hide;
       Log('Out Loud uninstall finalization failed: ' + ErrorText);
       if Pos(ExpandConstant('{log}'), ErrorText) = 0 then
         ErrorText := ErrorText + #13#10#13#10 + 'Uninstall log: ' + ExpandConstant('{log}');

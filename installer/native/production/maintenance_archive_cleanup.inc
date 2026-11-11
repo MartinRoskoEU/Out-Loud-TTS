@@ -20,6 +20,7 @@ struct WindowsArchiveCleanup {
         return true;
     }
     void collect(){
+        MaintenanceTimer timer("archive_audit");
         audit.plan.owner=owner;audit.archives();
         // Archive audit also records current payload parent directories. They
         // are not part of archive retirement and must never be deleted here.
@@ -58,6 +59,7 @@ struct WindowsArchiveCleanup {
         signing_require(r.cursor==r.text.size(),"archive_cleanup_plan_trailing_data");
     }
     void pin_and_check(){
+        MaintenanceTimer timer("archive_lock_verify");
         // The caller holds the existing maintenance epoch throughout collection,
         // publication and retirement. Pin every surviving resource before deleting.
         signing_require(maintenance_directory_identity(storage().root)==root_identity,"archive_cleanup_root_changed");
@@ -82,6 +84,7 @@ struct WindowsArchiveCleanup {
         storage().acquire(receipt);
     }
     void remove(){
+        MaintenanceTimer timer("archive_delete");
         for(const auto& f:audit.plan.files)if(fs::exists(f.path)){
             before_delete(f.path);signing_require(storage().stamp(f.path)==MaintenanceFile(f.stamp),"archive_cleanup_file_changed");
             uninstall_delete_held(storage().held(f.stamp));

@@ -31,14 +31,25 @@ MaintenanceComponents maintenance_components(const std::wstring& s){
 }
 std::wstring maintenance_version(){std::wstring v;for(const char c:std::string(OUTLOUD_MAINTENANCE_VERSION))v+=static_cast<wchar_t>(c);return v;}
 std::wstring maintenance_random(){std::array<BYTE,16> bytes{};signing_require(BCryptGenRandom(nullptr,bytes.data(),static_cast<ULONG>(bytes.size()),BCRYPT_USE_SYSTEM_PREFERRED_RNG)>=0,"maintenance_random_failed");return hex(bytes.data(),bytes.size());}
-void maintenance_active_files(const std::vector<fs::path>& paths){
+void maintenance_active_files(const std::vector<fs::path>& paths,bool own_snapshot_leases=false){
+    // Baseline and changed-file lists overlap during full-package maintenance.
+    // Register each exact path once without changing which resources are checked.
+    const std::set<fs::path> unique_paths(paths.begin(),paths.end());
     DWORD session{};wchar_t key[CCH_RM_SESSION_KEY+1]{};signing_require(RmStartSession(&session,0,key)==ERROR_SUCCESS,"maintenance_process_inventory_unavailable");
-    try{std::vector<LPCWSTR> names;for(const auto& p:paths)if(fs::exists(p))names.push_back(p.c_str());
+    try{std::vector<LPCWSTR> names;for(const auto& p:unique_paths)if(fs::exists(p))names.push_back(p.c_str());
         if(!names.empty())signing_require(RmRegisterResources(session,static_cast<UINT>(names.size()),names.data(),0,nullptr,0,nullptr)==ERROR_SUCCESS,"maintenance_process_inventory_unavailable");
         UINT required{},count{};DWORD reboot{};auto status=RmGetList(session,&required,&count,nullptr,&reboot);
         if(status==ERROR_MORE_DATA){signing_require(required<=4096,"maintenance_process_inventory_unavailable");std::vector<RM_PROCESS_INFO> users(required);count=required;
             status=RmGetList(session,&required,&count,users.data(),&reboot);signing_require(status==ERROR_SUCCESS,"maintenance_process_inventory_changed");
-            for(UINT i=0;i<count;++i)std::wcout<<L"in_use_pid="<<users[i].Process.dwProcessId<<L",application="<<users[i].strAppName<<L"\n";}
+            UINT external{};
+            for(UINT i=0;i<count;++i){
+                if(own_snapshot_leases && users[i].Process.dwProcessId==GetCurrentProcessId())continue;
+                ++external;std::wcout<<L"in_use_pid="<<users[i].Process.dwProcessId<<L",application="<<users[i].strAppName<<L"\n";
+            }
+            count=external;}
+        if(own_snapshot_leases)reboot&=~static_cast<DWORD>(RmRebootReasonDetectedSelf);
+        if(status!=ERROR_SUCCESS || count!=0 || reboot!=0)
+            std::wcout<<L"restart_manager_status="<<status<<L",external_count="<<count<<L",reboot_flags="<<reboot<<L"\n";
         signing_require(status==ERROR_SUCCESS && count==0 && reboot==0,"maintenance_resources_active_close_clients");
     }catch(...){RmEndSession(session);throw;}RmEndSession(session);
 }
@@ -104,13 +115,22 @@ MaintenanceInventory maintenance_inventory_decode(std::wstring text){
     maintenance_payload_paths(maintenance_inventory_paths(i));
     signing_require(r.cursor==r.text.size(),"maintenance_inventory_trailing_data");return i;
 }
+// The protected inventory authenticates content; an old filesystem ID is not
+// required after legitimate restoration. Complete package operations capture
+// current IDs under read leases, then enforce exact journal IDs throughout the
+// transaction. Partial component operations retain their original ID contract.
+bool maintenance_baseline_matches(const std::wstring&,const MaintenanceStamp& expected,
+        const MaintenanceFile& actual,MaintenanceComponents components){
+    if(actual==MaintenanceFile(expected))return true;
+    return components==MaintenanceComponents::package && actual && actual->hash==expected.hash && actual->size==expected.size;
+}
 // Both preflight and recovery prove every before-stamp against the protected
 // old receipt. The incoming manifest cannot adopt a colliding unowned file.
 void maintenance_validate_baseline(const MaintenanceInventory& baseline,const MaintenanceJournal& j){
     for(const auto& c:j.changes)if(!maintenance_is_metadata(c.path)){
         const auto old=baseline.files.find(c.path);
         if(old==baseline.files.end())signing_require(!c.before && !c.input_hash.empty(),"maintenance_unowned_file_collision");
-        else signing_require(c.before==MaintenanceFile(old->second) || (j.operation==MaintenanceOperation::repair && !c.before),"maintenance_baseline_changed");
+        else signing_require(maintenance_baseline_matches(c.path,old->second,c.before,j.components) || (j.operation==MaintenanceOperation::repair && !c.before),"maintenance_baseline_changed");
         if(c.input_hash.empty())signing_require(old!=baseline.files.end(),"maintenance_unowned_removal");
     }
     if(j.components==MaintenanceComponents::package)for(const auto& [p,f]:baseline.files){static_cast<void>(f);
@@ -120,7 +140,7 @@ template<class Current>
 std::vector<MaintenanceChange> maintenance_inventory_changes(const MaintenanceInventory& baseline,
         const std::map<std::wstring,std::wstring>& incoming,MaintenanceOperation operation,MaintenanceComponents components,Current&& current){
     for(const auto& [p,f]:baseline.files){const auto actual=current(p);
-        signing_require(actual==MaintenanceFile(f) || (operation==MaintenanceOperation::repair && !actual),"maintenance_baseline_changed");}
+        signing_require(maintenance_baseline_matches(p,f,actual,components) || (operation==MaintenanceOperation::repair && !actual),"maintenance_baseline_changed");}
     std::vector<MaintenanceChange> changes;
     for(const auto& [p,hash]:incoming){maintenance_payload_path(p);signing_require(hexadecimal(hash,64),"maintenance_input_hash_invalid");
         changes.push_back({p,hash,current(p),{}, {}});}
@@ -152,10 +172,22 @@ struct WindowsMaintenance {
     std::wstring certificate_source;DWORD certificate_source_error{};
     bool archive_cleanup_pending{},archive_cleanup_completed{};
     MaintenanceFiles files;fs::path inputs,request;MaintenanceOperation operation{};MaintenanceComponents components{};
+    fs::path cancellation_report;
     MaintenanceIni manifest;MaintenanceInventory baseline;std::unique_ptr<WindowsSigning> owner;MaintenanceJournal active;
     WindowsMaintenance(const fs::path& root,const fs::path& source,const fs::path& input,MaintenanceOperation o,MaintenanceComponents c):files(root),inputs(installation_path(source)),request(input),operation(o),components(c){}
     explicit WindowsMaintenance(const fs::path& root):files(root){}
     std::vector<std::wstring> package()const{return {std::begin(registration_payload_paths),std::end(registration_payload_paths)};}
+    void check_cancel(bool critical){
+        if(cancellation_report.empty())return;
+        // These sidecars only request a safe stop / describe UI state. They
+        // never grant file ownership, publication or recovery authority.
+        if(critical)write_new(cancellation_report.native()+L".critical",L"critical\n");
+        const auto request_path=cancellation_report.native()+L".cancel";
+        const auto attributes=GetFileAttributesW(request_path.c_str());
+        if(attributes!=INVALID_FILE_ATTRIBUTES)throw SigningError("maintenance_cancelled");
+        const auto error=GetLastError();
+        signing_require(error==ERROR_FILE_NOT_FOUND || error==ERROR_PATH_NOT_FOUND,"maintenance_cancel_status_unavailable");
+    }
     void authority(){signing_require(IsUserAnAdmin(),"elevated_machine_authority_required");require_installation_location(files.root);
         OSVERSIONINFOEXW v{};v.dwOSVersionInfoSize=sizeof(v);using Rtl=LONG(WINAPI*)(OSVERSIONINFOEXW*);
         const auto rtl=reinterpret_cast<Rtl>(GetProcAddress(GetModuleHandleW(L"ntdll.dll"),"RtlGetVersion"));SYSTEM_INFO system{};GetNativeSystemInfo(&system);
@@ -238,7 +270,9 @@ struct WindowsMaintenance {
             signing_require((operation==MaintenanceOperation::release && maintenance_version_parts(j.old_version)<=maintenance_version_parts(j.new_version)) ||
                 (upgrade && head.at(L"upgrade_from")==j.old_version && maintenance_version_parts(j.old_version)<maintenance_version_parts(j.new_version)) ||
                 (!upgrade && j.old_version==j.new_version),"maintenance_version_change_invalid");
-            for(const auto& [p,f]:baseline.files){const auto actual=files.current(p);signing_require(actual==MaintenanceFile(f) || (operation==MaintenanceOperation::repair && !actual),"maintenance_baseline_changed");}
+            // Retain each verified original now. Inventory planning reuses this
+            // read lease; publication still reacquires and checks exact IDs.
+            for(const auto& [p,f]:baseline.files){const auto actual=files.bind_current(p);signing_require(maintenance_baseline_matches(p,f,actual,components) || (operation==MaintenanceOperation::repair && !actual),"maintenance_baseline_changed");}
             const RegistrationIdentity identity{j.installation_id,j.ownership.certificate_sha256,(files.root/signing_target).native()};
             signing_require(registry_capture()==RegistrationSnapshot(desired_registration(identity)),"maintenance_com_baseline_changed");
             const auto engine=files.current(signing_target);
@@ -252,9 +286,10 @@ struct WindowsMaintenance {
         }
         std::map<std::wstring,std::wstring> incoming;
         for(const auto& [section,values]:manifest)if(section.starts_with(L"file"))incoming.emplace(values.at(L"path"),values.at(L"sha256"));
-        j.changes=maintenance_inventory_changes(baseline,incoming,operation,components,[&](const auto& p){return files.current(p);});
+        j.changes=maintenance_measure("bind_baseline",[&]{return maintenance_inventory_changes(baseline,incoming,operation,components,[&](const auto& p){return files.bind_current(p);});});
         std::vector<std::wstring> changed_paths;for(const auto& c:j.changes)changed_paths.push_back(c.path);maintenance_path_budget(files.root,changed_paths);
-        std::vector<fs::path> paths;for(const auto& c:j.changes)paths.push_back(files.path(c.path));maintenance_active_files(paths);
+        std::vector<fs::path> paths;for(const auto& c:j.changes)paths.push_back(files.path(c.path));
+        maintenance_measure("active_clients_preflight",[&]{maintenance_active_files(paths,!files.baseline_pins.empty());});
         ULARGE_INTEGER free{},total{},available{};signing_require(GetDiskFreeSpaceExW(files.root.root_path().c_str(),&free,&total,&available),"maintenance_storage_unknown");
         uint64_t needed=16*1024*1024;for(const auto& c:j.changes){if(c.before)needed+=c.before->size*2;
             if(!c.input_hash.empty()){Handle h;pin(inputs/c.path,h);needed+=maintenance_file_stamp(h.value).size*2;}}
@@ -262,14 +297,12 @@ struct WindowsMaintenance {
     }
     void begin(const MaintenanceJournal& j){files.begin(j);}
     void save(const MaintenanceJournal& j){active=j;files.save(j);}
-    MaintenanceJournal load(){authority();require_admin_protected(files.root);active=files.load(package());return active;}
+    MaintenanceJournal load(){MaintenanceTimer timer("load_recovery");authority();require_admin_protected(files.root);active=files.load(package());return active;}
     void stage(MaintenanceJournal& j){
-        for(auto& c:j.changes)if(!c.input_hash.empty()){files.copy(inputs/c.path,files.vault/L"new"/c.path,c.input_hash);c.after=files.stamp(files.vault/L"new"/c.path);save(j);}
+        for(auto& c:j.changes)if(!c.input_hash.empty()){c.after=files.copy(inputs/c.path,files.vault/L"new"/c.path,c.input_hash);save(j);}
         const auto& bootstrap=manifest.at(L"bootstrap");signing_require(bootstrap.size()==2,"maintenance_bootstrap_invalid");
-        files.copy(inputs/L"bootstrap/OutLoudPrerequisites.exe",files.vault/L"bootstrap/OutLoudPrerequisites.exe",bootstrap.at(L"detector_sha256"));
-        j.bootstrap_detector=files.stamp(files.vault/L"bootstrap/OutLoudPrerequisites.exe");save(j);
-        files.copy(inputs/L"prerequisites.ini",files.vault/L"bootstrap/prerequisites.ini",bootstrap.at(L"requirements_sha256"));
-        j.bootstrap_requirements=files.stamp(files.vault/L"bootstrap/prerequisites.ini");save(j);
+        j.bootstrap_detector=files.copy(inputs/L"bootstrap/OutLoudPrerequisites.exe",files.vault/L"bootstrap/OutLoudPrerequisites.exe",bootstrap.at(L"detector_sha256"));save(j);
+        j.bootstrap_requirements=files.copy(inputs/L"prerequisites.ini",files.vault/L"bootstrap/prerequisites.ini",bootstrap.at(L"requirements_sha256"));save(j);
         const auto report=files.vault/L"bootstrap/results.ini";
         const auto config=components==MaintenanceComponents::engine?files.root/L"OutLoud.WinUI.runtimeconfig.json":files.vault/L"new/OutLoud.WinUI.runtimeconfig.json";
         for(const auto* name:{L"coreclr.dll",L"hostfxr.dll",L"Microsoft.UI.Xaml.dll",L"Microsoft.WindowsAppRuntime.dll"})
@@ -330,14 +363,14 @@ struct WindowsMaintenance {
     void backup_all(MaintenanceJournal& j){files.backup_all(j);save(j);}
     void lock_resources(const MaintenanceJournal& j){std::vector<fs::path> paths;
         for(const auto& [p,f]:baseline.files){static_cast<void>(f);paths.push_back(files.path(p));}for(const auto& c:j.changes)paths.push_back(files.path(c.path));
-        maintenance_active_files(paths);files.lock_files(j);for(const auto& [p,f]:baseline.files){static_cast<void>(f);files.acquire(files.path(p));}}
+        maintenance_active_files(paths,!files.baseline_pins.empty());files.lock_files(j);for(const auto& [p,f]:baseline.files){static_cast<void>(f);files.acquire(files.path(p));}}
     void revalidate(const MaintenanceJournal& j){
         require_voice_registration_preflight();
         maintenance_validate_library(files,j);
         if(maintenance_development_upgrade(j))signing_require(maintenance_host_snapshot()==j.host_before,"maintenance_host_raced");
         signing_require(encoded_tree(registry_capture())==j.registration_before,"maintenance_registration_raced");registry_overrides();
         for(const auto& c:j.changes)signing_require(files.current(c.path)==c.before && files.stamp(files.vault/L"new"/c.path)==c.after && (!c.before || files.backup(c.path)==c.backup),"maintenance_precommit_state_changed");
-        for(const auto& [p,f]:baseline.files)signing_require(files.current(p)==MaintenanceFile(f) ||
+        for(const auto& [p,f]:baseline.files)signing_require(maintenance_baseline_matches(p,f,files.current(p),j.components) ||
             (j.operation==MaintenanceOperation::repair && !files.current(p)),"maintenance_baseline_changed_before_commit");
     }
     MaintenanceFile current(const std::wstring& p){return files.current(p);}

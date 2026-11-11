@@ -1,6 +1,6 @@
 # Out Loud WinUI application
 
-OutLoud.WinUI is the Out Loud 0.4.3 desktop frontend: an unpackaged WinUI 3 /
+OutLoud.WinUI is the Out Loud 0.4.4 desktop frontend: an unpackaged WinUI 3 /
 .NET 10 application with Voice Library, Voice Tester and Settings navigation.
 It uses the application's Mica backdrop, theme resources and native controls.
 The custom XAML title bar is 40 DIP high, displays the application title without
@@ -39,8 +39,13 @@ Settings stores. Native error logs are separately bounded; see
 
 ## Runtime management
 
-Settings has one **Check for updates** button in its header for both runtime and
-model checks. It forces a fresh runtime check and the existing manual model check,
+Settings checks for published stable Out Loud releases automatically at startup.
+The Out Loud card shows the installed version, check result and **View release**
+link when a newer version is available. Checks use the public GitHub release API,
+have a bounded timeout, and never install application updates automatically.
+
+Settings has one **Check for updates** button in its header for application,
+runtime and model checks. It forces a fresh application/runtime check and the existing manual model check,
 which bypasses the model comparison cache. Each check keeps its own status;
 unavailable runtime metadata does not skip model checks. Concurrent checks or
 conflicting operations disable the shared action. **Update** appears in the runtime
@@ -49,6 +54,18 @@ installs an update, and runtime/model updates retain separate confirmations.
 The application includes its own verified baseline runtime;
 there is no runtime Install/Remove workflow. Runtime updates share the existing
 operation guards with model installation, verification, removal and selection.
+
+**Repair runtime** appears when the selected executable is missing. Confirming
+repair downloads that exact release from Kyutai, verifies the archive digest
+and the saved executable hash (the fixed pin for the baseline), and atomically
+publishes only the missing EXE. Existing files are never overwritten. The saved
+runtime identity, model selection, models and voices are preserved. Update
+receipts and the existing LICENSE must remain valid; missing directories or
+invalid metadata require installer repair. Repair uses the existing elevated
+helper, runtime lock and journaled staging cleanup. It never changes antivirus
+settings or retries automatically if security software blocks the file.
+Atomic repair publication requires staging and the runtime directory on the same
+volume; cross-volume installation layouts fail safely and require installer repair.
 
 The baseline is `runtime/pocket-tts/pocket-tts.exe` beside the application, from
 official release `v4.0.1` (CLI diagnostic version `pocket-tts 3.3.0`). Its
@@ -169,7 +186,7 @@ or synthesis-path scan is used. Complete uninstall follows the
 ## Voice Library
 
 The page shows managed machine-wide voices, library health and SAPI status.
-**Detail**, **Refresh**, **Import**, **Export** and **Remove** use the existing
+**Detail**, **Refresh**, **Import**, **Bulk import**, **Export** and **Remove** use the existing
 native bridge/helper infrastructure. Details show status, metadata and selectable
 technical information. Missing/empty libraries use a plain-language empty state;
 other failures retain operation diagnostics.
@@ -185,6 +202,15 @@ whitespace. Importing a different profile with an existing name offers Replace
 voice, Change name or Cancel. Confirmed replacement preserves the existing name,
 library ID and Windows speech identity; active voices must be released first.
 Closing waits for an active helper/export operation and reconciliation.
+
+Bulk import selects multiple `.safetensors` files and confirms the batch once.
+Each default name is the unchanged filename without its extension. Files are
+validated and imported sequentially through the same helper; identical profiles
+are skipped, while name conflicts offer replacement, renaming or skipping.
+The existing notification panel reports imported/replaced, skipped, failed and
+unprocessed counts, with per-file diagnostic details. Unconfirmed/partial results
+or a failed refresh stop the remaining batch. Closing waits for the current
+operation and does not submit the remaining files.
 
 ## Voice Tester
 

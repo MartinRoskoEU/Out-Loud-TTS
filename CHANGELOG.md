@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.4.4
+
+- Add Bulk import with filename-based voice names, conflict handling and a
+  per-file report in the existing notification panel.
+- Check for new Out Loud releases at startup and through Settings, with a link
+  to the published release when a newer version is available.
+- Match the application update card to the runtime card's layout and status styles.
+- Add Repair runtime in Settings to download and verify the selected runtime
+  version when its executable is missing, preserving the saved model selection
+  without reinstalling Out Loud or changing antivirus settings.
+- Improve installation verification speed and accept identical restored files
+  while retaining integrity, ownership and recovery checks.
+- Keep installation and uninstall windows responsive, allow safe cancellation
+  during installation preparation and align installer footer buttons.
+
 ## 0.4.3
 
 - Distinguish identical voice profiles from name collisions during import;

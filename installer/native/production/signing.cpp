@@ -474,8 +474,18 @@ std::wstring maintenance_failed_fresh_identity(const fs::path& root,const std::v
 }
 #ifndef OUTLOUD_MAINTENANCE_CHECK
 int wmain(int argc,wchar_t** argv){
+    Handle timing;
     try {
         signing_require(argc>=2,"invalid_arguments");const std::wstring command=argv[1];
+        if((command==L"--maintain" && argc==9) ||
+            ((command==L"--maintenance-finalize" || command==L"--maintenance-reconcile") && argc==4)){
+            const auto path=std::wstring(argv[argc-1])+L".timing.log";
+            timing.value=CreateFileW(path.c_str(),GENERIC_WRITE,FILE_SHARE_READ,nullptr,CREATE_NEW,FILE_ATTRIBUTE_NORMAL,nullptr);
+            if(timing.value!=INVALID_HANDLE_VALUE)maintenance_timing_sink=[&](const char* phase,uint64_t ms){
+                const auto line=std::string(phase)+"_ms="+std::to_string(ms)+"\r\n";DWORD written{};
+                static_cast<void>(WriteFile(timing.value,line.data(),static_cast<DWORD>(line.size()),&written,nullptr));
+            };
+        }
         if(command==L"--uninstall-status"){
             signing_require(argc==3,"invalid_arguments");write_new(argv[2],L"[results]\nschema=1\nuninstall="+std::wstring((uninstall_lifecycle_ready && maintenance_lifecycle_ready)?L"enabled":L"blocked")+L"\n");return 0;
         }
@@ -540,6 +550,7 @@ int wmain(int argc,wchar_t** argv){
                     check_development_maintenance(op);
                     write_new(argv[8],L"[results]\nschema=1\nmaintenance=ready\n");return 0;
                 }
+                op.cancellation_report=argv[8];
                 const auto outcome=maintain_installation(op);op.finish(outcome);write_new(argv[8],maintenance_result(op,outcome));return 0;
             }
             signing_require(argc==4,"invalid_arguments");WindowsMaintenance op(argv[2]);auto j=op.load();

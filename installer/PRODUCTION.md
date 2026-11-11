@@ -1,5 +1,40 @@
 # WinUI production installer
 
+Complete package maintenance verifies existing payload content against the
+protected installation inventory: SHA-256, size, ownership, paths, regular-file
+identity and the existing signing/certificate requirements. Identical restored
+files may have new filesystem IDs. The verified files are retained under read
+leases while staging and backing up, and their current IDs are recorded in the
+transaction. Publication handles are acquired and those exact IDs are rechecked
+before the first replacement; any intervening change is refused. Recovery and
+rollback retain exact journal identity checks. Unknown files, changed content
+and partial component operations retain their existing refusal rules.
+
+The installer waits for native maintenance through its real process handle while
+servicing progress-page messages, so the wizard remains movable. A cooperative
+Cancel installation action is available during file preparation and native
+preflight/staging. Native checkpoints accept cancellation before beginning, or
+after staging through existing verified rollback. Before signing, the helper
+publishes its non-authoritative UI critical marker and performs the final cancel
+check. Signing, publication, host completion and cleanup cannot be interrupted
+through the UI. Cancellation never terminates the child process; setup always
+waits for it before releasing its temporary inputs. Cancellation/critical
+sidecars grant no ownership or recovery authority. A request that loses the last
+checkpoint race is reported after successful completion.
+
+Uninstall also waits on the actual helper process while processing window
+messages. It exposes no Cancel action. Helper stdout/stderr are captured in a
+new temporary output file and copied into the uninstall log after process exit.
+The existing helper hash/ownership checks and forward-only removal plan remain
+unchanged. Because Inno destroys its original progress form before native final
+verification, a separate completion progress form remains visible until that
+verification ends; no destroyed controls are accessed. The helper is always
+joined before temporary inputs or process handles are released.
+
+Native maintenance commands also write a sibling `.ini.timing.log` when a new
+diagnostic file can be created. It records phase durations in milliseconds and
+is diagnostic only; it never authorizes recovery or changes validation results.
+
 `inno/build-installer.ps1` builds the Rust-only Release components, publishes WinUI as a self-contained .NET 10/Windows App SDK x64 application, verifies the reviewed payload, and compiles one `OutLoud-Setup.exe`. It never installs, registers, provisions certificates, or signs on the build PC. Windows 11 native x64 is required.
 
 ```powershell

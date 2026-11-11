@@ -113,7 +113,7 @@ public sealed partial class VoiceLibraryView : UserControl
 
     private void RenderState()
     {
-        RefreshButton.IsEnabled = ImportButton.IsEnabled = !_busy && !_closing;
+        RefreshButton.IsEnabled = ImportButton.IsEnabled = ImportMultipleButton.IsEnabled = !_busy && !_closing;
         DetailButton.IsEnabled = !_busy && !_closing && SelectedVoice != null;
         RemoveButton.IsEnabled = !_busy && !_closing && SelectedVoice?.CanRemove == true;
         ExportButton.IsEnabled = !_busy && !_closing && SelectedVoice?.CanExport == true;
@@ -127,7 +127,8 @@ public sealed partial class VoiceLibraryView : UserControl
     private void SetBusyText(string text) { _busyText = text; RenderState(); }
     private void VoiceList_SelectionChanged(object sender, SelectionChangedEventArgs args) => RenderState();
     private async void Refresh_Click(object sender, RoutedEventArgs args) => await RunAsync(RefreshAsync);
-    private async void Import_Click(object sender, RoutedEventArgs args) => await RunAsync(ImportAsync);
+    private async void Import_Click(object sender, RoutedEventArgs args) => await RunAsync(() => ImportAsync(false));
+    private async void ImportMultiple_Click(object sender, RoutedEventArgs args) => await RunAsync(() => ImportAsync(true));
     private async void Export_Click(object sender, RoutedEventArgs args) => await RunAsync(ExportAsync);
     private async void Remove_Click(object sender, RoutedEventArgs args) => await RunAsync(RemoveAsync);
     private async void Detail_Click(object sender, RoutedEventArgs args) => await RunAsync(ShowDetailAsync);
@@ -305,67 +306,122 @@ public sealed partial class VoiceLibraryView : UserControl
         }
     }
 
-    private async Task ImportAsync()
+    private async Task ImportAsync(bool batch)
     {
         OperationPanel.Visibility = Visibility.Collapsed;
-        SetBusyText("Choose a voice file and confirm its name.");
+        SetBusyText("Choose one or more voice files.");
         try
         {
-            var picker = new FileOpenPicker(_window!.AppWindow.Id) { Title = "Select a voice file" };
+            var picker = new FileOpenPicker(_window!.AppWindow.Id) { Title = batch ? "Select voice files" : "Select a voice file" };
             picker.FileTypeFilter.Add(".safetensors");
-            var file = await picker.PickSingleFileAsync();
-            if (_closing) return;
-            if (file == null) { ShowResult(new(ImportPhase.Cancelled)); return; }
-            if (!IsNativeFile(file.Path)) throw new BackendException(new("frontend", "source_io", "Select a .safetensors voice file."));
-            var name = new TextBox { Header = "Voice name", Text = CultureInfo.CurrentCulture.TextInfo.ToTitleCase(
-                Path.GetFileNameWithoutExtension(file.Path).Replace('_', ' ').Replace('-', ' ')) };
-            var content = new StackPanel { Spacing = 16 };
-            content.Children.Add(Text(file.Path));
-            content.Children.Add(Text("Native Pocket voice (.safetensors)"));
-            content.Children.Add(name);
-            content.Children.Add(Text("The file will be validated and installed in the managed Voice Library."));
-            content.Children.Add(Text("Out Loud uses administrator permission to manage this voice in the library and Windows speech system for all users."));
-            var dialog = new ContentDialog { Title = "Import a voice", Content = content, PrimaryButtonText = "Import", CloseButtonText = "Cancel", DefaultButton = ContentDialogButton.Close };
-            void ValidateName() => dialog.IsPrimaryButtonEnabled = !string.IsNullOrWhiteSpace(name.Text) && !name.Text.Any(char.IsControl);
-            name.TextChanged += (_, _) => ValidateName();
-            dialog.Opened += (_, _) => { name.Focus(FocusState.Programmatic); name.SelectAll(); };
-            ValidateName();
-            VoiceImportResult result;
-            while (true)
+            if (!batch)
             {
-                if (await ShowDialogAsync(dialog) != ContentDialogResult.Primary || _closing) { ShowResult(new(ImportPhase.Cancelled)); return; }
-                result = await _importer.ImportAsync(new(file.Path, name.Text.Trim()), new ImportProgress(this, false));
-                if (result.Error?.Code != "duplicate_name" || _closing) break;
-                await ReadSnapshotAsync();
-                VoiceRecord? target = _refreshError == null && result.DuplicateIds is { Length: 1 } ids
-                    ? _snapshot.Voices.FirstOrDefault(voice => voice.LibraryId == ids[0] && voice.CanExport) : null;
-                string? sourceHash = null;
-                if (target != null)
-                {
-                    using var source = File.OpenRead(file.Path);
-                    sourceHash = Convert.ToHexString(await SHA256.HashDataAsync(source)).ToLowerInvariant();
-                }
-                var collision = new ContentDialog {
-                    Title = "Voice name already exists",
-                    Content = Text(target != null
-                        ? $"A voice named \"{target.DisplayName}\" already exists, but this is a different voice profile. Replace its profile? Its name and Windows speech identity will be kept."
-                        : "This name is already used. The existing voice could not be uniquely verified for replacement. Choose another name or cancel."),
-                    PrimaryButtonText = "Replace voice", IsPrimaryButtonEnabled = target != null,
-                    SecondaryButtonText = "Change name", CloseButtonText = "Cancel", DefaultButton = ContentDialogButton.Close,
-                };
-                var choice = await ShowDialogAsync(collision);
-                if (choice == ContentDialogResult.Secondary && !_closing) continue;
-                if (choice != ContentDialogResult.Primary || _closing || target == null) { ShowResult(new(ImportPhase.Cancelled)); return; }
-                result = await _importer.ImportAsync(new(file.Path, target.DisplayName!, target.LibraryId, target.ContentSha256,
-                    VoiceOperation.ReplaceNative, ExpectedSourceHash: sourceHash), new ImportProgress(this, false));
-                break;
+                var file = await picker.PickSingleFileAsync();
+                if (_closing) return;
+                ShowResult(file is null ? new(ImportPhase.Cancelled) : await ImportFileAsync(file.Path, false));
+                return;
             }
-            if (result.Phase is ImportPhase.Succeeded or ImportPhase.Partial || result.Operation == VoiceOperation.ReplaceNative ||
-                result.Error?.Code is "duplicate_content" or "replacement_conflict" or "replacement_pending" or "outcome_unknown")
-                await ReadSnapshotAsync(result.LibraryId);
-            ShowResult(result);
+            var files = await picker.PickMultipleFilesAsync();
+            if (_closing) return;
+            if (files is null || files.Count == 0) { ShowResult(new(ImportPhase.Cancelled)); return; }
+            var preview = new StackPanel { Spacing = 12 };
+            preview.Children.Add(Text($"Import {files.Count} voices for all users? Names will be taken from the filenames. Identical profiles will be skipped. Name conflicts will ask for replacement, a new name or skipping the voice."));
+            preview.Children.Add(Text(string.Join("\n", files.Select(file => Path.GetFileName(file.Path)))));
+            if (await ShowDialogAsync(new ContentDialog { Title = "Import voices", Content = new ScrollViewer {
+                Content = preview, MaxHeight = 400, VerticalScrollBarVisibility = ScrollBarVisibility.Auto },
+                PrimaryButtonText = "Import", CloseButtonText = "Cancel", DefaultButton = ContentDialogButton.Close }) != ContentDialogResult.Primary || _closing)
+            { ShowResult(new(ImportPhase.Cancelled)); return; }
+            var details = new List<string>();
+            int imported = 0, skipped = 0, failed = 0;
+            foreach (var file in files)
+            {
+                if (_closing) break;
+                SetBusyText($"Importing voice {details.Count + 1} of {files.Count}: {Path.GetFileName(file.Path)}");
+                VoiceImportResult result;
+                try { result = await ImportFileAsync(file.Path, true); }
+                catch (Exception failure)
+                {
+                    var error = failure is BackendException backend ? backend.Error : new BackendError("frontend", "import_failure", failure.Message);
+                    details.Add($"{Path.GetFileName(file.Path)}: {error.Diagnostic}");
+                    failed++;
+                    await ReadSnapshotAsync();
+                    break; // An unexpected failure can leave an unconfirmed outcome.
+                }
+                string status;
+                if (result.Phase == ImportPhase.Succeeded) { imported++; status = result.Operation == VoiceOperation.ReplaceNative ? "Replaced" : "Imported"; }
+                else if (result.Phase == ImportPhase.Cancelled || result.Error?.Code == "duplicate_content")
+                { skipped++; status = result.Error?.Code == "duplicate_content" ? "Identical profile already installed" : "Skipped"; }
+                else { failed++; status = result.Error?.Summary ?? "Import could not be confirmed"; }
+                details.Add($"{Path.GetFileName(file.Path)}: {status}" + (result.Error is null ? "" : "\n" + result.Error.Diagnostic));
+                if (_refreshError is not null)
+                {
+                    details[^1] += "\nImport stopped because the voice list could not be refreshed:\n" + _refreshError.Diagnostic;
+                    break;
+                }
+                if (result.Phase == ImportPhase.Partial || result.Error?.Code is "replacement_pending" or "replacement_conflict" or "reconciliation_required" or "outcome_unknown") break;
+            }
+            int remaining = files.Count - details.Count;
+            bool hasIssues = failed > 0 || remaining > 0 || _refreshError is not null;
+            ShowNotification(remaining > 0 ? "Import stopped" : hasIssues ? "Import finished with issues" : "Import complete",
+                $"Imported or replaced: {imported}. Skipped: {skipped}. Failed: {failed}. Not processed: {remaining}.",
+                string.Join("\n\n", details), hasIssues ? "SystemFillColorCautionBrush" : "SystemFillColorSuccessBrush");
+            OperationDiagnostic.Header = "Import report";
         }
         catch (Exception failure) { ShowFailure("import_failure", "Unable to complete the import workflow.", failure); }
+    }
+
+    private async Task<VoiceImportResult> ImportFileAsync(string sourcePath, bool batch)
+    {
+        if (_closing) return new(ImportPhase.Cancelled);
+        if (!IsNativeFile(sourcePath)) throw new BackendException(new("frontend", "source_io", "Select a .safetensors voice file."));
+        var name = new TextBox { Header = "Voice name", Text = batch ? Path.GetFileNameWithoutExtension(sourcePath) : CultureInfo.CurrentCulture.TextInfo.ToTitleCase(
+            Path.GetFileNameWithoutExtension(sourcePath).Replace('_', ' ').Replace('-', ' ')) };
+        var content = new StackPanel { Spacing = 16 };
+        content.Children.Add(Text(sourcePath));
+        content.Children.Add(Text("Native Pocket voice (.safetensors)"));
+        content.Children.Add(name);
+        content.Children.Add(Text("The file will be validated and installed in the managed Voice Library."));
+        content.Children.Add(Text("Out Loud uses administrator permission to manage this voice in the library and Windows speech system for all users."));
+        var dialog = new ContentDialog { Title = "Import a voice", Content = content, PrimaryButtonText = "Import", CloseButtonText = batch ? "Skip voice" : "Cancel", DefaultButton = ContentDialogButton.Close };
+        void ValidateName() => dialog.IsPrimaryButtonEnabled = !string.IsNullOrWhiteSpace(name.Text) && !name.Text.Any(char.IsControl);
+        name.TextChanged += (_, _) => ValidateName();
+        dialog.Opened += (_, _) => { name.Focus(FocusState.Programmatic); name.SelectAll(); };
+        ValidateName();
+        VoiceImportResult result;
+        bool confirmName = !batch;
+        while (true)
+        {
+            if ((confirmName && await ShowDialogAsync(dialog) != ContentDialogResult.Primary) || _closing) return new(ImportPhase.Cancelled);
+            result = await _importer.ImportAsync(new(sourcePath, name.Text.Trim()), new ImportProgress(this, false));
+            if (result.Error?.Code != "duplicate_name" || _closing) break;
+            await ReadSnapshotAsync();
+            VoiceRecord? target = _refreshError == null && result.DuplicateIds is { Length: 1 } ids
+                ? _snapshot.Voices.FirstOrDefault(voice => voice.LibraryId == ids[0] && voice.CanExport) : null;
+            string? sourceHash = null;
+            if (target != null)
+            {
+                using var source = File.OpenRead(sourcePath);
+                sourceHash = Convert.ToHexString(await SHA256.HashDataAsync(source)).ToLowerInvariant();
+            }
+            var collision = new ContentDialog {
+                Title = "Voice name already exists",
+                Content = Text(target != null
+                    ? $"A voice named \"{target.DisplayName}\" already exists, but this is a different voice profile. Replace its profile? Its name and Windows speech identity will be kept."
+                    : "This name is already used. The existing voice could not be uniquely verified for replacement. Choose another name or cancel."),
+                PrimaryButtonText = "Replace voice", IsPrimaryButtonEnabled = target != null,
+                SecondaryButtonText = "Change name", CloseButtonText = batch ? "Skip voice" : "Cancel", DefaultButton = ContentDialogButton.Close,
+            };
+            var choice = await ShowDialogAsync(collision);
+            if (choice == ContentDialogResult.Secondary && !_closing) { confirmName = true; continue; }
+            if (choice != ContentDialogResult.Primary || _closing || target == null) return new(ImportPhase.Cancelled);
+            result = await _importer.ImportAsync(new(sourcePath, target.DisplayName!, target.LibraryId, target.ContentSha256,
+                VoiceOperation.ReplaceNative, ExpectedSourceHash: sourceHash), new ImportProgress(this, false));
+            break;
+        }
+        if (result.Phase is ImportPhase.Succeeded or ImportPhase.Partial || result.Operation == VoiceOperation.ReplaceNative ||
+            result.Error?.Code is "duplicate_content" or "replacement_conflict" or "replacement_pending" or "outcome_unknown")
+            await ReadSnapshotAsync(result.LibraryId);
+        return result;
     }
 
     private async Task RemoveAsync()
@@ -511,6 +567,7 @@ public sealed partial class VoiceLibraryView : UserControl
         OperationTitleText.Foreground = (Brush)Application.Current.Resources[brush];
         OperationMessageText.Text = message;
         OperationDiagnosticText.Text = diagnostic;
+        OperationDiagnostic.Header = "Diagnostic details";
         OperationDiagnostic.IsExpanded = false;
         OperationDiagnostic.Visibility = diagnostic.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
         OperationPanel.Visibility = Visibility.Visible;

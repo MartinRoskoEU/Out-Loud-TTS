@@ -3,11 +3,15 @@
 var
   MaintenanceAwaitingHost, MaintenanceCommitted, MaintenancePrepared, MaintenanceExecuting, MaintenanceHostStarted: Boolean;
   MaintenanceInput, MaintenanceParameters, MaintenanceRoot, MaintenanceLastState: String;
+  MaintenanceCancelled, MaintenanceCancellationTooLate: Boolean;
 
 function RunMaintenanceCommand(Parameters, Expected: String; var ErrorText: String): Boolean;
 var
   Helper, Report, Reason: String;
   ExitCode: Integer;
+  Executed, ShowedProgress: Boolean;
+  Timings: TArrayOfString;
+  TimingIndex: Integer;
 begin
   Result := False;
   if not FoundationLifecycleReady then begin
@@ -21,11 +25,31 @@ begin
     Report := ExpandConstant('{tmp}\maintenance-') + IntToStr(RuntimeReportSerial) + '.ini';
     OutLoudDiagnosticReport := Report;
     if FileExists(Report) then RaiseException('Maintenance report already exists.');
-    if not Exec(Helper, Parameters + ' "' + Report + '"', ExpandConstant('{tmp}'),
-      SW_HIDE, ewWaitUntilTerminated, ExitCode) or (ExitCode <> 0) then
+    if FileExists(Report + '.cancel') or FileExists(Report + '.critical') then
+      RaiseException('Maintenance control record already exists.');
+    ResponsiveCommandReport := Report;
+    ResponsiveCommandCancelable := Pos('--maintain ', Parameters) = 1;
+    MaintenanceCancelButton.Visible := ResponsiveCommandCancelable;
+    MaintenanceCancelButton.Enabled := ResponsiveCommandCancelable;
+    ShowedProgress := WizardForm.CurPageID <> InstallationProgressPage.ID;
+    if ShowedProgress then InstallationProgressPage.Show;
+    try
+      Executed := ExecResponsive(Helper, Parameters + ' "' + Report + '"', ExpandConstant('{tmp}'), ExitCode);
+    finally
+      if ShowedProgress then InstallationProgressPage.Hide;
+    end;
+    if LoadStringsFromFile(Report + '.timing.log', Timings) then
+      for TimingIndex := 0 to GetArrayLength(Timings) - 1 do
+        Log('Native phase timing: ' + Timings[TimingIndex]);
+    if not Executed or (ExitCode <> 0) then
     begin
       Reason := GetIniString('results', 'reason', 'see protected recovery state', Report);
       Log('Native maintenance stopped: ' + Reason + '. Report: ' + Report);
+      if Reason = 'maintenance_cancelled' then begin
+        MaintenanceCancelled := True;
+        ErrorText := 'Installation cancelled safely.';
+        Exit;
+      end;
       if Reason = 'maintenance_voice_registration_conflict' then
         RaiseException(VoiceRegistrationPreflightMessage(GetIniString('results', 'voice_registration', '', Report)) + #13#10#13#10 + 'Preserve any remaining protected recovery records. Diagnostic report: ' + Report);
       RaiseException('Native maintenance refused or failed: ' + Reason +
@@ -37,6 +61,10 @@ begin
       ((Expected = 'reconciled') and (MaintenanceLastState <> 'rolled_back') and
         (MaintenanceLastState <> 'awaiting_host') and (MaintenanceLastState <> 'committed')) then
       RaiseException('Native maintenance did not verify the requested completion state.');
+    if RuntimeCancelRequested and (Pos('--maintain ', Parameters) = 1) then begin
+      MaintenanceCancellationTooLate := True;
+      RuntimeCancelRequested := False;
+    end;
     Result := True;
   except
     ErrorText := GetExceptionMessage;
@@ -54,6 +82,7 @@ begin
   if not RenameFile(ExpandConstant('{tmp}\') + TemporaryName, Destination) then
     RaiseException('Cannot materialize maintenance candidate.');
   InstallationProgressPage.Animate;
+  if RuntimeCancelRequested then RaiseException('Installation cancelled during file preparation.');
 end;
 
 function PrepareSharedMaintenance(var ErrorText: String): Boolean;
@@ -138,7 +167,6 @@ var
 begin
   if RuntimeCancelRequested or not InteractiveSetup then Abort;
   WizardForm.CancelButton.Enabled := False;
-  MaintenanceHostStarted := True;
   if MaintenanceAwaitingHost then begin
     if not RunMaintenanceCommand('--maintenance-reconcile "' + MaintenanceRoot + '"', 'awaiting_host', ErrorText) then RaiseException(ErrorText);
     Exit;
@@ -148,6 +176,7 @@ begin
   try
     if not RunMaintenanceCommand(MaintenanceParameters, 'awaiting_host', ErrorText) then RaiseException(ErrorText);
     MaintenanceAwaitingHost := True;
+    MaintenanceHostStarted := True;
   finally
     MaintenanceExecuting := False;
   end;
@@ -162,6 +191,8 @@ begin
     RaiseException(ErrorText);
   MaintenanceCommitted := True;
   MaintenanceAwaitingHost := False;
+  if MaintenanceCancellationTooLate then
+    MsgBox('The cancellation request arrived after the last safe stopping point. Installation completed successfully.', mbInformation, MB_OK);
   if GetIniString('results', 'archive_cleanup', '', OutLoudDiagnosticReport) = 'pending' then begin
     Log('Installation verified; completed maintenance archive cleanup remains pending.');
     ShowOutLoudDiagnostic('Out Loud setup',

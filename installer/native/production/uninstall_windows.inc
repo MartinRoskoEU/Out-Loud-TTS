@@ -191,6 +191,7 @@ struct WindowsUninstall {
             const auto terminal=maintenance_decode(archive.read(vault/(L"state-"+std::to_wstring(frames-1)+L".dat")),maintenance.package());
             signing_require(terminal.phase==MaintenancePhase::committed || terminal.phase==MaintenancePhase::rolled_back,"uninstall_archive_not_terminal");
             std::set<fs::path> archive_directories{vault/L"bootstrap"},payload_directories;
+            std::set<std::wstring> indexed_paths;
             // Index the same verified frames once: a self-contained payload has hundreds of files.
             std::map<std::wstring,MaintenanceFile> archived_files{{L"terminal.pointer",{}}};
             for(unsigned n=0;n<frames;++n){
@@ -202,13 +203,18 @@ struct WindowsUninstall {
                 signing_require(j.ownership.certificate_sha256.empty() || j.ownership.certificate_sha256==plan.owner.ownership.certificate_sha256 ||
                     (terminal.phase==MaintenancePhase::rolled_back && j.operation==MaintenanceOperation::fresh && j.old_version.empty()),"uninstall_archive_certificate_invalid");
                 for(const auto& c:j.changes){
-                    for(const auto* part:{L"backup",L"original",L"new",L"failed"})
-                        for(auto path=(vault/part/c.path).parent_path();path!=vault;path=path.parent_path())archive_directories.insert(path);
+                    // Every checkpoint repeats the full payload list. Directory
+                    // authority depends only on the validated relative path;
+                    // derive it once while still checking every frame/stamp.
+                    if(indexed_paths.insert(c.path).second){
+                        for(const auto* part:{L"backup",L"original",L"new",L"failed"})
+                            for(auto path=(vault/part/c.path).parent_path();path!=vault;path=path.parent_path())archive_directories.insert(path);
+                        if(!maintenance_is_metadata(c.path))for(auto parent=storage().path(c.path).parent_path();parent!=storage().root;parent=parent.parent_path())
+                            payload_directories.insert(parent);
+                    }
                     if(c.backup)archived_files[L"backup/"+c.path]=c.backup;
                     if(c.before)archived_files[L"original/"+c.path]=c.before;
                     if(c.after){archived_files[L"new/"+c.path]=c.after;archived_files[L"failed/"+c.path]=c.after;}
-                    if(!maintenance_is_metadata(c.path))for(auto parent=storage().path(c.path).parent_path();parent!=storage().root;parent=parent.parent_path())
-                        payload_directories.insert(parent);
                 }
                 if(j.bootstrap_detector)archived_files[L"bootstrap/OutLoudPrerequisites.exe"]=j.bootstrap_detector;
                 if(j.bootstrap_requirements)archived_files[L"bootstrap/prerequisites.ini"]=j.bootstrap_requirements;

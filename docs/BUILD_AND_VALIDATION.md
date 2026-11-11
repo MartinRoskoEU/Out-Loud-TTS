@@ -67,6 +67,62 @@ Documentation-only changes need content/link checks and `git diff --check`,
 not application tests. Build the installer when distribution notices or its
 payload change, and only when requested.
 
+## Recorded validation: 0.4.4
+
+- Release x64 WinUI builds and the four production native targets completed.
+- 46 isolated application-update/runtime-repair checks passed, covering release
+  comparisons, malformed/draft/prerelease metadata, network failures, regular-file
+  and hardlink checks, directory rename protection, no-overwrite atomic
+  publication, exact-version repair metadata and supported/unsafe ZIP layouts. Tests used synthetic files and
+  HTTP responses, without installed storage, registrations or synthesis.
+- 30 isolated Settings assertions passed, including the combined update flow,
+  application-check busy state, duplicate-request protection and startup wiring.
+- 470 focused native inventory upgrade checks passed using private fixture files
+  and simulated signing/registration. They include generic identical restored
+  payloads, read-lease write/rename protection, strict post-snapshot identity
+  checks, journal binding and rejection of changed content, size, unknown paths
+  and invalid partial operations. The latest checks also cover verified copy
+  results for empty files and copy-buffer boundaries, refusal of incorrect
+  source hashes/overwrites, retained original read leases and duplicate paths
+  in Restart Manager checks. The installer now reuses locked baseline checks
+  and verified copy results instead of rereading unchanged bytes.
+  Cancellation checks cover the real sidecar boundary and simulated fresh,
+  release and repair operations: cancellation before begin creates no transaction,
+  and cancellation after staging rolls back without signing or publication.
+  The user tested installation cancellation; the latest installer was not
+  launched by the agent.
+- Bulk-import and responsive-uninstall changes passed Release x64 WinUI/native
+  builds and installer compilation. The 207 private uninstall checks passed.
+  On 2026-11-11 the user confirmed bulk import and uninstall work. No live
+  uninstall or import into the installed library was performed by the agent.
+  Individual conflict/report/layout scenarios were not separately confirmed.
+- 768 isolated maintenance lifecycle checks passed, including rollback/recovery.
+  The first authorized live attempt stopped before publication because Restart
+  Manager detected the helper's own new snapshot leases. This was corrected and
+  regression-tested, including the DetectedSelf flag; external-client checks
+  remain active. Subsequent user-provided installation logs confirmed successful
+  completion, including final verification and archive cleanup.
+- Self-contained installer packaging completed. All 592 payload files and the
+  versions of eight project components were verified; the installer checksum
+  matches its SHA-256 file. The original bundled Kyutai runtime matched its pin.
+- Actual runtime download/repair, application startup update UI, a separate
+  older-version upgrade and playback were not individually live-verified for
+  this release. The user's acceptance does not establish Windows Sandbox
+  coverage; no agent-run installation or uninstallation is claimed for the
+  final artifact.
+
+On 2026-11-11, installation log `Setup Log 2026-11-11 #005.txt` showed a
+66.23-second finalization interval. An isolated 592-file fixture identified
+repeated directory indexing across full recovery checkpoints in archive audit.
+Indexing each validated path once reduced archive audit from 95.82 seconds to
+6.37 seconds, with the same 1,797 inventoried archive files. Both runs still
+decoded and validated every checkpoint and retained file/hash/identity checks.
+These fixture timings do not establish end-to-end live installer duration.
+The 207 focused uninstall/archive checks also passed with private files and
+simulated registration/certificates, including interrupted cleanup, modified and
+unknown files, busy resources and large retained histories. The updated Settings
+card passed a Release x64 build; its live rendering remains to be checked.
+
 ## Recorded validation: 0.4.3
 
 - 148 isolated native checks passed, covering content/name collisions, confirmed

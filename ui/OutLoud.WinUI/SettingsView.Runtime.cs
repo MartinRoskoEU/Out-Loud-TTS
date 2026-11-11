@@ -23,6 +23,7 @@ public sealed partial class SettingsView
     private bool _runtimeInstalling;
     private bool _runtimeConfirming;
     private bool _closingAfterRuntimeUpdate;
+    private PocketTtsRuntimeInstallService.RepairTarget? _runtimeRepairTarget;
     private bool RuntimeUpdateBusy => _runtimeInstalling || _runtimeConfirming;
 
     private void InitializeRuntimeUpdates() => _window!.AppWindow.Closing += RuntimeUpdateWindow_Closing;
@@ -39,17 +40,26 @@ public sealed partial class SettingsView
         { await ConfirmRuntimeUpdateAsync(update); }
     }
 
-    private async Task ConfirmRuntimeUpdateAsync(PocketTtsRuntimeUpdateResult update)
+    private async void RuntimeRepairButton_Click(object sender, RoutedEventArgs args)
+    {
+        if (_closing || RuntimeUpdateBusy || _checkingRuntimeUpdates || _runtimeRepairTarget is null) return;
+        await ConfirmRuntimeUpdateAsync(new(PocketTtsRuntimeUpdateStatus.Unavailable, "Runtime repair"), _runtimeRepairTarget);
+    }
+
+    private async Task ConfirmRuntimeUpdateAsync(PocketTtsRuntimeUpdateResult update,
+        PocketTtsRuntimeInstallService.RepairTarget? repair = null)
     {
         if (ModelBusy || ModelUpdateBlocksChanges) { return; }
         _runtimeConfirming = true;
         RenderRuntimeUpdateConflicts();
         try
         {
-            var installed = await Task.Run(() => PocketTtsRuntimeValidation.ReadVerifiedRuntimeIdentityAsync(_setupCancellation.Token));
+            var installed = repair is null
+                ? await Task.Run(() => PocketTtsRuntimeValidation.ReadVerifiedRuntimeIdentityAsync(_setupCancellation.Token))
+                : repair.Identity;
             if (_closing) { return; }
             RuntimeVersionText.Text = $"Installed release: {installed.ReleaseVersion}";
-            if (installed.ReleaseVersion != update.InstalledReleaseTag)
+            if (repair is null && installed.ReleaseVersion != update.InstalledReleaseTag)
             {
                 _runtimeUpdateResult = null;
                 _runtimeInstallMessage = "The installed runtime changed. Check for updates again before installing.";
@@ -58,9 +68,11 @@ public sealed partial class SettingsView
             var dialog = new ContentDialog
             {
                 XamlRoot = XamlRoot,
-                Title = "Update Pocket TTS Runtime?",
-                Content = $"Installed release: {installed.ReleaseVersion}\nAvailable release: {update.LatestReleaseTag}\n\nDownload and verify the Windows x64 runtime? After successful activation, verified inactive downloaded runtime versions will be removed. Versions still in use will be kept until cleanup can be retried at startup.",
-                PrimaryButtonText = "Update", CloseButtonText = "Cancel", DefaultButton = ContentDialogButton.Close,
+                Title = repair is null ? "Update Pocket TTS Runtime?" : "Repair Pocket TTS Runtime?",
+                Content = repair is null
+                    ? $"Installed release: {installed.ReleaseVersion}\nAvailable release: {update.LatestReleaseTag}\n\nDownload and verify the Windows x64 runtime? After successful activation, verified inactive downloaded runtime versions will be removed. Versions still in use will be kept until cleanup can be retried at startup."
+                    : $"Download and verify runtime {installed.ReleaseVersion} from Kyutai to restore the missing executable?\n\nModels, voices and Settings will be preserved. If Windows Security blocks the file again, repair may fail. Antivirus settings will not be changed.",
+                PrimaryButtonText = repair is null ? "Update" : "Repair", CloseButtonText = "Cancel", DefaultButton = ContentDialogButton.Close,
             };
             if (await dialog.ShowAsync() != ContentDialogResult.Primary || _closing) { return; }
         }
@@ -92,7 +104,9 @@ public sealed partial class SettingsView
         }));
         try
         {
-            _runtimeInstallTask = new PocketTtsRuntimeInstallService(_runtimeUpdateHttp, _runtimeDownloadHttp).InstallAsync(update, progress, cancellation.Token);
+            var installer = new PocketTtsRuntimeInstallService(_runtimeUpdateHttp, _runtimeDownloadHttp);
+            _runtimeInstallTask = repair is null ? installer.InstallAsync(update, progress, cancellation.Token)
+                : installer.RepairAsync(PocketTtsRuntimeInstallService.RepairIdentity(repair), progress, cancellation.Token);
             var result = await _runtimeInstallTask;
             succeeded = result.Succeeded;
             cleanupIncomplete = result.CleanupIncomplete;
@@ -102,7 +116,7 @@ public sealed partial class SettingsView
             if (!_closing && (!_closingAfterRuntimeUpdate || cleanupIncomplete)) { await RefreshInstalledRuntimeReleaseAsync(); }
         }
         catch (Exception)
-        { _runtimeInstallMessage = "The runtime update could not complete. Check local runtime storage and retry."; }
+        { _runtimeInstallMessage = "The runtime operation could not complete. Check local runtime storage and Windows Security Protection history, then retry."; }
         finally
         {
             _runtimeInstalling = false;
@@ -161,6 +175,7 @@ public sealed partial class SettingsView
         RenderRuntimeUpdateStatus();
         try
         {
+            await RefreshInstalledRuntimeReleaseAsync();
             if (forceRefresh || RuntimeUpdateCheck is null)
             {
                 RuntimeUpdateCheck = new PocketTtsRuntimeUpdateService(_runtimeUpdateHttp).CheckAsync(_setupCancellation.Token);
@@ -223,6 +238,8 @@ public sealed partial class SettingsView
         RuntimeUpdateButton.Visibility = installableUpdate || _runtimeInstalling ? Visibility.Visible : Visibility.Collapsed;
         RuntimeUpdateButton.IsEnabled = installableUpdate && !_checkingRuntimeUpdates && !RuntimeUpdateBusy && !_closing &&
             !ModelBusy && !ModelUpdateBlocksChanges;
+        RuntimeRepairButton.Visibility = _runtimeRepairTarget is not null && !_runtimeInstalling ? Visibility.Visible : Visibility.Collapsed;
+        RuntimeRepairButton.IsEnabled = !_checkingRuntimeUpdates && !RuntimeUpdateBusy && !_closing && !ModelBusy && !ModelUpdateBlocksChanges;
         ToolTipService.SetToolTip(RuntimeUpdateButton, "Confirm, download, and verify this runtime update.");
         RenderUpdateCheckState();
     }
@@ -243,14 +260,25 @@ public sealed partial class SettingsView
 
     private async Task RefreshInstalledRuntimeReleaseAsync()
     {
+        _runtimeRepairTarget = null;
         try
         {
-            var identity = await Task.Run(() => PocketTtsRuntimeValidation.ReadVerifiedRuntimeIdentityAsync(_setupCancellation.Token));
-            if (!_closing) { RuntimeVersionText.Text = $"Installed release: {identity.ReleaseVersion}"; }
+            var target = await Task.Run(() => PocketTtsRuntimeInstallService.ReadRepairTarget());
+            bool missing = await Task.Run(() => PocketTtsRuntimeInstallService.IsMissing(target.Path));
+            if (missing)
+            {
+                if (!_closing) { _runtimeRepairTarget = target; RuntimeVersionText.Text = $"Runtime missing: {target.Identity.ReleaseVersion}"; }
+            }
+            else
+            {
+                var identity = await Task.Run(() => PocketTtsRuntimeValidation.ReadVerifiedRuntimeIdentityAsync(_setupCancellation.Token));
+                if (!_closing) { RuntimeVersionText.Text = $"Installed release: {identity.ReleaseVersion}"; }
+            }
         }
         catch (Exception)
         {
             if (!_closing) { RuntimeVersionText.Text = "Installed release unavailable"; }
         }
+        if (!_closing) RenderRuntimeUpdateStatus();
     }
 }

@@ -79,7 +79,9 @@ public sealed partial class SettingsView
             string? selectionWarning = null;
             try
             {
-                selected = await _modelSelectionSettings.GetStartupModelAsync(usable, _setupCancellation.Token);
+                // A missing/blocked runtime does not invalidate the user's saved model choice.
+                if (result.RuntimeReady)
+                    selected = await _modelSelectionSettings.GetStartupModelAsync(usable, _setupCancellation.Token);
                 if (selected is not null) { _modelSetup.Activate(selected); }
             }
             catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidDataException or System.Text.Json.JsonException)
@@ -109,8 +111,7 @@ public sealed partial class SettingsView
                 ModelListEmptyText.Visibility = Visibility.Visible;
                 ModelListEmptyText.Text = "Models could not be checked. Refresh after resolving the reported error.";
                 SetModelSelection([], null);
-                try { await _modelSelectionSettings.GetStartupModelAsync([], _setupCancellation.Token); }
-                catch (Exception) { ShowModelMessage("The saved selection could not be cleared. Check local application data permissions."); }
+                await RefreshInstalledRuntimeReleaseAsync();
                 RenderRuntimeReadiness(false);
             }
         }

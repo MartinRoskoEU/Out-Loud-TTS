@@ -10,11 +10,13 @@ public sealed partial class SettingsView
 
     private async Task CheckUpdatesAsync()
     {
-        if (_closing || _checkingUpdates || _checkingRuntimeUpdates || _checkingModelUpdates || ModelBusy || RuntimeUpdateBusy) return;
+        if (_closing || _checkingUpdates || _checkingApplicationUpdates || _checkingRuntimeUpdates || _checkingModelUpdates || ModelBusy || RuntimeUpdateBusy) return;
         _checkingUpdates = true;
         RenderModelInstallationConflicts();
         try
         {
+            await CheckApplicationUpdatesAsync();
+            if (_closing) return;
             // Each existing checker reports its own unavailable/error state. A failed runtime
             // comparison therefore still allows the model check. Neither action installs updates.
             await CheckRuntimeUpdatesAsync(forceRefresh: true);
@@ -29,7 +31,7 @@ public sealed partial class SettingsView
 
     private void RenderUpdateCheckState()
     {
-        bool checking = _checkingUpdates || _checkingRuntimeUpdates || _checkingModelUpdates;
+        bool checking = _checkingUpdates || _checkingApplicationUpdates || _checkingRuntimeUpdates || _checkingModelUpdates;
         CheckUpdatesButton.IsEnabled = !checking && !ModelBusy && !RuntimeUpdateBusy && !_closing;
         UpdateChecksProgress.IsActive = checking && !_closing;
         UpdateChecksProgress.Visibility = checking && !_closing ? Visibility.Visible : Visibility.Collapsed;

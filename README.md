@@ -2,7 +2,7 @@
 
 **Offline neural text-to-speech and voice management for Windows.**
 
-Out Loud 0.4.3 is a Windows desktop application that integrates the official [Kyutai Pocket TTS](https://github.com/kyutai-labs/pocket-tts) Rust runtime with Windows SAPI 5.
+Out Loud 0.4.4 is a Windows desktop application that integrates the official [Kyutai Pocket TTS](https://github.com/kyutai-labs/pocket-tts) Rust runtime with Windows SAPI 5.
 
 It provides multilingual speech synthesis, native `.safetensors` voice management, and streaming audio playback. Once the required models are installed, speech generation runs entirely offline.
 

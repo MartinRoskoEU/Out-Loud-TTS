@@ -89,7 +89,7 @@ internal static class ElevatedMachineDataService
         Task cancellation = ObserveCancellationAsync();
         try
         {
-            if (request.Operation is not ("install-model" or "update-model" or "remove-model" or "recover-models" or "select-model" or "install-runtime" or "check-model-updates"))
+            if (request.Operation is not ("install-model" or "update-model" or "remove-model" or "recover-models" or "select-model" or "install-runtime" or "repair-runtime" or "check-model-updates"))
                 throw new InvalidDataException("Unsupported shared-data operation.");
             MachineDataStorage.Prepare();
             using var http = NewHttp();
@@ -97,6 +97,11 @@ internal static class ElevatedMachineDataService
             object result;
             switch (request.Operation)
             {
+                case "repair-runtime":
+                    result = await new PocketTtsRuntimeInstallService(http, download).RepairAsync(
+                        request.Identity ?? throw new InvalidDataException("Missing confirmed repair identity."),
+                        Progress<PocketTtsRuntimeInstallProgress>(), operation.Token).ConfigureAwait(false);
+                    break;
                 case "install-model":
                     result = await new PocketTtsModelInstallService(http).InstallAsync(request.Alias!,
                         Progress<PocketTtsModelInstallProgress>(), operation.Token).ConfigureAwait(false);

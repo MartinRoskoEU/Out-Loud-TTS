@@ -1,4 +1,4 @@
-# Out Loud 0.4.3 documentation
+# Out Loud 0.4.4 documentation
 
 Out Loud uses WinUI 3, the official Pocket TTS Rust runtime and native
 `.safetensors` voice profiles. These guides describe the current implementation.
@@ -32,6 +32,7 @@ Out Loud uses WinUI 3, the official Pocket TTS Rust runtime and native
 - [Current third-party notices](../THIRD_PARTY_NOTICES.md)
 - [Changelog](../CHANGELOG.md)
 - [0.4.3 release notes](releases/0.4.3.md)
+- [0.4.4 release](releases/0.4.4.md)
 
 The [release records](releases/) describe their respective published versions;
-they are not build or deployment instructions for 0.4.3.
+they are not build or deployment instructions for 0.4.4.

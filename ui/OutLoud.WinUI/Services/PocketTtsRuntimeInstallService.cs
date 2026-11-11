@@ -11,7 +11,7 @@ public sealed record PocketTtsRuntimeInstallProgress(string Message, double? Per
 public sealed record PocketTtsRuntimeInstallResult(bool Succeeded, bool Cancelled, string Message, string? InstalledReleaseTag = null, bool CleanupIncomplete = false);
 
 /// <summary>Explicitly confirmed runtime installations. Never called by startup update checking.</summary>
-public sealed class PocketTtsRuntimeInstallService
+public sealed partial class PocketTtsRuntimeInstallService
 {
     private const long MaximumArchiveBytes = 256L * 1024 * 1024;
     private readonly HttpClient _metadataHttp;

@@ -88,9 +88,37 @@
                     </StackPanel>
                     <StackPanel x:Name="UpdateCheckActions" Grid.Column="1" Orientation="Horizontal" Spacing="12" HorizontalAlignment="Right" VerticalAlignment="Center">
                         <ProgressRing x:Name="UpdateChecksProgress" Width="16" Height="16" IsActive="False" Visibility="Collapsed" IsTabStop="False" AutomationProperties.Name="Checking for updates" />
-                        <Button x:Name="CheckUpdatesButton" Content="Check for updates" IsEnabled="False" Click="CheckUpdates_Click" Height="36" Padding="16,0" FontSize="14" ToolTipService.ToolTip="Check the Pocket TTS runtime and installed models for updates. Updates require separate confirmation." />
+                        <Button x:Name="CheckUpdatesButton" Content="Check for updates" IsEnabled="False" Click="CheckUpdates_Click" Height="36" Padding="16,0" FontSize="14" ToolTipService.ToolTip="Check Out Loud, the Pocket TTS runtime and installed models for updates. Updates require separate confirmation." />
                     </StackPanel>
                 </Grid>
+                <Border Style="{StaticResource NotificationPanelStyle}">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <Grid RowSpacing="4" ColumnSpacing="16">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                            <TextBlock Text="Out Loud" FontSize="17" FontWeight="SemiBold" TextWrapping="Wrap" />
+                            <TextBlock x:Name="ApplicationVersionText" Grid.Row="1" FontSize="13" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" VerticalAlignment="Center" />
+                            <local:RuntimeStatusIndicator Grid.Column="1" Grid.RowSpan="2" Width="12" Height="12" Margin="0,0,12,0" Style="{StaticResource RuntimeSuccessIndicatorStyle}" HorizontalAlignment="Right" VerticalAlignment="Center" IsTabStop="False" ToolTipService.ToolTip="Out Loud is running" AutomationProperties.Name="Out Loud is running" AutomationProperties.AccessibilityView="Content" />
+                        </Grid>
+                        <Border Grid.Row="1" Height="1" Margin="0,16,0,16" Background="{ThemeResource DividerStrokeColorDefaultBrush}" />
+                        <Grid x:Name="ApplicationUpdateRow" Grid.Row="2" ColumnSpacing="20" SizeChanged="ApplicationUpdateRow_SizeChanged">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                            <Grid x:Name="ApplicationUpdateStatusPanel" ColumnSpacing="10" VerticalAlignment="Center">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                <ProgressRing x:Name="ApplicationUpdateProgress" Width="16" Height="16" IsActive="False" Visibility="Collapsed" />
+                                <FontIcon x:Name="ApplicationUpdateIcon" FontSize="18" Visibility="Collapsed" Foreground="{Binding Foreground, ElementName=ApplicationUpdateStatusText}" IsHitTestVisible="False" />
+                                <TextBlock x:Name="ApplicationUpdateStatusText" Grid.Column="1" Text="Checking for updates…" FontSize="16" FontWeight="SemiBold" Style="{StaticResource RuntimeNeutralTextStyle}" TextWrapping="Wrap" VerticalAlignment="Center" AutomationProperties.Name="Application update status" AutomationProperties.LiveSetting="Polite" />
+                            </Grid>
+                            <Button x:Name="ApplicationReleaseLink" Grid.Column="1" Content="View release" Visibility="Collapsed" HorizontalAlignment="Right" VerticalAlignment="Center" Height="36" Padding="16,0" FontSize="14" Click="ApplicationReleaseLink_Click" />
+                        </Grid>
+                    </Grid>
+                </Border>
                 <Border Padding="20" CornerRadius="8" HorizontalAlignment="Stretch" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
                     <Grid>
                         <Grid.RowDefinitions>
@@ -133,6 +161,7 @@
                                 <TextBlock x:Name="RuntimeUpdateStatusText" Grid.Column="1" Text="Checking for updates..." FontSize="16" FontWeight="SemiBold" Style="{StaticResource RuntimeNeutralTextStyle}" TextWrapping="Wrap" VerticalAlignment="Center" AutomationProperties.Name="Runtime update status" AutomationProperties.LiveSetting="Polite" />
                             </Grid>
                             <StackPanel x:Name="RuntimeUpdateActions" Grid.Column="1" Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                <Button x:Name="RuntimeRepairButton" Content="Repair runtime" Visibility="Collapsed" Height="36" Padding="16,0" FontSize="14" Click="RuntimeRepairButton_Click" />
                                 <Button IsEnabled="False" x:Name="RuntimeUpdateButton" Content="Update" Visibility="Collapsed" Height="36" Padding="16,0" FontSize="14" Click="RuntimeUpdateButton_Click" />
                                 <Button x:Name="RuntimeCancelUpdateButton" Content="Cancel" Visibility="Collapsed" Height="36" Padding="16,0" FontSize="14" Click="RuntimeCancelUpdateButton_Click" />
                             </StackPanel>

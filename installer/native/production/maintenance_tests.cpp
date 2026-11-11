@@ -1,5 +1,6 @@
 #define OUTLOUD_MAINTENANCE_CHECK
 #include "signing.cpp"
+#include <chrono>
 namespace {
 unsigned checks{};
 void check(bool value,const char* message){if(!value)throw std::runtime_error(message);++checks;}
@@ -60,6 +61,8 @@ struct Fixture {
     std::vector<std::wstring> package()const{return payload;}
     void point(const char* name){if(!failed && fault==name){failed=true;if(interrupt)throw MaintenanceInterrupted{};throw SigningError("fixture_fault");}}
     MaintenanceJournal preflight(){for(const auto& c:state.changes)signing_require(files.current(c.path)==c.before,"fixture_baseline_changed");return state;}
+    unsigned cancel_at{};
+    void check_cancel(bool critical){if(cancel_at==(critical?2u:1u))throw SigningError("maintenance_cancelled");}
     void begin(const MaintenanceJournal& j){files.begin(j);}
     void save(const MaintenanceJournal& j){state=j;files.save(j);if(j.phase==MaintenancePhase::committed)point("after_commit");}
     MaintenanceJournal load(){state=files.load(payload);return state;}
@@ -76,7 +79,7 @@ struct Fixture {
     void prepare_metadata(MaintenanceJournal& j){for(auto& c:j.changes)if(maintenance_is_metadata(c.path)){
         const auto p=files.vault/L"new"/c.path;files.parents(p,true);
         write_new(p,L"receipt "+c.path+L" "+j.ownership.signed_sha256+L" "+j.installation_id);c.after=files.stamp(p);}}
-    void backup_all(MaintenanceJournal& j){for(auto& c:j.changes)if(c.before){files.copy(files.path(c.path),files.vault/L"backup"/c.path,c.before->hash);c.backup=files.backup(c.path);}save(j);}
+    void backup_all(MaintenanceJournal& j){for(auto& c:j.changes)if(c.before)c.backup=files.copy(files.path(c.path),files.vault/L"backup"/c.path,c.before->hash);save(j);}
     void lock_resources(const MaintenanceJournal& j){files.lock_files(j);}
     void revalidate(const MaintenanceJournal& j){for(const auto& c:j.changes)signing_require(files.current(c.path)==c.before,"fixture_baseline_changed");point("ready");}
     MaintenanceFile current(const std::wstring& p){return files.current(p);}
@@ -120,11 +123,13 @@ struct InventoryFixture:Fixture {
     }
     MaintenanceJournal preflight(){
         baseline=maintenance_inventory_decode(files.read(files.path(L"configuration/inventory.dat")));
-        state.changes=maintenance_inventory_changes(baseline,incoming,state.operation,state.components,[&](const auto& p){return files.current(p);});
+        for(const auto& [p,f]:baseline.files){const auto actual=files.bind_current(p);
+            signing_require(maintenance_baseline_matches(p,f,actual,state.components) || (state.operation==MaintenanceOperation::repair && !actual),"maintenance_baseline_changed");}
+        state.changes=maintenance_inventory_changes(baseline,incoming,state.operation,state.components,[&](const auto& p){return files.bind_current(p);});
         std::vector<std::wstring> paths;for(const auto& c:state.changes)paths.push_back(c.path);maintenance_path_budget(files.root,paths);return state;
     }
     void stage(MaintenanceJournal& j){for(auto& c:j.changes)if(!c.input_hash.empty()){
-        files.copy(candidates/c.path,files.vault/L"new"/c.path,c.input_hash);c.after=files.stamp(files.vault/L"new"/c.path);save(j);}point("stage");}
+        c.after=files.copy(candidates/c.path,files.vault/L"new"/c.path,c.input_hash);save(j);}point("stage");}
     void prepare_metadata(MaintenanceJournal& j){
         const auto next=maintenance_next_inventory(baseline,j);
         for(auto& c:j.changes)if(maintenance_is_metadata(c.path)){
@@ -158,8 +163,91 @@ void inventory_checks(const fs::path& suite){
     complete.generation=std::wstring(32,L'c');complete.library_identity=std::wstring(48,L'd');complete.version=L"0.3.0";
     for(const auto* path:registration_payload_paths)complete.files.emplace(path,MaintenanceStamp{std::wstring(64,L'e'),std::wstring(48,L'f'),1});
     check(complete.files.size()>128 && maintenance_inventory_decode(maintenance_inventory_encode(complete)).files==complete.files,"full self-contained inventory roundtrip exceeds retired small-package limit");
+    {
+        const std::wstring path=L"runtime/pocket-tts/pocket-tts.exe";
+        MaintenanceStamp expected{L"813cabfc2f8fc7a4e5310deda6025426b3164610dd9f3c3098a6078e5cc1895a",std::wstring(48,L'a'),22080000};
+        auto restored=expected;restored.identity=std::wstring(48,L'b');
+        check(maintenance_baseline_matches(path,expected,restored,MaintenanceComponents::package),"identical restored pinned runtime accepted");
+        check(!maintenance_baseline_matches(path,expected,{},MaintenanceComponents::package),"missing runtime still refused for upgrade");
+        check(!maintenance_baseline_matches(path,expected,restored,MaintenanceComponents::voice_manager),"partial operation cannot rebind runtime");
+        check(maintenance_baseline_matches(L"OutLoud.WinUI.exe",expected,restored,MaintenanceComponents::package),"all inventoried payload paths use verified content");
+        auto changed=restored;changed.hash=std::wstring(64,L'c');
+        check(!maintenance_baseline_matches(path,expected,changed,MaintenanceComponents::package),"changed runtime bytes refused");
+        changed=restored;changed.size++;
+        check(!maintenance_baseline_matches(path,expected,changed,MaintenanceComponents::package),"changed runtime size refused");
+        auto unpinned=expected;unpinned.hash=std::wstring(64,L'c');changed=restored;changed.hash=unpinned.hash;
+        check(maintenance_baseline_matches(path,unpinned,changed,MaintenanceComponents::package),"inventory content authority is independent of runtime version");
+        auto baseline=complete;baseline.files[path]=expected;
+        std::map<std::wstring,std::wstring> incoming;for(const auto& [p,f]:baseline.files)incoming.emplace(p,f.hash);
+        const auto changes=maintenance_inventory_changes(baseline,incoming,MaintenanceOperation::release,MaintenanceComponents::package,
+            [&](const std::wstring& p)->MaintenanceFile{if(p==path)return restored;const auto it=baseline.files.find(p);return it==baseline.files.end()?MaintenanceFile{}:MaintenanceFile(it->second);});
+        const auto runtime=std::find_if(changes.begin(),changes.end(),[&](const auto& c){return c.path==path;});
+        check(runtime!=changes.end() && runtime->before==MaintenanceFile(restored),"journal binds actual restored physical identity");
+        MaintenanceJournal proof;proof.operation=MaintenanceOperation::release;proof.components=MaintenanceComponents::package;proof.changes=changes;
+        maintenance_validate_baseline(baseline,proof);check(true,"recovery proof admits original pinned runtime content");
+        proof.changes[static_cast<size_t>(runtime-changes.begin())].before=changed;
+        refuses([&]{maintenance_validate_baseline(baseline,proof);},"maintenance_baseline_changed");
+    }
     auto old=current;std::erase(old,L"licenses/Sonic-Apache-2.0.txt");check(old.size()+1==current.size(),"package addition production inventory fixture");
     const auto child=[&](const wchar_t* p){return suite/p;};
+    {
+        const auto report=suite/L"cancel-protocol.ini";WindowsMaintenance op(suite);op.cancellation_report=report;
+        op.check_cancel(false);check(!fs::exists(report.native()+L".critical"),"preflight remains cancellable");
+        write_new(report.native()+L".cancel",L"cancel");
+        refuses([&]{op.check_cancel(false);},"maintenance_cancelled");
+        refuses([&]{op.check_cancel(true);},"maintenance_cancelled");
+        check(fs::exists(report.native()+L".critical"),"critical boundary published before final cancellation check");
+    }
+    for(const auto operation:{MaintenanceOperation::fresh,MaintenanceOperation::release,MaintenanceOperation::repair}){
+        for(const unsigned checkpoint:{1u,2u}){
+            const auto name=L"cancel-"+std::to_wstring(static_cast<unsigned>(operation))+L"-"+std::to_wstring(checkpoint);
+            Fixture f(child(name.c_str()),operation,MaintenanceComponents::package);f.cancel_at=checkpoint;
+            refuses([&]{static_cast<void>(maintain_installation(f));},"maintenance_cancelled");
+            if(checkpoint==1)check(!fs::exists(f.files.root/L"configuration/maintenance.pending"),"cancel before begin creates no transaction");
+            else {auto j=f.load();check(j.phase==MaintenancePhase::rolled_back,"cancel after staging rolls back before signing");f.verify_original(j);}
+            check(f.publications==0 && f.generation==0,"safe cancellation never publishes or creates a signing identity");f.preserved();
+        }
+    }
+    {
+        Fixture f(child(L"verified-copy"));
+        for(const size_t size:{size_t{0},size_t{65536},size_t{65537},size_t{131089}}){
+            const auto suffix=std::to_wstring(size);
+            const auto source=f.files.root/(L"copy-source-"+suffix),target=f.files.root/(L"copy-target-"+suffix);
+            std::wstring content;content.reserve(size);for(size_t i=0;i<size;++i)content+=static_cast<wchar_t>(L' '+i%95);
+            write_new(source,content);const auto original=*f.files.stamp(source);
+            const auto copied=f.files.copy(source,target,original.hash);
+            check(copied==*f.files.stamp(target),"copy returns independently verified destination hash size and ID");
+            check(copied.identity!=original.identity && copied.size==size,"copy records destination identity including buffer boundaries");
+            check(f.files.read(target)==content,"copy preserves empty and multi-buffer contents");
+            refuses([&]{f.files.copy(source,target,original.hash);},"maintenance_copy_destination_exists_or_denied");
+            check(f.files.stamp(target)==MaintenanceFile(copied),"refused overwrite preserves destination");
+            const auto rejected=f.files.root/(L"copy-rejected-"+suffix);
+            refuses([&]{f.files.copy(source,rejected,std::wstring(64,L'0'));},"maintenance_candidate_hash_changed");
+            check(!fs::exists(rejected),"wrong source hash refuses before creating destination");
+        }
+    }
+    for(const auto* relative:{L"OutLoud.WinUI.exe",L"licenses/Sonic-Apache-2.0.txt",L"runtime/pocket-tts/pocket-tts.exe"}){
+        auto name=fs::path(relative).filename().native();
+        InventoryFixture f(child((L"restored-"+name).c_str()),current,current);
+        const auto path=f.files.path(relative);const auto original=f.files.read(path);
+        const auto before=f.files.current(relative);check(fs::remove(path),"fixture replaces only its own original");write_new(path,original);
+        check(f.files.current(relative)->identity!=before->identity,"restored fixture has new physical ID");
+        const auto bound=f.files.bind_current(relative);
+        const auto lease=f.files.baseline_pins.at(path).handle->value;
+        auto prepared=f.preflight();
+        check(f.files.baseline_pins.at(path).handle->value==lease,"baseline validation and inventory planning retain the same read lease");
+        check(f.files.current(relative)==bound,"retained baseline stamp is reused after inventory planning");
+        maintenance_active_files({path,path},true);check(true,"duplicate paths retain own verified read lease handling");
+        refuses([&]{maintenance_active_files({path,path});},"maintenance_resources_active_close_clients");
+        Handle writer;writer.value=CreateFileW(path.c_str(),GENERIC_WRITE,FILE_SHARE_READ,nullptr,OPEN_EXISTING,0,nullptr);
+        check(writer.value==INVALID_HANDLE_VALUE,"verified original denies writes during staging");
+        check(!MoveFileW(path.c_str(),(path.native()+L".foreign").c_str()),"verified original denies replacement during staging");
+        f.files.release();
+        check(fs::remove(path),"fixture releases snapshot for simulated namespace race");write_new(path,original);
+        refuses([&]{f.revalidate(prepared);},"fixture_baseline_changed");
+        check(maintain_installation(f)==MaintenanceOutcome::awaiting_host,"restored generic inventoried file upgrades");
+        auto j=f.load();check(recover_maintenance(f,j,true)==MaintenanceOutcome::committed,"restored generic file finalizes");f.preserved();
+    }
     for(const auto mode:{MaintenanceOperation::release,MaintenanceOperation::repair}){
         InventoryFixture f(child(mode==MaintenanceOperation::release?L"custom-release-directory":L"custom-repair-directory"),old,current,mode);
         const auto id=f.state.installation_id,certificate=f.state.ownership.certificate_sha256,key=f.state.ownership.key_name;
@@ -242,8 +330,23 @@ void inventory_checks(const fs::path& suite){
 }
 }
 int wmain(int argc,wchar_t** argv){
-    try{check(argc==2 || (argc==3 && (std::wstring(argv[2])==L"inventory" || std::wstring(argv[2])==L"security")),"supply a workspace fixture parent [inventory|security]");const auto parent=installation_path(argv[1]);safe(parent);check(fs::is_directory(parent),"fixture parent exists");
+    try{check(argc==2 || (argc==3 && (std::wstring(argv[2])==L"inventory" || std::wstring(argv[2])==L"security" || std::wstring(argv[2])==L"timing")),"supply a workspace fixture parent [inventory|security|timing]");const auto parent=installation_path(argv[1]);safe(parent);check(fs::is_directory(parent),"fixture parent exists");
         const auto suite=parent/(L"m-"+maintenance_random().substr(0,8));check(fs::create_directory(suite),"new private fixture suite");
+        if(argc==3 && std::wstring(argv[2])==L"timing"){
+            using clock=std::chrono::steady_clock;
+            auto start=clock::now();
+            const auto report=[&](const wchar_t* stage){const auto now=clock::now();std::wcout<<stage<<L"="<<std::chrono::duration<double>(now-start).count()<<L"s"<<std::endl;start=now;};
+            std::vector<std::wstring> full(std::begin(registration_payload_paths),std::end(registration_payload_paths));
+            InventoryFixture f(suite/L"full",full,full);report(L"fixture");
+            check(maintain_installation(f)==MaintenanceOutcome::awaiting_host,"full package reaches host boundary");report(L"prepare_publish");
+            auto j=f.load();report(L"load_checkpoints");
+            check(recover_maintenance(f,j,true)==MaintenanceOutcome::committed,"full package finalizes");report(L"final_verify");
+            f.files.retire(f.state);report(L"retire");
+            WindowsArchiveCleanup cleanup(f.files.root,f.state);cleanup.storage().security=f.files.security;cleanup.storage().protected_state=false;
+            cleanup.collect();report(L"audit_archive");
+            std::wcout<<L"files="<<full.size()<<L" archive_files="<<cleanup.audit.plan.files.size()<<L" evidence="<<suite.native()<<std::endl;
+            return 0;
+        }
         if(argc==3 && std::wstring(argv[2])==L"security"){volume_root_checks(suite);std::wcout<<L"PASS: "<<checks<<L" focused directory security checks; no system ACLs changed.\n";return 0;}
         const auto child=[&](const wchar_t* name){return suite/name;};
         if(argc==3){inventory_checks(suite);std::wcout<<L"PASS: "<<checks<<L" focused inventory upgrade checks; private files, simulated signing/registry. Evidence: "<<suite.native()<<L"\n";return 0;}

@@ -84,6 +84,7 @@ begin
 end;
 #include "diagnostics.iss"
 #include "prerequisites.iss"
+#include "responsive-process.iss"
 #include "runtime-install.iss"
 #include "installation.iss"
 #include "signing.iss"
@@ -110,6 +111,26 @@ begin
   InitializeSigningWizard;
   InstallationProgressPage := CreateOutputMarqueeProgressPage('Installing Out Loud',
     'Please wait while Setup prepares and installs Out Loud on your computer.');
+  MaintenanceCancelButton := TNewButton.Create(WizardForm);
+  { Progress pages hide Inno's navigation buttons. Place the cooperative
+    action in the same footer slot, with native dimensions and DPI anchoring. }
+  MaintenanceCancelButton.Parent := WizardForm.CancelButton.Parent;
+  MaintenanceCancelButton.Caption := SetupMessage(msgButtonCancel);
+  MaintenanceCancelButton.SetBounds(WizardForm.CancelButton.Left,
+    WizardForm.CancelButton.Top, WizardForm.CancelButton.Width,
+    WizardForm.CancelButton.Height);
+  MaintenanceCancelButton.Anchors := WizardForm.CancelButton.Anchors;
+  MaintenanceCancelButton.OnClick := @RequestMaintenanceCancellation;
+  MaintenanceCancelButton.Visible := False;
+end;
+
+procedure CurPageChanged(CurPageID: Integer);
+begin
+  if CurPageID = wpFinished then begin
+    { Finish shares Next's control; reclaim the now-hidden Cancel slot. }
+    WizardForm.NextButton.Left := WizardForm.CancelButton.Left +
+      WizardForm.CancelButton.Width - WizardForm.NextButton.Width;
+  end;
 end;
 
 function NextButtonClick(CurPageID: Integer): Boolean;
@@ -140,10 +161,17 @@ begin
     InstallationProgressPage.SetText('Checking and preparing required Microsoft components...', '');
     if not PrepareRuntimePrerequisites(Result) then Exit;
     InstallationProgressPage.SetText('Preparing application files...', '');
+    ResponsiveCommandReport := '';
+    ResponsiveCommandCancelable := True;
+    MaintenanceCancelButton.Visible := True;
+    MaintenanceCancelButton.Enabled := True;
     if PrepareSharedMaintenance(Result) then Result := '';
+    if RuntimeCancelRequested then Abort;
   finally
+    ResponsiveCommandCancelable := False;
+    MaintenanceCancelButton.Visible := False;
     InstallationProgressPage.Hide;
-    if Result <> '' then begin
+    if (Result <> '') and not RuntimeCancelRequested then begin
       ShowOutLoudDiagnostic('Out Loud setup', Result, OutLoudDiagnosticReport);
       Result := 'Setup cannot continue. The full explanation and diagnostic path were shown in the diagnostic window. Resolve the reported problem before trying again.';
     end;
@@ -167,7 +195,8 @@ begin
       end;
     except
       InstallationProgressPage.Hide;
-      ShowOutLoudDiagnostic('Out Loud setup', GetExceptionMessage, OutLoudDiagnosticReport);
+      if not MaintenanceCancelled then
+        ShowOutLoudDiagnostic('Out Loud setup', GetExceptionMessage, OutLoudDiagnosticReport);
       Abort;
       end;
     finally
@@ -196,7 +225,10 @@ end;
 
 procedure CancelButtonClick(CurPageID: Integer; var Cancel, Confirm: Boolean);
 begin
-  if MaintenanceExecuting or MaintenanceHostStarted then begin
+  if ResponsiveCommandRunning then begin
+    Cancel := False; Confirm := False;
+    if ResponsiveCommandCancelable then RequestMaintenanceCancellation(nil);
+  end else if MaintenanceExecuting or (MaintenanceHostStarted and not MaintenanceCommitted) then begin
     Cancel := False; Confirm := False;
     MsgBox('Wait for native publication and host completion. Interrupted work requires checked recovery.', mbInformation, MB_OK);
   end else begin

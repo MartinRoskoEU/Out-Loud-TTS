@@ -23,6 +23,7 @@ public sealed partial class SettingsView
             _runtimeDownloadHttp.Dispose();
         };
         _ = CheckRuntimeAsync(isStartup: true);
+        _ = CheckApplicationUpdatesAsync();
     }
 
     // Runtime refresh also invalidates models/selections through the shared setup service.

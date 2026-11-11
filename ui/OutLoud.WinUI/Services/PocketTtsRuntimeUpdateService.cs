@@ -97,7 +97,7 @@ public sealed class PocketTtsRuntimeUpdateService
         }
     }
 
-    private static PocketTtsRuntimeUpdateAsset? FindWindowsAsset(JsonElement release, string releaseTag)
+    internal static PocketTtsRuntimeUpdateAsset? FindWindowsAsset(JsonElement release, string releaseTag)
     {
         if (!release.TryGetProperty("assets", out JsonElement assets) || assets.ValueKind != JsonValueKind.Array)
         { throw new InvalidDataException("Missing latest-release asset metadata."); }
